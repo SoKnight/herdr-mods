@@ -9,6 +9,7 @@ A tab bar for [Herdr Desktop](https://herdr.dev/): tabs you can drag, that wrap 
 - The **+** sits right after the last tab.
 - **Drag panel buttons** (Files, Changes and any you add) to reorder them, the same way.
 - **The ⋮ menu:** drop a panel button on it to hide it. Click **⋮** to see hidden buttons, then click one to use it, drag it back out, or click its **pin** to return it to the toolbar. The menu also holds buttons there's no room for.
+- A tab you haven't named shows what its agent is working on (Claude's session topic), not its number.
 - Double-click to rename, right-click for the tab menu, and close the active tab with its ×.
 - Program icons, working spinners and blocked or done dots.
 - Each space remembers which panel it had open.

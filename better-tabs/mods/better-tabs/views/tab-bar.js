@@ -44,8 +44,18 @@ export const tabBarMethods = {
     return modIcon ? svg(modIcon).size(14).text_color(t.muted) : null;
   },
 
+  // A tab nobody named shows its agent's title (Claude puts the session's topic there);
+  // a named one, or one without an agent, keeps Herdr's name.
+  tabLabel(tab, ps) {
+    if (tab.named) return tab.name;
+    const agent = ps.find((p) => p.tab === tab.id && p.program?.agent);
+    const title = agent?.title?.replace(/^[^\p{L}\p{N}]+/u, "").trim();
+    return title || tab.name;
+  },
+
   tabItem(tab, space, ps, t) {
     const icon = this.tabIcon(tab, ps, t);
+    const label = this.tabLabel(tab, ps);
     const drag = this.tabDrag;
     return h_flex()
       .id(`tab-${tab.id}`)
@@ -81,8 +91,8 @@ export const tabBarMethods = {
         div()
           .max_w(this.settings.tabs.max_width)
           .truncate()
-          .tooltip(tab.name)
-          .child(tab.zoomed ? `${tab.name} Z` : tab.name),
+          .tooltip(label)
+          .child(tab.zoomed ? `${label} Z` : label),
       )
       .when(tab.status === "working", (el) =>
         el.child(Icon("spinner", 12).text_color(t.working).spin(900)),

@@ -6,7 +6,7 @@ A tab bar for a person's existing Herdr layout: draggable tabs that wrap onto mo
 
 ## What you see
 
-A theme-chrome bar 42px high, growing as tabs wrap, with a 1px bottom `border`. Tabs and toolbar start 6.5px from the top. Tabs are 29px pills with radius 7, 10px padding, a 7px gap inside and 6px between, in 12.8px text. The active tab is `raised` with a `border` edge and a ×; others are plain in `muted`. A tab shows its program's icon at 14px, its name up to 170px, a 12px spinning `working` icon, or a 6px `blocked` or `done` dot.
+A theme-chrome bar 42px high, growing as tabs wrap, with a 1px bottom `border`. Tabs and toolbar start 6.5px from the top. Tabs are 29px pills with radius 7, 10px padding, a 7px gap inside and 6px between, in 12.8px text. The active tab is `raised` with a `border` edge and a ×; others are plain in `muted`. A tab shows its program's icon at 14px, its name up to 170px (a tab nobody named shows its agent's terminal title, such as Claude's session topic, with leading symbols trimmed; one without an agent keeps Herdr's number), a 12px spinning `working` icon, or a 6px `blocked` or `done` dot.
 
 After the last tab, wrapping with the tabs, is a 26px + button. On the right, staying on the first line, are the toolbar buttons, 26px high with radius 6, 12px text and an optional 14px icon, `selected` when active, with a 1px separator where the group changes. Last is a 26px ⋮ button.
 
