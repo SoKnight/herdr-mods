@@ -422,6 +422,12 @@ test("PR numbers open their URL only on a modified click without selecting the s
   h.context.window = () => ({ active: true, platform: "linux" });
   number.handlers.click({ modifiers: { control: true } }, h.cx);
   assert.equal(opened.length, 2);
+
+  h.context.window = () => ({ active: true, platform: "windows" });
+  number.handlers.click({ modifiers: { control: true } }, h.cx);
+  assert.equal(opened.length, 3);
+  number.handlers.click(plain, h.cx);
+  assert.equal(opened.length, 3);
 });
 
 test("draft PRs show only their number, keeping draft color, icon, and tooltip", () => {
@@ -461,7 +467,8 @@ test("Git metadata reads preserve remote context and parse ahead/behind", async 
   const h = harness();
   h.context.exec = async (cmd, args, options) => {
     h.calls.push({ cmd, args, options });
-    if (args.includes("status")) return result("# branch.head feature\n# branch.ab +2 -1\n");
+    if (args.includes("symbolic-ref")) return result("refs/heads/feature\n");
+    if (args.includes("rev-list")) return result("2\t1\n");
     if (args.includes("--show-toplevel")) return result("/tree\n");
     return result("/repo/.git\n");
   };
@@ -472,6 +479,27 @@ test("Git metadata reads preserve remote context and parse ahead/behind", async 
   assert.equal(g.behind, 1);
   assert.equal(g.linked, true);
   assert.ok(h.calls.every((call) => call.options.on === "remote" && call.options.cwd === "/tree"));
+  assert.equal(h.calls.some((call) => call.args.includes("status")), false, "only refs are read");
+});
+
+test("a folder Git refuses as another user's is no repository, and no gh stops PR lookups", async () => {
+  const h = harness();
+  h.context.exec = async () => ({ code: 128, stdout: "", stderr: "fatal: detected dubious ownership in repository at 'C:/x'" });
+  await h.mod.check('[null,"C:/x"]', h.cx);
+  assert.equal(h.mod.git['[null,"C:/x"]'], null);
+  assert.equal((await h.observer.lookup({ folder: "C:/x" })).length, 0);
+
+  let asked = 0;
+  h.context.exec = async (cmd) => {
+    if (cmd === "gh") { asked++; throw new Error("cannot start gh: program not found"); }
+    return result("feature\n");
+  };
+  await assert.rejects(h.observer.query(["pr", "list"]));
+  assert.equal(h.observer.noGh, true);
+  h.observer.entries.set("k", { prs: [], error: "x" });
+  h.observer.refresh([{ folder: "/a", branch: "feature" }], h.cx);
+  assert.equal(h.observer.entries.size, 0);
+  assert.equal(asked, 1);
 });
 
 test("real Git metadata groups a worktree beneath its main checkout", async () => {
@@ -501,7 +529,13 @@ test("real Git metadata groups a worktree beneath its main checkout", async () =
     ]);
     git(["worktree", "add", "-q", "-b", "feature", tree]);
     const h = harness();
-    h.context.exec = async (_cmd, args, options) => result(git(args, options.cwd));
+    h.context.exec = async (_cmd, args, options) => {
+      try {
+        return result(git(args, options.cwd));
+      } catch (error) {
+        return { code: error.status, stdout: "", stderr: String(error.stderr) };
+      }
+    };
     h.live.spaces = [
       { id: "tree", name: "feature", folder: tree, tabs: [] },
       { id: "main", name: "main", folder: main, tabs: [] },

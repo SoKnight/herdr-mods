@@ -1,6 +1,7 @@
 // Read-only PR discovery for each [machine, checkout]. This observer is separate
 // from space rendering so frequent redraws never launch Git or GitHub commands.
 import { exec } from "herdr";
+import { notARepository } from "./checkouts.js";
 
 export const PR_POLL_MS = 60000;
 export const prPlaceKey = (machine, folder) => JSON.stringify([machine ?? null, folder]);
@@ -57,7 +58,8 @@ export class PRStatusObserver {
     for (const key of this.checked.keys()) if (!this.places.has(key)) this.checked.delete(key);
     for (const [key, value] of this.cache)
       if (Date.now() - value.at >= PR_POLL_MS) this.cache.delete(key);
-    if (this.busy) return;
+    if (this.noGh) this.entries.clear();
+    if (this.busy || this.noGh) return;
 
     const due = [...this.places].filter(([key, place]) => {
       const last = this.checked.get(key);
@@ -108,7 +110,7 @@ export class PRStatusObserver {
       exec("git", ["--no-optional-locks", ...args], { cwd: place.folder, on: place.machine });
     const head = await git(["symbolic-ref", "--quiet", "--short", "HEAD"]);
     if (head.code !== 0) {
-      if (head.code === 1 || /not a git repository/i.test(head.stderr ?? "")) return [];
+      if (head.code === 1 || notARepository(head.stderr)) return [];
       throw new Error("Cannot read checkout branch");
     }
     const branch = head.stdout.trim();
@@ -183,7 +185,11 @@ export class PRStatusObserver {
     if (cached && Date.now() - cached.at < PR_POLL_MS) return cached.data;
     // Stamp when the call started, like the poll does, so the next poll never lands on this entry.
     const at = Date.now();
-    const result = await exec("gh", args);
+    const result = await exec("gh", args).catch((error) => {
+      // No gh on this computer: stop asking for this session rather than fail every minute.
+      if (/program not found/i.test(error.message)) this.noGh = true;
+      throw error;
+    });
     if (result.code !== 0)
       throw new Error((result.stderr || "GitHub unavailable; check gh auth login").trim());
     const data = JSON.parse(result.stdout);

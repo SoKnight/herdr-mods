@@ -4,7 +4,7 @@ A standalone sidebar for Herdr Desktop: spaces with their Git branches, nested w
 
 ![Better Sidebar](preview.png)
 
-Cmd-click a PR number to open it on GitHub.
+Cmd-click a PR number to open it on GitHub (Ctrl-click on Windows and Linux).
 
 - The current branch sits **beside the space name**, small and dim, except `main`, `master` and a branch that repeats the name, which go without saying. The selected space also shows how far it is ahead of or behind its remote.
 - Worktree spaces nest beneath an open space for the same repository. Each worktree keeps its own branch and PR status.
@@ -46,7 +46,9 @@ The panel icon at the far right of the tab bar hides or shows the right panel wi
 ] }
 ```
 
-`props.target` names another layout node to toggle; the default is `panel`. The included `keys.json` binds **Cmd+Shift+B** on macOS to `better-sidebar.toggle-panel`; merge it into `~/.config/herdr-app/keys.json`. The command only works while this block is in the layout.
+`props.target` names another layout node to toggle; the default is `panel`. The included `keys.json` binds **Cmd+Shift+B** on macOS to `better-sidebar.toggle-panel`; merge it into `~/.config/herdr-app/keys.json`. On Windows merge [keys.windows.json](keys.windows.json) into `%USERPROFILE%\.config\herdr-app\keys.json` instead; it binds **Ctrl+Shift+R**. The command only works while this block is in the layout.
+
+On Windows and Linux, Better Tabs draws the window buttons at its own right edge, so this block would sit to their right, out of the corner. To keep them in the corner, leave this block out and give Better Tabs a button that runs `layout.toggle` with `{"id": "panel"}`, as [Estro](../estro/RECIPE.md) does. A key for it then goes under that layout's `layout:<name>` section of `keys.json`, for example `"ctrl-shift-r": {"command": "layout.toggle", "args": {"id": "panel"}}`.
 
 ## Install
 
@@ -61,8 +63,10 @@ The spaces block should reference `"mod": "better-sidebar"`, the agents block `{
 ## Requirements and access
 
 - Git on every machine whose spaces you use.
-- A local installation of [GitHub CLI](https://cli.github.com/), authenticated with `gh auth login`, with access to the repositories you want to show.
+- A local installation of [GitHub CLI](https://cli.github.com/), authenticated with `gh auth login`, with access to the repositories you want to show. `gh` must be on PATH. Without it the sidebar quietly shows no PR status for the rest of the session, rather than an error on every row.
 - Herdr's native mod APIs; no Node.js runtime dependency.
+
+Git refuses a repository whose folder another user owns as "dubious ownership". On Windows this happens with a folder on another drive or a share; the sidebar then treats it like a folder that isn't a repository, with no branch or PR. `git config --global --add safe.directory <path>` lets Git read it.
 
 The mod runs read-only Git commands in space directories and calls `gh pr list` / `gh pr view`, which contact GitHub using your local credentials. **Remote Git reads run on the space's machine; GitHub queries run locally.** It never stages, commits, checks out branches, creates PRs, or changes Git configuration.
 
@@ -78,7 +82,7 @@ An existing `branch.<branch>.herdr-pr` Git setting such as `owner/repo#42` overr
 
 PR results refresh at most once a minute per checkout, with immediate lookups when Herdr reports a branch change. Successful identical GitHub queries are cached for one minute. Local Git changes also trigger refreshes through Git-directory watches; remote/external changes have a 15-second foreground fallback. An API or authentication failure preserves last-good PRs **only for the same branch**, marks them stale, and exposes the error on hover. Without a previous result, the line reads `PR unavailable`. New branch selections never inherit an old branch's PR.
 
-The PR badge has no merge or review controls. Selecting its row selects the space; Cmd-clicking the number opens the PR in your default browser. Space menus continue to use Herdr's shipped `menu` mod. Worktree grouping is for **open spaces**, not every checkout on disk. A worktree without an open main-checkout space remains a top-level row.
+The PR badge has no merge or review controls. Selecting its row selects the space; Cmd-clicking the number (Ctrl-clicking on Windows and Linux) opens the PR in your default browser. Space menus continue to use Herdr's shipped `menu` mod. Worktree grouping is for **open spaces**, not every checkout on disk. A worktree without an open main-checkout space remains a top-level row.
 
 ## Settings
 
@@ -100,7 +104,7 @@ In `mods/better-sidebar/`:
 - `git/checkouts.js`: reading a space's checkout. `git/pr-status.js`: GitHub discovery, PR appearance, caching, and stale-result handling.
 - `views/spaces.js`, `views/agents.js`, `views/footer.js`, `views/panel-toggle.js`: the parts. `views/ui.js`: the design kit, Herdr's sizes and small components, with only what this mod uses.
 - `icons/`: this mod's icons.
-- `sync.sh`: copies the mod into Herdr, which reloads it. A symlink loads the code but not the icons.
+- `sync.sh`: copies the mod into Herdr, which reloads it. A symlink loads the code but not the icons. On Windows, run `.\sync.ps1` from PowerShell in this folder instead (`pwsh -File sync.ps1` also works).
 - `tests/spaces.test.cjs` and `tests/agents.test.cjs`: isolated Herdr/GPUI stand-ins for discovery, polling, races, grouping, rendering, and packaging.
 
 ```sh

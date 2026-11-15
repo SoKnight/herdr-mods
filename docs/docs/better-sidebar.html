@@ -50,20 +50,22 @@
   <h3 id="better-sidebar-start">Quick start</h3>
   <ol>
     <li>Install with the prompt below. It takes the place of your spaces list.</li>
-    <li>Each space shows its branch on the right and its PR state below the name. Cmd-click the PR number to open it on GitHub.</li>
+    <li>Each space shows its branch on the right and its PR state below the name. Cmd-click the PR number (Ctrl-click on Windows and Linux) to open it on GitHub.</li>
     <li>Click the icon beside <b>Agents</b> to group agents by space, main space or name prefix.</li>
   </ol>
 
   <h3 id="better-sidebar-install">Install</h3>
   <div class="prompt"><code>Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-sidebar</code></div>
-  <p>Requirements: Git on every machine whose spaces you use, and the <a href="https://cli.github.com/">GitHub CLI</a> logged in with <code>gh auth login</code>, with access to the repositories you want to show. There is no Node.js dependency.</p>
+  <p>Requirements: Git on every machine whose spaces you use, and the <a href="https://cli.github.com/">GitHub CLI</a> logged in with <code>gh auth login</code>, with access to the repositories you want to show. <code>gh</code> must be on PATH; without it the sidebar quietly shows no PR status for the rest of the session. There is no Node.js dependency.</p>
+  <p>Git refuses a repository whose folder another user owns as "dubious ownership". On Windows this happens with a folder on another drive or a share; the sidebar then treats it like a folder that isn't a repository. <code>git config --global --add safe.directory &lt;path&gt;</code> lets Git read it.</p>
   <p>The agent reads the package, tells you that it runs Git and <code>gh</code> and reaches GitHub with your local login, and copies only <code>mods/better-sidebar/</code> into the app configuration. The manifest uses <code>"place": "none"</code>, so the agent replaces your existing spaces block's mod reference instead of adding a second sidebar, keeping its ID, size, the agents list, other panels and key bindings. Herdr's shipped layouts (<code>main</code>, <code>terminals</code>, <code>win98</code>) are read-only, so if you are on one the agent clones it and edits the clone; if you already have your own layout, it asks whether to add the mod there or make a new one.</p>
   <p>Each block is optional. The spaces block references <code>"mod": "better-sidebar"</code>, the agents block <code>{ "mod": "better-sidebar", "props": { "view": "agents" } }</code>, and the footer block <code>{ "mod": "better-sidebar", "props": { "view": "footer" } }</code> at 37px high. The right panel toggle sits in a row beside the tab bar:</p>
   <pre>{ "id": "tabs-row", "type": "row", "size": { "px": 42 }, "children": [
   { "id": "tabs", "type": "block", "window_drag": true, "content": { "mod": "better-tabs" } },
   { "id": "panel-toggle", "type": "block", "size": { "px": 36 }, "content": { "mod": "better-sidebar", "props": { "view": "panel-toggle" } } }
 ] }</pre>
-  <p>The included <code>keys.json</code> binds <b>Cmd+Shift+B</b> on macOS to <code>better-sidebar.toggle-panel</code>. Merge it into <code>~/.config/herdr-app/keys.json</code>. The command only works while the panel toggle block is in the layout.</p>
+  <p>The included <code>keys.json</code> binds <b>Cmd+Shift+B</b> on macOS to <code>better-sidebar.toggle-panel</code>. Merge it into <code>~/.config/herdr-app/keys.json</code>. On Windows merge <code>keys.windows.json</code> into <code>%USERPROFILE%\.config\herdr-app\keys.json</code> instead; it binds <b>Ctrl+Shift+R</b>. The command only works while the panel toggle block is in the layout.</p>
+  <p>On Windows and Linux, <a href="better-tabs.html">Better Tabs</a> draws the window buttons at its own right edge, so this block sits to their right, out of the corner. To keep them in the corner, leave it out and give Better Tabs a <code>command</code> button running <code>layout.toggle</code> with <code>{"id": "panel"}</code>, as <a href="estro.html">Estro</a> does.</p>
   <p>To roll back, point the spaces block back at the previous mod. Leave that mod installed if other layouts still use it.</p>
 
   <h3 id="better-sidebar-use">Use</h3>
@@ -90,7 +92,7 @@
   </tbody></table>
 
   <h3 id="better-sidebar-update">Update</h3>
-  <p>Copy <code>mods/better-sidebar/</code> into <code>~/.config/herdr-app/mods/</code> again (or ask your agent to). This replaces <code>mod.json</code>, so copy your <code>settings</code> block forward, or let <a href="better-config.html">Better Config</a> notice the reset and offer to restore each value.</p>
+  <p>Copy <code>mods/better-sidebar/</code> into <code>~/.config/herdr-app/mods/</code> again (or ask your agent to; on Windows, <code>.\sync.ps1</code> copies it into <code>%USERPROFILE%\.config\herdr-app\mods\</code>). This replaces <code>mod.json</code>, so copy your <code>settings</code> block forward, or let <a href="better-config.html">Better Config</a> notice the reset and offer to restore each value.</p>
 
   <h3 id="better-sidebar-developers">For developers</h3>
   <p>One mod draws five blocks. <code>props.view</code> picks which:</p>
@@ -109,7 +111,7 @@
     <li><code>mods/better-sidebar/main.js</code>: picks the part from <code>props.view</code>. <code>settings.js</code>: shared with the other mods.</li>
     <li><code>git/checkouts.js</code>: reading a space's checkout. <code>git/pr-status.js</code>: GitHub discovery, PR appearance, caching and stale results.</li>
     <li><code>views/spaces.js</code>, <code>views/agents.js</code>, <code>views/footer.js</code>, <code>views/panel-toggle.js</code>: the parts. <code>views/ui.js</code>: the design kit.</li>
-    <li><code>icons/</code>: the mod's icons. <code>sync.sh</code>: copies the mod into Herdr, which reloads it (a symlink loads the code but not the icons).</li>
+    <li><code>icons/</code>: the mod's icons. <code>sync.sh</code>: copies the mod into Herdr, which reloads it (a symlink loads the code but not the icons). On Windows, run <code>.\sync.ps1</code> from PowerShell in the mod's folder instead.</li>
     <li><code>tests/spaces.test.cjs</code>, <code>tests/agents.test.cjs</code>: tests with Herdr stand-ins.</li>
   </ul>
   <pre>node --test tests/*.test.cjs

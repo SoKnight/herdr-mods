@@ -13,47 +13,40 @@ export function spaceFolder(space, paneList) {
 export const checkoutKey = (space, paneList) =>
   JSON.stringify([space.machine ?? null, spaceFolder(space, paneList)]);
 
+// Git's "no repository here". A folder another Windows user owns (dubious ownership) is
+// one Git won't read either, so it counts the same rather than as an endless failure.
+export const notARepository = (stderr) => /not a git repository|dubious ownership/i.test(stderr ?? "");
+
 // Branch, ahead/behind and repository, or null if this isn't a repository.
 // Throws when Git couldn't be asked, so the caller keeps what it knew.
 export async function readCheckout(cwd, on) {
-  // Reading status must not touch the index or fsmonitor: our own writes would
-  // wake the Git-folder watch and create a refresh loop.
-  const status = await exec(
-    "git",
-    ["--no-optional-locks", "-c", "core.fsmonitor=false", "status", "--porcelain=v2", "--branch"],
-    { cwd, on },
-  );
-  if (status.code !== 0) {
-    if (/not a git repository/i.test(status.stderr)) return null;
-    throw new Error("Cannot read status");
+  // Ref-only reads: no worktree scan, no index or fsmonitor touched, so our own reads
+  // never wake the Git-folder watch into a refresh loop.
+  const git = (args) => exec("git", args, { cwd, on });
+  const [top, common] = await Promise.all([
+    git(["rev-parse", "--path-format=absolute", "--show-toplevel"]),
+    git(["rev-parse", "--path-format=absolute", "--git-common-dir"]),
+  ]);
+  if (top.code !== 0 || common.code !== 0) {
+    if (notARepository(top.code !== 0 ? top.stderr : common.stderr)) return null;
+    throw new Error("Cannot read repository metadata");
   }
+  const [head, counts] = await Promise.all([
+    git(["symbolic-ref", "-q", "HEAD"]),
+    git(["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]),
+  ]);
 
   // The repo's own .git folder names it; a worktree's top differs from it.
-  const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on });
-  const common = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
-    cwd,
-    on,
-  });
-  if (top.code !== 0 || common.code !== 0) throw new Error("Cannot read repository metadata");
-
   const repo = common.stdout.trim();
-  const info = {
+  const [ahead, behind] = counts.code === 0 ? counts.stdout.trim().split(/\s+/).map(Number) : [0, 0];
+  return {
     name: repo.endsWith("/.git")
       ? basename(repo.slice(0, -5))
       : basename(repo).replace(/\.git$/, ""),
-    branch: null,
-    ahead: 0,
-    behind: 0,
+    branch: head.code === 0 ? head.stdout.trim().replace(/^refs\/heads\//, "") : "(detached)",
+    ahead: ahead || 0,
+    behind: behind || 0,
     repo: JSON.stringify([on, repo]),
     linked: repo !== `${top.stdout.trim()}/.git`,
   };
-  for (const line of status.stdout.split("\n")) {
-    if (line.startsWith("# branch.head ")) info.branch = line.slice(14);
-    else if (line.startsWith("# branch.ab ")) {
-      const [ahead, behind] = line.slice(12).split(" ");
-      info.ahead = Math.abs(parseInt(ahead, 10)) || 0;
-      info.behind = Math.abs(parseInt(behind, 10)) || 0;
-    }
-  }
-  return info;
 }
