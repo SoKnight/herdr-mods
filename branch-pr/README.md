@@ -43,11 +43,13 @@ Read [RECIPE.md](RECIPE.md) and the source before installing. On an explicit cli
 From this folder:
 
 ```sh
-go -C helper run ./install          # first install
-go -C helper run ./install --update # later
+go -C helper run ./deploy          # first install
+go -C helper run ./deploy --update # later
 ```
 
 The installer builds the helper, copies only `mods/branch-pr/` to `~/.config/herdr-app/mods/branch-pr/`, and runs `herdr-app check`. It doesn't edit layouts or keys.
+
+The same commands work on Windows, in PowerShell or `cmd`. There the helper is `bin\herdr-pr.exe` and the mod goes to `%USERPROFILE%\.config\herdr-app\mods\branch-pr\`. `--update` works while Herdr is running: the old helper is moved aside. The installer's folder is `deploy`, not `install`, because Windows asks for an administrator before running any program named like an installer.
 
 ### Place the sidebar
 
@@ -96,13 +98,14 @@ Add a `settings` block to the installed `mods/branch-pr/mod.json` with only what
 }
 ```
 
-`refresh.every` is how often a visible panel re-reads. `list.default` picks the first filters until a saved view exists. `worktrees.root` is where New worktree puts checkouts; `open_with` is `terminal` or an installed agent's key. `logs.keep_last` caps failed output. `tools.github` is the path to `gh`. Unknown keys and wrong types are reported at the top of the panel and ignored.
+`refresh.every` is how often a visible panel re-reads. `list.default` picks the first filters until a saved view exists. `worktrees.root` is where New worktree puts checkouts; on Windows `~` is your user folder, so they land under `C:/Users/<you>/.herdr/worktrees/`. `open_with` is `terminal` or an installed agent's key. `logs.keep_last` caps failed output. `tools.github` is the path to `gh`. Unknown keys and wrong types are reported at the top of the panel and ignored.
 
 ## Development
 
 ```sh
 node --test tests/*.test.cjs
-(cd helper && go test ./... && go vet ./...)
+go -C helper test ./...
+go -C helper vet ./...
 herdr-app check "$HOME/.config/herdr-app/mods/branch-pr"
 ```
 

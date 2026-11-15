@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -57,7 +59,7 @@ func TestInstallsAndUpdatesWithoutTouchingAnythingElse(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := filepath.Join(app, "mods", mod)
-	if got := read(t, filepath.Join(target, "bin", binary)); got != "built helper" {
+	if got := read(t, filepath.Join(target, "bin", executable())); got != "built helper" {
 		t.Fatalf("binary = %q", got)
 	}
 	if _, err := os.Stat(filepath.Join(target, "main.js")); err != nil {
@@ -141,8 +143,8 @@ func TestUnrelatedFoldersAndSymlinksAreNeverOverwritten(t *testing.T) {
 	if err := os.RemoveAll(target); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(app, target); err != nil {
-		t.Fatal(err)
+	if err := link(app, target); err != nil {
+		t.Skip("can't make a link here:", err)
 	}
 	if err := install(app, true); err == nil {
 		t.Fatal("overwrote a symlink")
@@ -158,5 +160,42 @@ func TestMissingToolsFailBeforeCopying(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(app, "mods", mod)); err == nil {
 		t.Fatal("copied before checking")
+	}
+}
+
+// link points target at dir. A Windows symlink needs Developer Mode or an administrator,
+// so there it's a junction, which anyone can make and which points elsewhere just the same.
+func link(dir, target string) error {
+	if runtime.GOOS != "windows" {
+		return os.Symlink(dir, target)
+	}
+	return exec.Command("cmd", "/c", "mklink", "/J", target, dir).Run()
+}
+
+func TestReplacesAHelperThatIsRunning(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("only Windows refuses to overwrite a running program")
+	}
+	ping, err := exec.LookPath("ping")
+	if err != nil {
+		t.Skip(err)
+	}
+	dir := t.TempDir()
+	target := filepath.Join(dir, executable())
+	if err := copyFile(ping, target); err != nil {
+		t.Fatal(err)
+	}
+	running := exec.Command(target, "-n", "30", "127.0.0.1")
+	if err := running.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { running.Process.Kill(); running.Wait() })
+	fresh := filepath.Join(dir, "."+executable()+".new")
+	write(t, fresh, "new helper")
+	if err := replace(fresh, target); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, target); got != "new helper" {
+		t.Fatalf("helper = %q", got)
 	}
 }

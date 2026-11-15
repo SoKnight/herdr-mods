@@ -1,11 +1,26 @@
 // Reads through the helper, which holds the `gh` calls. Authentication lives on
 // this computer, including for remote spaces.
-import { exec, appHome } from "herdr";
+import { exec, appHome, window, writeTextFile } from "herdr";
 import { duration, size } from "../settings.js";
 import { runIdOf, searchQuery } from "./model.js";
 
 const SEARCH_DEBOUNCE_MS = 450;
 const LOG_TAIL_BYTES = 60000;
+// Windows caps a command line at 32,767 characters, each quote and backslash escaped.
+const COMMAND_LINE = 30000;
+
+// The helper is always this computer's: an .exe on Windows.
+const windows = () => window()?.platform === "windows";
+const helperPath = () => `${appHome()}/mods/branch-pr/bin/herdr-pr${windows() ? ".exe" : ""}`;
+
+// A request too long for the command line goes in a file beside the helper, which reads
+// and removes it.
+async function helperArgument(json) {
+  if (!windows() || json.length + (json.match(/["\\]/g)?.length ?? 0) <= COMMAND_LINE) return json;
+  const file = `${appHome()}/mods/branch-pr/bin/request-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}.json`;
+  await writeTextFile(file, json, null);
+  return `@${file}`;
+}
 
 export const readMethods = {
   searchChanged(cx) {
@@ -33,8 +48,8 @@ export const readMethods = {
     request = { tools: this.settings.tools, ...request };
     // GitHub auth and the helper live on this computer, including for remote spaces.
     const result = await exec(
-      `${appHome()}/mods/branch-pr/bin/herdr-pr`,
-      [JSON.stringify(request)],
+      helperPath(),
+      [await helperArgument(JSON.stringify(request))],
       { cwd: sp?.machine ? undefined : sp?.folder },
     );
     let data;

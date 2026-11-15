@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const dir = path.join(__dirname, '../mods/branch-pr');
-const FILES = ['settings.js', 'github/model.js', 'views/ui.js', 'state/saved.js', 'github/discovery.js', 'github/reads.js', 'actions/menus.js', 'actions/agents.js', 'actions/changes.js', 'actions/worktrees.js', 'views/list.js', 'views/detail.js', 'views/conversation.js', 'views/checks.js', 'views/worktrees.js', 'views/files.js', 'main.js'];
+const FILES = ['paths.js', 'settings.js', 'github/model.js', 'views/ui.js', 'state/saved.js', 'github/discovery.js', 'github/reads.js', 'actions/menus.js', 'actions/agents.js', 'actions/changes.js', 'actions/worktrees.js', 'views/list.js', 'views/detail.js', 'views/conversation.js', 'views/checks.js', 'views/worktrees.js', 'views/files.js', 'main.js'];
 const source = FILES.map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
   .join('\n')
   .replace(/^import\s+[\s\S]*?;$/gm, '')
@@ -14,7 +14,7 @@ const source = FILES.map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
   .replace(/^export /gm, '')
   + '\nObject.assign(globalThis, { authorsOf, repoUrl, who, agentName });';
 
-function harness({ storage = new Map(), exec, hc, known = [] } = {}) {
+function harness({ storage = new Map(), exec, hc, known = [], platform = 'macos', homeDir = '/home/sam', written = [] } = {}) {
   const pending = [], timers = [], after = [], ran = [], sent = [], opened = [];
   const cx = { focus_handle: () => ({ focus() {} }), stop_propagation() {}, notify() {}, open_url: (u) => opened.push(u), write_to_clipboard() {}, spawn(fn) { pending.push(fn(cx)); }, timer: { every(_ms, fn) { timers.push(fn); }, after(_ms, fn) { after.push(fn); } } };
   function el() {
@@ -49,7 +49,7 @@ function harness({ storage = new Map(), exec, hc, known = [] } = {}) {
     hc: hc ?? (async (args) => { sent.push(args); return { code: 0, stdout: '', stderr: '' }; }),
     run: (name, args) => ran.push([name, args]),
     shared: (k) => live.shared[k], setShared: (k, v) => { live.shared[k] = v; },
-    home: () => '/home/sam', appHome: () => '/app', theme: () => new Proxy({}, { get: (_t, k) => String(k) }),
+    home: () => homeDir, appHome: () => '/app', window: () => ({ platform }), writeTextFile: async (p, t) => { written.push([p, t]); }, theme: () => new Proxy({}, { get: (_t, k) => String(k) }),
     layout: () => live.layout, settings: () => ({ font_family: 'Code' }), readTextFile: async () => null,
     
     nextCommand: () => new Promise(() => {}), knownAgents: async () => known,
@@ -1017,6 +1017,81 @@ test('a worktree name with a path in it is refused, and a moved PR stops the che
   h.mod.createWorktree(h.cx); await h.flush();
   assert.match(h.mod.worktreeForm.error, /changed while fetching/);
   assert.equal(log.some((l) => l.includes('worktree add')), false);
+});
+
+test('on Windows a worktree goes under the user folder with long paths, and a reserved name is refused', async () => {
+  const head = 'a'.repeat(40);
+  const log = [];
+  const exec = async (bin, args) => {
+    const line = `${bin} ${args.join(' ')}`;
+    log.push(line);
+    if (line.includes('check-ref-format')) return { code: 0, stdout: 'fix\n' };
+    if (line.includes('remote get-url')) return { code: 0, stdout: 'git@github.com:owner/repo.git\n' };
+    if (line.endsWith('git remote')) return { code: 0, stdout: 'origin\r\n' };
+    if (line.includes('show-ref')) return { code: 1, stdout: '' };
+    if (line.includes('rev-parse')) return { code: 0, stdout: `${head}\n` };
+    if (line.includes('--get-regexp') || line.includes('worktree list')) return { code: 1, stdout: '' };
+    return { code: 0, stdout: '' };
+  };
+  const h = harness({ exec, platform: 'windows', homeDir: 'C:\\Users\\sam' });
+  h.mod.sp = { id: 'space', folder: 'C:\\code\\repo' };
+  h.mod.pr = PR({ headRefOid: head });
+  h.mod.api = async () => PR({ headRefOid: head });
+  h.mod.showWorktree(h.cx); await h.flush();
+  h.mod.worktreeForm.name.set_value('nul');
+  h.mod.createWorktree(h.cx); await h.flush();
+  assert.match(h.mod.worktreeForm.error, /Windows can't name a folder/);
+  h.mod.worktreeForm.name.set_value('PR-2');
+  h.mod.createWorktree(h.cx); await h.flush();
+  assert.ok(log.some((l) => l.includes(`git -c core.longpaths=true worktree add -b fix -- C:/Users/sam/.herdr/worktrees/owner-repo/PR-2 ${head}`)), log.join('\n'));
+  h.live.spaces = [{ id: 'wt', folder: 'c:\\users\\sam\\.herdr\\worktrees\\owner-repo\\PR-2' }];
+  h.mod.sp = { id: 'space', folder: 'C:\\code\\repo' };
+  assert.equal(h.mod.worktreeSpace({ path: 'C:/Users/sam/.herdr/worktrees/owner-repo/PR-2' })?.id, 'wt');
+});
+
+test('a remote Windows home comes from Git Bash as C:/, or from PowerShell when sh won\'t start', async () => {
+  const asked = [];
+  const reply = (sh) => async (bin, args) => {
+    asked.push(bin);
+    if (bin === 'sh') return sh();
+    if (bin === 'powershell.exe') return { code: 0, stdout: 'C:\\Users\\ann' };
+    if (args[0] === 'check-ref-format') return { code: 0, stdout: 'fix\n' };
+    if (args.join(' ') === 'remote') return { code: 0, stdout: 'origin\n' };
+    if (args[0] === 'remote') return { code: 0, stdout: 'git@github.com:owner/repo.git\n' };
+    if (args[0] === 'show-ref') return { code: 1, stdout: '' };
+    if (args[0] === 'rev-parse') return { code: 0, stdout: `${'a'.repeat(40)}\n` };
+    return { code: 0, stdout: '' };
+  };
+  for (const [sh, want] of [
+    [async () => ({ code: 0, stdout: 'C:/Users/ann\n' }), 'C:/Users/ann/.herdr'],
+    [async () => { throw new Error('cannot start sh: program not found'); }, 'C:/Users/ann/.herdr'],
+  ]) {
+    const h = harness({ exec: reply(sh) });
+    h.mod.sp = { id: 'space', folder: 'C:\\code\\repo', machine: 'box' };
+    h.mod.pr = PR({ headRefOid: 'a'.repeat(40) });
+    h.mod.api = async () => PR({ headRefOid: 'a'.repeat(40) });
+    h.mod.showWorktree(h.cx); await h.flush();
+    h.mod.createWorktree(h.cx); await h.flush();
+    assert.equal(h.mod.worktreeForm?.error ?? null, null);
+    assert.ok(h.ran.at(-1)[1].folder.startsWith(want), h.ran.at(-1)[1].folder);
+  }
+});
+
+test('on Windows the helper is an .exe and a request too long for a command line goes in a file', async () => {
+  const calls = [];
+  const written = [];
+  const h = harness({ platform: 'windows', written, exec: async (bin, args) => { calls.push([bin, args]); return { code: 0, stdout: '{}', stderr: '' }; } });
+  await h.mod.api({ action: 'detail', repo: 'owner/repo', number: 2 });
+  assert.equal(calls[0][0], '/app/mods/branch-pr/bin/herdr-pr.exe');
+  assert.equal(JSON.parse(calls[0][1][0]).action, 'detail');
+  await h.mod.api({ action: 'comment', body: 'x'.repeat(31000) });
+  assert.match(calls[1][1][0], /^@\/app\/mods\/branch-pr\/bin\/request-\w+\.json$/);
+  assert.equal(written[0][0], calls[1][1][0].slice(1));
+  assert.equal(JSON.parse(written[0][1]).body.length, 31000);
+  const mac = harness({ exec: async (bin, args) => { calls.push([bin, args]); return { code: 0, stdout: '{}', stderr: '' }; } });
+  await mac.mod.api({ action: 'comment', body: 'x'.repeat(31000) });
+  assert.equal(calls[2][0], '/app/mods/branch-pr/bin/herdr-pr');
+  assert.equal(JSON.parse(calls[2][1][0]).body.length, 31000);
 });
 
 // A file's diff opens in Better Changes' centre tab; Branch PR has none of its own.

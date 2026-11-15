@@ -3,6 +3,7 @@ import { h_flex } from "gpui-base";
 import { agents, panes, hc, knownAgents, run } from "herdr";
 import { agentsOnPR, commentMessage, fixCheckMessage, unresolvedMessage } from "../github/model.js";
 import { SmallButton, MenuButton } from "../views/ui.js";
+import { samePath } from "../paths.js";
 
 const NEW_AGENT = "new:";
 const SPAWN = "spawn:";
@@ -92,7 +93,7 @@ export const agentMethods = {
   // Work goes where the checkout is: the one this space is in, else the first there is.
   workFolder() {
     const worktrees = this.currentWorktrees();
-    const here = worktrees.find((w) => w.path === this.sp?.folder);
+    const here = worktrees.find((w) => samePath(w.path, this.sp?.folder));
     return (here ?? worktrees[0])?.path ?? this.sp?.folder;
   },
 

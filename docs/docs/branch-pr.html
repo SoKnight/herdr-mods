@@ -61,8 +61,9 @@
   <details>
   <summary>Install by hand</summary>
   <p>By hand, from the <code>branch-pr</code> folder:</p>
-  <pre>go -C helper run ./install          # first install</pre>
+  <pre>go -C helper run ./deploy          # first install</pre>
   <p>The installer builds the helper, copies only <code>mods/branch-pr/</code> to <code>~/.config/herdr-app/mods/branch-pr/</code>, and runs <code>herdr-app check</code>. It doesn't edit layouts or keys.</p>
+  <p>The same command works on Windows. There the helper is <code>bin\herdr-pr.exe</code> and the mod goes to <code>%USERPROFILE%\.config\herdr-app\mods\branch-pr\</code>. The installer's folder is <code>deploy</code>, not <code>install</code>, because Windows asks for an administrator before running any program named like an installer.</p>
   </details>
   <p>The manifest has <code>place: none</code>, so add it to a layout you own, about 368px wide:</p>
   <pre>{ "id": "pull-requests", "type": "block", "content": { "mod": "branch-pr" } }</pre>
@@ -99,7 +100,7 @@
     <tr><td><code>list.page_size</code></td><td><code>25</code></td><td>How many PRs load at a time (1–100).</td></tr>
     <tr><td><code>list.default.tab</code></td><td><code>all</code></td><td>Repo's first list until a saved view exists: <code>all</code>, <code>mine</code> (Created) or <code>involved</code>.</td></tr>
     <tr><td><code>list.default.state</code></td><td><code>open</code></td><td>Repo's first state filter: <code>open</code>, <code>draft</code>, <code>merged</code>, <code>closed</code> or <code>all</code>.</td></tr>
-    <tr><td><code>worktrees.root</code></td><td><code>~/.herdr/worktrees</code></td><td>Where New worktree puts checkouts.</td></tr>
+    <tr><td><code>worktrees.root</code></td><td><code>~/.herdr/worktrees</code></td><td>Where New worktree puts checkouts. On Windows, under <code>C:/Users/&lt;you&gt;/.herdr/worktrees/</code>.</td></tr>
     <tr><td><code>worktrees.open_with</code></td><td><code>terminal</code></td><td>What a new worktree opens: <code>terminal</code>, or an installed agent's key such as <code>claude</code>.</td></tr>
     <tr><td><code>logs.keep_last</code></td><td><code>60KB</code></td><td>How much of a failed command's output is kept to show.</td></tr>
     <tr><td><code>tools.github</code></td><td><code>gh</code></td><td>The <code>gh</code> command, or its full path.</td></tr>
@@ -107,7 +108,8 @@
 
   <h3 id="branch-pr-update">Update</h3>
   <p>From the <code>branch-pr</code> folder, run the installer with <code>--update</code>. It keeps your <code>settings</code> block.</p>
-  <pre>go -C helper run ./install --update</pre>
+  <pre>go -C helper run ./deploy --update</pre>
+  <p>On Windows this works while Herdr is running: the old <code>herdr-pr.exe</code> is moved aside.</p>
   <details>
   <summary>Upgrading from 1.x</summary>
   <p>2.0 is a rebuild around working with agents. GitLab isn't supported any more (stay on 1.x if you need it), and updating drops <code>tools.gitlab</code>. The All PRs center tab is gone; the Repo tab replaces it, so close any old All PRs tab and remove any <code>props: { "mode": "browser" }</code> tab or command. The commands <code>open-browser</code>, <code>toggle</code>, <code>open</code>, <code>back</code>, <code>checks</code>, <code>conversation</code>, <code>description</code>, <code>worktree</code>, <code>preview</code> and <code>preview-browser</code> are gone. Pending reviews, editing comments, quote replies, adding or removing reviewers, and Draft fix &amp; reply are gone. Icons moved to <code>icons/</code>, so change a Better Tabs button's <code>mods/branch-pr/pull-request.svg</code> to <code>mods/branch-pr/icons/pull-request.svg</code>.</p>
@@ -122,11 +124,12 @@
     <li><code>mods/branch-pr/main.js</code>: lists what's where. <code>settings.js</code>: shared with the other mods.</li>
     <li><code>github/model.js</code>: what GitHub's answers mean. <code>github/</code> reads, <code>actions/</code> writes and hands off. <code>state/saved.js</code>: what survives a reload (filters, open PR, read comments).</li>
     <li><code>views/</code>: draws with <code>views/ui.js</code>. <code>icons/</code>: the icons.</li>
-    <li><code>helper/main.go</code>: the JSON bridge to <code>gh</code>, with validated requests and a 26-second timeout. <code>helper/install/</code>: the installer, which builds it to <code>mods/branch-pr/bin/herdr-pr</code>.</li>
+    <li><code>helper/main.go</code>: the JSON bridge to <code>gh</code>, with validated requests and a 26-second timeout. <code>helper/deploy/</code>: the installer, which builds it to <code>mods/branch-pr/bin/herdr-pr</code> (<code>herdr-pr.exe</code> on Windows).</li>
     <li><code>tests/</code>: tests with stand-ins for GitHub, so also look at the running app.</li>
   </ul>
   <pre>node --test tests/*.test.cjs
-(cd helper &amp;&amp; go test ./... &amp;&amp; go vet ./...)
+go -C helper test ./...
+go -C helper vet ./...
 herdr-app check "$HOME/.config/herdr-app/mods/branch-pr"</pre>
 </article>
       <nav class="pager" aria-label="More docs"><a href="better-icons.html"><span>Previous</span>Better Icons</a><a class="next" href="branch-issue.html"><span>Next</span>Branch Issue</a></nav>

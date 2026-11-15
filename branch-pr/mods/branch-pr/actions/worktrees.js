@@ -1,7 +1,32 @@
 // Checkouts of a PR: those that exist, and making a new one as a new space.
 import { InputState } from "gpui-base";
 import { spaces, exec, home, run, knownAgents } from "herdr";
+import { isWindowsPath, samePath } from "../paths.js";
 import { repositoryFromRemote } from "../github/model.js";
+
+// The home folder of a remote machine, "/"-separated. Git Bash gives /c/Users/x, which
+// Windows programs can't open, so it's asked for C:/Users/x; a machine without sh, PowerShell.
+const HOME_SH = 'case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) cygpath -m "$HOME" ;; *) printf %s "$HOME" ;; esac';
+const HOME_PS = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; [Console]::Write($HOME)";
+
+async function remoteHome(machine) {
+  const ask = (program, args) => exec(program, args, { on: machine }).catch(() => null);
+  let result = await ask("sh", ["-c", HOME_SH]);
+  if (result?.code !== 0 || !result.stdout.trim())
+    result = await ask("powershell.exe", ["-NoProfile", "-Command", HOME_PS]);
+  if (result?.code !== 0 || !result.stdout.trim())
+    throw new Error("Could not find the remote home folder.");
+  return result.stdout.trim().replace(/\\/g, "/");
+}
+
+// Windows can't make a folder named CON, NUL, COM1… or ending in a dot.
+function checkWindowsName(path, name) {
+  if (isWindowsPath(path) && (/^(con|prn|aux|nul|com\d|lpt\d)(\.|$)/i.test(name) || name.endsWith(".")))
+    throw new Error(`Windows can't name a folder “${name}”. Choose another worktree name.`);
+}
+
+// A Windows checkout under a deep folder can pass 260 characters, which Git refuses by default.
+const longPaths = (path) => (isWindowsPath(path) ? ["-c", "core.longpaths=true"] : []);
 
 export const worktreeMethods = {
   worktreeKey() {
@@ -49,7 +74,7 @@ export const worktreeMethods = {
 
   worktreeSpace(worktree) {
     const machine = this.sp?.machine ?? null;
-    return spaces().find((s) => s.folder === worktree.path && (s.machine ?? null) === machine);
+    return spaces().find((s) => samePath(s.folder, worktree.path) && (s.machine ?? null) === machine);
   },
 
   showWorktree(cx) {
@@ -126,7 +151,7 @@ export const worktreeMethods = {
       try {
         const checked = await git(["check-ref-format", "--branch", branch]);
         if (checked !== branch) throw new Error("Enter a literal branch name.");
-        const remotes = (await git(["remote"])).split("\n").filter(Boolean);
+        const remotes = (await git(["remote"])).split(/\r?\n/).filter(Boolean);
         let url;
         for (const remote of remotes) {
           const candidate = await git(["remote", "get-url", remote]);
@@ -150,21 +175,10 @@ export const worktreeMethods = {
           throw new Error("That branch already exists. Choose a new branch name.");
         if (existing.code !== 1)
           throw new Error(existing.stderr?.trim() || "Could not check existing branches.");
-        let userHome = home();
-        if (sp.machine) {
-          let result = await exec("sh", ["-c", 'printf %s "$HOME"'], { on: sp.machine });
-          if (result.code !== 0 || !result.stdout.trim())
-            result = await exec(
-              "powershell.exe",
-              ["-NoProfile", "-Command", "[Console]::Write($HOME)"],
-              { on: sp.machine },
-            );
-          if (result.code !== 0 || !result.stdout.trim())
-            throw new Error("Could not find the remote home folder.");
-          userHome = result.stdout.trim().replace(/\\/g, "/");
-        }
-        const root = this.settings.worktrees.root.replace(/^~(?=\/|$)/, userHome);
+        const userHome = sp.machine ? await remoteHome(sp.machine) : home().replace(/\\/g, "/");
+        const root = this.settings.worktrees.root.replace(/^~(?=[\\/]|$)/, userHome);
         const path = `${root}/${repo.replace(/\//g, "-")}/${name}`;
+        checkWindowsName(path, name);
         // Pin the checkout to a verified commit, not a moving PR branch. If
         // GitHub and FETCH_HEAD disagree, stop rather than open the wrong code.
         const latest = await this.api({ action: "detail", repo, number: pr.number }, sp);
@@ -173,7 +187,7 @@ export const worktreeMethods = {
         await git(["fetch", "--no-tags", "--", url, `refs/pull/${pr.number}/head`]);
         if ((await git(["rev-parse", "FETCH_HEAD"])) !== latest.headRefOid)
           throw new Error("The PR changed while fetching. Try again.");
-        await git(["worktree", "add", "-b", branch, "--", path, latest.headRefOid]);
+        await git([...longPaths(path), "worktree", "add", "-b", branch, "--", path, latest.headRefOid]);
         // Retain the checkout if opening its terminal fails, so retry cannot create it twice.
         form.path = path;
         form.createdName = name;

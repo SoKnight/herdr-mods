@@ -61,7 +61,7 @@ var segmentPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 var runner = runCommand
 
 func runCommand(ctx context.Context, args []string, input []byte) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, ghBinary, args...)
+	cmd := hidden(exec.CommandContext(ctx, ghBinary, args...))
 	cmd.Stdin = bytes.NewReader(input)
 	var out, stderr bytes.Buffer
 	cmd.Stdout = &out
@@ -597,7 +597,11 @@ func main() {
 		os.Exit(1)
 	}
 	var r Request
-	if e := json.Unmarshal([]byte(os.Args[1]), &r); e != nil {
+	raw, e := request(os.Args[1])
+	if e == nil {
+		e = json.Unmarshal(raw, &r)
+	}
+	if e != nil {
 		fmt.Fprintln(os.Stderr, e)
 		os.Exit(1)
 	}

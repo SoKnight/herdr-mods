@@ -42,7 +42,7 @@ A missing or logged-out `gh` replaces everything below the tabs with what's wron
 
 ## Built from
 
-`mods/branch-pr/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Branch PR), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `github/` (`model.js`, `discovery.js`, `reads.js`), `actions/` (`changes.js`, `agents.js`, `worktrees.js`, `menus.js`), `state/saved.js`, `views/` (`ui.js`, `list.js`, `detail.js`, `conversation.js`, `checks.js`, `worktrees.js`, `files.js`), `icons/`. `helper/` is `go.mod`, `main.go`, `main_test.go` with no dependencies; `helper/install/` builds it to `mods/branch-pr/bin/herdr-pr`. Remote spaces run Git there, and the helper stays local.
+`mods/branch-pr/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Branch PR), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `github/` (`model.js`, `discovery.js`, `reads.js`), `actions/` (`changes.js`, `agents.js`, `worktrees.js`, `menus.js`), `state/saved.js`, `views/` (`ui.js`, `list.js`, `detail.js`, `conversation.js`, `checks.js`, `worktrees.js`, `files.js`), `icons/`. `helper/` is `go.mod`, `main.go`, `main_test.go` with no dependencies; `helper/deploy/` builds it to `mods/branch-pr/bin/herdr-pr` (`herdr-pr.exe` on Windows); run it from the mod's folder with `go -C helper run ./deploy`, or `go -C helper run ./deploy --update` later. Remote spaces run Git there, and the helper stays local.
 
 ## Watch out
 
@@ -51,6 +51,8 @@ Before installing, explain the Git, `gh` and `hc` execution and the writes above
 Herdr's shipped layouts are read-only, so the mod only shows in a layout the person owns. The installer doesn't edit layouts or keys.
 
 `herdr-app check` draws only the empty state, so look at the running app too.
+
+On Windows: the installer is in `deploy/`, not `install/`, because Windows asks for an administrator before running any program named install, setup or update. `--update` works while Herdr runs, moving the old `herdr-pr.exe` aside. A worktree lands under `C:/Users/<you>/.herdr/worktrees/...`. Messages to agents go to `hc` on a command line, which Windows caps at 32,767 characters, so a very long hand-off may need trimming.
 
 ## Done when
 

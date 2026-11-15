@@ -1,4 +1,5 @@
 // What GitHub's answers mean, as plain functions: no Herdr, no drawing.
+import { insidePath } from "../paths.js";
 const pad = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export const repoUrl = (repo) => `https://github.com/${repo}`;
@@ -371,7 +372,7 @@ export function entryContext(entry) {
 // space on the PR's branch.
 export function agentsOnPR({ agents, panes, pr, worktrees = [], space }) {
   const pane = new Map(panes.map((p) => [p.pane, p]));
-  const within = (cwd, path) => cwd === path || cwd?.startsWith(`${path}/`);
+  const within = (cwd, path) => Boolean(cwd && path) && insidePath(cwd, path);
   return agents.filter((agent) => {
     const where = pane.get(agent.pane);
     if (worktrees.some((w) => within(where?.cwd, w.path))) return true;
