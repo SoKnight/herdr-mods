@@ -281,10 +281,17 @@ export const tabBarMethods = {
       });
   },
 
-  // Windows and Linux draw their own window controls.
+  // Windows and Linux draw their own window controls. Windows' own look: thin glyphs,
+  // "Restore Down" on a maximized window, and a red close button.
   windowButtons() {
     const w = window();
     const windows = w.platform === "windows";
+    const close = this.simple(
+      "close-window",
+      windows ? Icon("win-close", 16) : Icon("close", 13),
+      "Close window",
+      () => run("window.close"),
+    );
     return [
       this.simple("minimize", windows ? Icon("win-min", 16) : "−", "Minimize", () =>
         run("window.minimize"),
@@ -292,10 +299,10 @@ export const tabBarMethods = {
       this.simple(
         "maximize",
         windows ? Icon(w.maximized ? "win-restore" : "win-max", 16) : "□",
-        "Maximize",
+        windows && w.maximized ? "Restore Down" : "Maximize",
         () => run("window.maximize"),
       ),
-      this.simple("close-window", Icon("close", 13), "Close window", () => run("window.close")),
+      windows ? close.hover((s) => s.bg("#c42b1c").text_color("#ffffff")) : close,
     ];
   },
 };

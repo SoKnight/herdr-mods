@@ -70,7 +70,7 @@
     <li><b>Panel buttons:</b> Files, Changes and any you add. Drag them to reorder, the same way as tabs.</li>
     <li><b>The ⋮ menu:</b> drop a button on it to hide it. Click ⋮ to see hidden buttons, then click one to use it, drag it back out, or click its pin to return it to the toolbar. Buttons with no room also go there.</li>
     <li><b>Panel memory:</b> each space remembers which panel it had open.</li>
-    <li><b>Window controls</b> where the system needs them.</li>
+    <li><b>Window controls</b> where the system needs them. On Windows and Linux, minimize, maximize and close sit at the bar's right edge. On Windows they use Windows' own thin glyphs, maximize reads Restore Down while the window is maximized, and close turns red on hover.</li>
   </ul>
 
   <h3 id="better-tabs-settings">Settings</h3>
@@ -130,7 +130,7 @@ herdr-app do better-tabs.overflow         # open the ⋮ menu</pre>
     <li><code>mods/better-tabs/main.js</code>: setup, settings and commands. <code>settings.js</code>: shared with the other mods.</li>
     <li><code>actions/engine.js</code>: what a button does. <code>actions/toolbar.js</code>: arrangement and tab-move logic with no drawing.</li>
     <li><code>views/tab-bar.js</code>: the bar. <code>views/menu.js</code>: buttons and the ⋮ menu. <code>views/drags.js</code>: dragging. <code>views/arrangement.js</code>: saved order. <code>views/panel-memory.js</code>: panels per space. <code>views/ui.js</code>: the design kit.</li>
-    <li><code>icons/</code>: the mod's icons. <code>sync.sh</code>: copies the mod into Herdr, which reloads it (a symlink loads the code but not the icons).</li>
+    <li><code>icons/</code>: the mod's icons. <code>sync.sh</code>: copies the mod into Herdr, which reloads it (a symlink loads the code but not the icons). On Windows, run <code>.\sync.ps1</code> from PowerShell in the mod's folder instead.</li>
     <li><code>tests/tabs.test.cjs</code>: the tests.</li>
   </ul>
   <pre>node --test tests/*.test.cjs

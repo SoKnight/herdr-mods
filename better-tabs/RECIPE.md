@@ -28,7 +28,7 @@ Actions are `panel` (`container`, `stack`, `target`) and `command` (`name`, `arg
 
 ## Built from
 
-One folder, `mods/better-tabs/`: `main.js`, `settings.js`, `mod.json` (`place: none`), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `actions/` (`engine.js`, `toolbar.js`), `views/` (`tab-bar.js`, `menu.js`, `drags.js`, `arrangement.js`, `panel-memory.js`, `ui.js`) and `icons/`. It uses `div`, `svg`, `image`, flex containers and popups through `openOverlay`. It runs no programs. Mod tabs show the icon in `shared("mod-icons")[mod]`. On macOS it leaves room for the traffic lights when the sidebar doesn't.
+One folder, `mods/better-tabs/`: `main.js`, `settings.js`, `mod.json` (`place: none`), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `actions/` (`engine.js`, `toolbar.js`), `views/` (`tab-bar.js`, `menu.js`, `drags.js`, `arrangement.js`, `panel-memory.js`, `ui.js`) and `icons/`. It uses `div`, `svg`, `image`, flex containers and popups through `openOverlay`. It runs no programs. Mod tabs show the icon in `shared("mod-icons")[mod]`. On macOS it leaves room for the traffic lights when the sidebar doesn't. On Windows and Linux it draws the window buttons, minimize, maximize and close, at its right edge, and fits fewer toolbar buttons to leave them room. On Windows they use Windows' thin glyphs (`icons/win-close.svg` for close), maximize's tooltip reads Restore Down while the window is maximized, and close hovers red (`#c42b1c`) with a white glyph.
 
 ## Watch out
 
@@ -38,7 +38,7 @@ GPUI gives pointer events, not a drag payload, and the popup is another copy of 
 
 Keep the bar's own gap wider than the drop line, or the line touches a tab's border. Never call `run` or `setShared` during render.
 
-Copying the folder is not enough: shipped layouts are read-only, so point a tabs block in a layout the person owns at `better-tabs`, preserving its size and `window_drag`.
+Copying the folder is not enough: shipped layouts are read-only, so point a tabs block in a layout the person owns at `better-tabs`, preserving its size and `window_drag`. On Windows, copy it with `.\sync.ps1` from PowerShell in the mod's folder. Anything placed to the right of the tabs block pushes the window buttons out of the corner.
 
 ## Done when
 

@@ -138,6 +138,25 @@ function harness(config = {}) {
 }
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
+test("Windows window buttons use thin glyphs, Restore Down and a red close, and take toolbar room", () => {
+  const h = harness();
+  h.context.window = () => ({ platform: "windows", buttons: true, maximized: true });
+  const [, max, close] = h.tabs.windowButtons();
+  assert.equal(max.attrs.tooltip[0], "Restore Down");
+  const hover = {};
+  const style = new Proxy(hover, { get: (o, k) => (v) => ((o[k] = v), style) });
+  close.attrs.hover[0](style);
+  assert.equal(hover.bg, "#c42b1c");
+  h.context.window = () => ({ platform: "linux", buttons: true });
+  assert.equal(h.tabs.windowButtons()[1].attrs.tooltip[0], "Maximize");
+  // 500px leaves room for one toolbar action, but not beside the window buttons.
+  h.tabs.width = 500;
+  const shown = () => plain(h.tabs.toolbar()).visible.length;
+  assert.equal(shown(), 0);
+  h.context.window = () => ({ platform: "macos" });
+  assert.equal(shown(), 1);
+});
+
 test("panel actions toggle containers and reject missing targets without dispatch", () => {
   const h = harness(),
     action = { type: "panel", container: "panel", stack: "panel-body", target: "changes" };

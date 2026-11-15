@@ -1,5 +1,5 @@
 // Which toolbar actions show, and in what order, saved per layout and toolbar.
-import { shared, setShared, openOverlay } from "herdr";
+import { shared, setShared, openOverlay, window } from "herdr";
 import { toolbarPreferences, toolbarPartition, placeToolbarAction } from "../actions/toolbar.js";
 
 const PREFERENCES_KEY = "better-tabs.toolbar";
@@ -23,7 +23,9 @@ export const arrangementMethods = {
   },
 
   toolbar() {
-    const limit = Math.max(0, Math.floor(((this.width ?? 1200) - 350) / 100));
+    // Window buttons, where the mod draws them, take about 96px more.
+    const room = (this.width ?? 1200) - 350 - (window()?.buttons ? 96 : 0);
+    const limit = Math.max(0, Math.floor(room / 100));
     return toolbarPartition(this.entries(), this.preferences(), limit);
   },
 

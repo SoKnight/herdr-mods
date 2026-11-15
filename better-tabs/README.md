@@ -12,7 +12,7 @@ A tab bar for [Herdr Desktop](https://herdr.dev/): tabs you can drag, that wrap 
 - Double-click to rename, right-click for the tab menu, and close the active tab with its ×.
 - Program icons, working spinners and blocked or done dots.
 - Each space remembers which panel it had open.
-- Window controls where the system needs them.
+- Window controls where the system needs them. On Windows and Linux, minimize, maximize and close sit at the bar's right edge. On Windows they use Windows' own thin glyphs, maximize reads **Restore Down** while the window is maximized, and close turns red on hover.
 
 A drag starts once a press has lasted 400ms and the pointer has moved 12px, so a quick click never drags.
 
@@ -89,7 +89,7 @@ In `mods/better-tabs/`:
 - `actions/engine.js`: what a button does. `actions/toolbar.js`: arrangement and tab-move logic with no drawing.
 - `views/tab-bar.js`: the bar. `views/menu.js`: buttons and the ⋮ menu. `views/drags.js`: dragging. `views/arrangement.js`: saved order. `views/panel-memory.js`: panels per space. `views/ui.js`: the design kit.
 - `icons/`: this mod's icons.
-- `sync.sh`: copies the mod into Herdr, which reloads it. A symlink loads the code but not the icons.
+- `sync.sh`: copies the mod into Herdr, which reloads it. A symlink loads the code but not the icons. On Windows, run `.\sync.ps1` from PowerShell in this folder instead (`pwsh -File sync.ps1` also works).
 
 ```sh
 node --test tests/*.test.cjs

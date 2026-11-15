@@ -8,7 +8,7 @@ export const TEXT = { button: 12, menu: 12.8, tab: 12.8 };
 
 // A bundled icon's name, or the path of another mod's.
 export const Icon = (name, size = 14) =>
-  svg(name.includes("/") ? name : `mods/better-tabs/icons/${name}.svg`)
+  svg(/[\\/]/.test(name) ? name.replace(/\\/g, "/") : `mods/better-tabs/icons/${name}.svg`)
     .size(size)
     .flex_none();
 
