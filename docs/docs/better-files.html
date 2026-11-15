@@ -56,13 +56,14 @@
 
   <h3 id="better-files-install">Install</h3>
   <div class="prompt"><code>Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-files</code></div>
-  <p>Requires <code>sh</code>, and Git for the change marks. Finding editors uses macOS Spotlight. The agent follows RECIPE.md. Herdr's shipped layouts are read-only, so the sidebar only shows in a layout you own, and the agent never overwrites an unrelated mod with the same name.</p>
+  <p>Requires <code>sh</code>, and Git for the change marks. Finding editors uses macOS Spotlight. On Windows it uses the built-in <code>powershell.exe</code> instead, to list folders, find and start editors and copy images, and Git is <code>git.exe</code> on PATH. The agent follows RECIPE.md. Herdr's shipped layouts are read-only, so the sidebar only shows in a layout you own, and the agent never overwrites an unrelated mod with the same name.</p>
   <p>The manifest has <code>place: none</code>, so add it to a layout you own, or point a block that uses Herdr's <code>files</code> at it:</p>
   <pre>{ "id": "files", "type": "block", "content": { "mod": "better-files" } }</pre>
   <details>
   <summary>Install by hand</summary>
   <p>To install by hand from a clone of the repository, <code>sync.sh</code> copies <code>mods/better-files/</code> into Herdr's mods folder. A symlink loads the code but not the icons.</p>
   <pre>./better-files/sync.sh</pre>
+  <p>On Windows, run <code>.\sync.ps1</code> from PowerShell in the <code>better-files</code> folder instead (<code>pwsh -File sync.ps1</code> also works).</p>
   </details>
 
   <h3 id="better-files-use">Use</h3>
@@ -76,20 +77,20 @@
     <li><b>Images:</b> PNG, JPEG, GIF, WebP, BMP and SVG files show as pictures fitted to the pane, and update when the file changes. Each is shown through a copy in <code>mods/better-files/cache/</code>, removed when its tab closes.</li>
     <li><b>Markdown:</b> a <code>.md</code> or <code>.markdown</code> file opens rendered in Herdr's own Markdown view, with text you can select. <b>Preview</b> and <b>Code</b>, beside Open in, switch between that and the file view with its changed lines; each tab remembers its choice. A web link opens in your browser, and a link to another file here opens it in the viewer. A picture on a line of its own, from this computer, shows inline. The preview follows the file as it changes.</li>
     <li><b>Icons:</b> with <a href="https://github.com/munza/herdr-mods/tree/main/better-icons">Better Icons</a> installed, every file and folder gets its colour icon from VS Code's Material Icon Theme, in the tree and in the tab's title row. Without it, they keep the plain file and folder icons.</li>
-    <li><b>Open in</b> your editor, from the tab or the menu. Zed, VS Code, Cursor, Windsurf, Sublime Text and Nova are offered when installed, and you can add more with <code>editors</code>. The folder icon beside refresh opens the whole folder in an editor or Finder.</li>
-    <li><b>Right-click</b> a file or folder for: <b>Open</b> and <b>Open in new tab</b>; <b>Open in</b> each editor; <b>Open in default app</b>; <b>Show in Finder</b>; <b>Show diff</b> (opens a changed file's diff in <a href="better-changes.html">Better Changes</a>, if you have it); <b>Copy relative path</b> and <b>Copy full path</b>.</li>
+    <li><b>Open in</b> your editor, from the tab or the menu. Zed, VS Code, Cursor, Windsurf, Sublime Text and Nova are offered when installed, and you can add more with <code>editors</code>. On Windows they're found on their own: VS Code, Cursor, Windsurf, Zed, Sublime Text, IntelliJ IDEA, PyCharm, WebStorm, GoLand, CLion, Rider and RustRover. The folder icon beside refresh opens the whole folder in an editor or Finder (File Explorer on Windows).</li>
+    <li><b>Right-click</b> a file or folder for: <b>Open</b> and <b>Open in new tab</b>; <b>Open in</b> each editor; <b>Open in default app</b>; <b>Show in Finder</b> (<b>Show in File Explorer</b> on Windows); <b>Show diff</b> (opens a changed file's diff in <a href="better-changes.html">Better Changes</a>, if you have it); <b>Copy relative path</b> and <b>Copy full path</b>. On Windows the full path has backslashes.</li>
     <li><b>Send to an agent:</b> from the right-click menu, pick an agent that's running, <b>(spawn)</b> to start a sub-agent under it, or a new one in its own tab. A box asks what it should do; only <b>Send</b> delivers. The agent gets your prompt and the path, not the file's text.</li>
     <li><b>One title:</b> the tab's title row shows the file, its folder, and Preview while it's the shared tab.</li>
-    <li><b>Remote spaces:</b> a space on another machine has no editor, default app or Finder items, and can't show images.</li>
+    <li><b>Remote spaces:</b> a space on another machine has no editor, default app or Finder (File Explorer) items, and can't show images.</li>
   </ul>
-  <p>Editing, creating, renaming and deleting files are left out on purpose. Limits: a folder lists its first 500 entries and the tree shows 5,000 rows. A file view can't report a selection or jump to a line, so editors open at the top. Listing a folder needs <code>sh</code>, so a Windows machine shows an error.</p>
+  <p>Editing, creating, renaming and deleting files are left out on purpose. Limits: a folder lists its first 500 entries and the tree shows 5,000 rows. A file view can't report a selection or jump to a line, so editors open at the top. Listing a folder needs <code>sh</code>, or PowerShell on a Windows machine.</p>
 
   <h3 id="better-files-settings">Settings</h3>
   <p>Change them in <a href="better-config.html">Better Config</a> or in <code>~/.config/herdr-app/mods/better-files/mod.json</code> under <code>"settings"</code>, with only what you change. Saving applies at once.</p>
   <table class="keys"><thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead><tbody>
     <tr><td><code>refresh.tree</code></td><td><code>"10s"</code></td><td>How often the tree rereads, on top of watching the folder. Never closer than 1 second.</td></tr>
     <tr><td><code>refresh.file</code></td><td><code>"2s"</code></td><td>How often an open file is checked for changes. Never closer than 500ms.</td></tr>
-    <tr><td><code>editors</code></td><td><code>[]</code></td><td>More editors for Open in, each <code>{ "name": "PhpStorm", "bundle": "com.jetbrains.PhpStorm" }</code> by macOS app ID. Shown only if installed.</td></tr>
+    <tr><td><code>editors</code></td><td><code>[]</code></td><td>More editors for Open in, each an object <code>{ "name", "bundle", "command" }</code>: on macOS by app ID, <code>{ "name": "PhpStorm", "bundle": "com.jetbrains.PhpStorm" }</code>; on Windows by program, on PATH or a full path, <code>{ "name": "PhpStorm", "command": "phpstorm64" }</code>. Shown only if installed.</td></tr>
     <tr><td><code>gutter</code></td><td><code>true</code></td><td>Tint changed lines. Off uses Herdr's own editor: selection, folding and a real grammar, but no line colours. Its grammars have no TypeScript or Vue, so those are highlighted as JavaScript and HTML.</td></tr>
     <tr><td><code>markdown</code></td><td><code>"preview"</code></td><td>How a Markdown file first opens: <code>"preview"</code> or <code>"code"</code>. The toggle in a tab overrides it for that tab.</td></tr>
   </tbody></table>
@@ -100,7 +101,7 @@
   <h3 id="better-files-developers">For developers</h3>
   <p>One class plays three roles, each its own copy: sidebar, viewer and menu, connected by <code>shared("better-files.*")</code>. Viewers register in <code>better-files.viewers</code>, and the menu leaves its question in <code>better-files.compose</code> for the sidebar to ask.</p>
   <p>The viewer publishes its title to <code>shared("pane-heads")</code>, which <a href="better-changes.html">Better Changes</a>' pane header shows. Show diff hands over through <code>better-changes.selection</code> and <code>better-changes.diff-tabs</code>, keyed to the Git root.</p>
-  <p>Sending to agents: a running agent gets <code>hc send</code>; <b>(spawn)</b> runs <code>hc run --bg --parent &lt;agent&gt; --cwd &lt;folder&gt; &lt;program&gt; &lt;message&gt;</code> directly, so no shell sees the message; a new agent gets <code>tab.new</code> with the message as its first prompt. Editors are found with <code>mdfind</code> by macOS app ID and opened with <code>open -b</code>. Changed lines come from <code>git diff -U0 HEAD</code>.</p>
+  <p>Sending to agents: a running agent gets <code>hc send</code>; <b>(spawn)</b> runs <code>hc run --bg --parent &lt;agent&gt; --cwd &lt;folder&gt; &lt;program&gt; &lt;message&gt;</code> directly, so no shell sees the message; a new agent gets <code>tab.new</code> with the message as its first prompt. Editors are found with <code>mdfind</code> by macOS app ID and opened with <code>open -b</code>. On Windows one PowerShell finds them in the usual install folders, JetBrains Toolbox's scripts, or on PATH, and <code>Start-Process</code> opens one; Open in default app is <code>Invoke-Item</code> and Show in File Explorer is <code>explorer.exe /select,</code>. Changed lines come from <code>git diff -U0 HEAD</code>.</p>
   <h4>Work on the mod</h4>
   <ul>
     <li><code>main.js</code> lists what's where. <code>settings.js</code>: shared between the mods.</li>
@@ -112,6 +113,7 @@
   <pre>node --test tests/*.test.cjs
 ./sync.sh
 herdr-app check "$HOME/.config/herdr-app/mods/better-files"</pre>
+  <p>On Windows, run <code>.\sync.ps1</code> from PowerShell instead of <code>./sync.sh</code>.</p>
   <p>Tests use stand-ins for Herdr, and <code>herdr-app check</code> draws only the sidebar's first frame, so also look at the running app.</p>
 </article>
       <nav class="pager" aria-label="More docs"><a href="better-changes.html"><span>Previous</span>Better Changes</a><a class="next" href="better-sidebar.html"><span>Next</span>Better Sidebar</a></nav>

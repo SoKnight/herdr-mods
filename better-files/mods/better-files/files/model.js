@@ -1,4 +1,6 @@
 // What the folder, Git and editors say, as plain data. No drawing and no side effects.
+import { baseName, isWindowsPath, joinPath, normPath } from "../paths.js";
+
 export const PER_FOLDER = 500;
 export const TOTAL_ROWS = 5000;
 export const MAX_CHARS = 400000;
@@ -12,6 +14,25 @@ export const EDITORS = [
   { name: "Windsurf", bundle: "com.exafunction.windsurf" },
   { name: "Sublime Text", bundle: "com.sublimetext.4" },
   { name: "Nova", bundle: "com.panic.Nova" },
+];
+
+// Windows has no app IDs: each editor is the first of its `paths` (wildcards allowed) under
+// the usual install folders, else its `command` on PATH. JetBrains IDEs, as Toolbox and the
+// installer put them, and Toolbox's own scripts. More go under `settings.editors` with a
+// `command`: a program on PATH or a full path.
+export const WINDOWS_EDITORS = [
+  { name: "VS Code", command: "code", paths: ["Microsoft VS Code\\Code.exe"] },
+  { name: "Cursor", command: "cursor", paths: ["cursor\\Cursor.exe"] },
+  { name: "Windsurf", command: "windsurf", paths: ["Windsurf\\Windsurf.exe"] },
+  { name: "Zed", command: "zed", paths: ["Zed\\bin\\zed.exe", "Zed\\Zed.exe"] },
+  { name: "Sublime Text", command: "subl", paths: ["Sublime Text\\subl.exe", "Sublime Text 3\\subl.exe"] },
+  { name: "IntelliJ IDEA", command: "idea", paths: ["IntelliJ IDEA*\\bin\\idea64.exe", "idea.cmd"] },
+  { name: "PyCharm", command: "pycharm", paths: ["PyCharm*\\bin\\pycharm64.exe", "pycharm.cmd"] },
+  { name: "WebStorm", command: "webstorm", paths: ["WebStorm*\\bin\\webstorm64.exe", "webstorm.cmd"] },
+  { name: "GoLand", command: "goland", paths: ["GoLand*\\bin\\goland64.exe", "goland.cmd"] },
+  { name: "CLion", command: "clion", paths: ["CLion*\\bin\\clion64.exe", "clion.cmd"] },
+  { name: "Rider", command: "rider", paths: ["*Rider*\\bin\\rider64.exe", "rider.cmd"] },
+  { name: "RustRover", command: "rustrover", paths: ["RustRover*\\bin\\rustrover64.exe", "rustrover.cmd"] },
 ];
 
 const LANGUAGES = {
@@ -28,8 +49,11 @@ const LANGUAGES = {
   vue: "html",
 };
 
-export const baseName = (path) => path.split("/").pop();
-export const parentOf = (path) => path.slice(0, path.lastIndexOf("/")) || "/";
+// A drive's own folder keeps its slash: C:/a.md is in C:/.
+export const parentOf = (path) => {
+  const parent = path.slice(0, path.lastIndexOf("/"));
+  return /^[A-Za-z]:$/.test(parent) ? `${parent}/` : parent || "/";
+};
 
 const extOf = (path) => {
   const name = baseName(path);
@@ -41,20 +65,28 @@ export const isMarkdown = (path) => ["md", "markdown"].includes(extOf(path));
 
 // A link or image source in a Markdown file as an absolute path, from the file's folder.
 // Web addresses and other schemes aren't paths, so they come back null.
+// A Windows file's links may use either separator or start with a drive (C:\x.png,
+// file:///C:/x.png); a drive is a path, not a scheme.
 export function resolvePath(folder, link) {
-  let rel = String(link ?? "").replace(/^file:\/\//, "");
-  if (/^[a-z][a-z0-9+.-]*:/i.test(rel)) return null;
+  let rel = String(link ?? "")
+    .replace(/^file:\/\/\/(?=[A-Za-z]:)/i, "")
+    .replace(/^file:\/\//, "");
+  const drive = isWindowsPath(rel);
+  if (!drive && /^[a-z][a-z0-9+.-]*:/i.test(rel)) return null;
   rel = rel.replace(/[?#].*$/, "");
   try {
     rel = decodeURIComponent(rel);
   } catch {}
   if (!rel) return null;
-  const parts = rel.startsWith("/") ? [""] : folder.split("/");
+  const windows = drive || isWindowsPath(folder);
+  if (windows) rel = rel.replace(/\\/g, "/");
+  const parts = drive ? [] : rel.startsWith("/") ? [""] : normPath(folder).split("/");
   for (const part of rel.split("/")) {
     if (part === "..") parts.length > 1 && parts.pop();
     else if (part && part !== ".") parts.push(part);
   }
-  return parts.join("/") || "/";
+  const path = parts.join("/") || "/";
+  return windows ? normPath(path) : path;
 }
 
 // A line that is only an image, not indented under a list item: `![alt](src)` or `![alt](<src> "title")`.
@@ -114,7 +146,7 @@ export function parseStatus(stdout, top) {
   for (const entry of stdout.split("\0").filter(Boolean).slice(0, TOTAL_ROWS)) {
     const xy = entry.slice(0, 2);
     const untracked = xy === "??";
-    marks[`${top}/${entry.slice(3)}`] = {
+    marks[joinPath(top, entry.slice(3))] = {
       mark: untracked || xy.includes("A") ? "A" : xy.includes("U") ? "U" : xy.includes("D") ? "D" : "M",
       staged: !untracked && xy[0] !== " " && xy[1] === " ",
     };

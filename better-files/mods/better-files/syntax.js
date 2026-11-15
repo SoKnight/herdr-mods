@@ -46,6 +46,15 @@ const DOCKER_KEYWORDS = words(
   "ADD ARG AS CMD COPY ENTRYPOINT ENV EXPOSE FROM HEALTHCHECK LABEL ONBUILD RUN SHELL STOPSIGNAL USER VOLUME WORKDIR",
 );
 const MAKE_KEYWORDS = words("define else endef endif export ifdef ifeq ifndef ifneq include override");
+// PowerShell and batch keywords match in any case: Windows writes `ForEach`, `IF EXIST`.
+const PS_KEYWORDS = words(
+  "begin break catch class continue data do dynamicparam else elseif end enum exit filter finally for foreach " +
+    "from function if in param process return switch throw trap try until using while",
+);
+const BAT_KEYWORDS = words(
+  "call cd defined do echo else endlocal equ errorlevel exist exit for geq goto gtr if in leq lss neq not off on " +
+    "pause pushd popd set setlocal shift start",
+);
 const NONE = new Set();
 
 const C_LIKE = { line: "//", block: ["/*", "*/"] };
@@ -76,6 +85,10 @@ const SPECS = {
   hash: { ...HASH, keywords: NONE },
   dockerfile: { ...HASH, keywords: DOCKER_KEYWORDS },
   makefile: { ...HASH, keywords: MAKE_KEYWORDS },
+  // `rawStrings`: a backslash in a string is a path separator, not an escape.
+  ps1: { ...HASH, block: ["<#", "#>"], anyCase: true, rawStrings: true, keywords: PS_KEYWORDS },
+  // A batch comment is a whole line: `REM …` (or `@REM`) and `:: …`.
+  bat: { commentLine: /^\s*(?:@?rem(?:\s|$)|::)/i, anyCase: true, rawStrings: true, keywords: BAT_KEYWORDS },
   sql: { line: "--", block: ["/*", "*/"], anyCase: true },
   lua: { line: "--", keywords: LUA_KEYWORDS },
   hs: { line: "--", keywords: HS_KEYWORDS },
@@ -95,7 +108,7 @@ const ALIASES = {
   kt: "c", kts: "c", swift: "c", cs: "c", php: "cstr", dart: "cstr", scala: "c", groovy: "cstr", gradle: "cstr",
   bash: "sh", zsh: "sh", fish: "sh", bashrc: "sh", zshrc: "sh", zshenv: "sh", zprofile: "sh", profile: "sh",
   nix: "hash", r: "hash", pl: "hash", ex: "hash", exs: "hash", tf: "hash", conf: "hash", gitignore: "hash",
-  dockerignore: "hash", ini: "toml", editorconfig: "toml", npmrc: "toml", mk: "makefile", elm: "hs",
+  dockerignore: "hash", psm1: "ps1", psd1: "ps1", cmd: "bat", ini: "toml", editorconfig: "toml", npmrc: "toml", mk: "makefile", elm: "hs",
 };
 const SPECIAL_NAMES = { Dockerfile: "dockerfile", Makefile: "makefile", Justfile: "makefile", Gemfile: "rb", Rakefile: "rb" };
 
@@ -129,7 +142,7 @@ const ENV_KEY = /^(\s*(?:export\s+)?)([A-Za-z_][\w.]*)(?=\s*=)/;
 // The kind of language a path is written in, by extension or by a well-known name. `.env`
 // and `.env.local`, `.env.test`, …, are env files whatever follows the dot.
 export function languageOf(path) {
-  const name = String(path ?? "").split("/").pop();
+  const name = String(path ?? "").split(/[\\/]/).pop();
   if (SPECIAL_NAMES[name]) return SPECIAL_NAMES[name];
   if (name === ".env" || name.startsWith(".env.")) return "env";
   return name.includes(".") ? name.split(".").pop().toLowerCase() : "txt";
@@ -248,6 +261,10 @@ class Lexer {
     // mid-line, the text before it is already drawn.
     const fresh = !this.open && !this.inTag;
     if (this.open && !this.continueOpen()) return;
+    if (fresh && this.spec.commentLine?.test(this.line)) {
+      this.emit(this.line.length, "comment");
+      return;
+    }
     if (fresh && this.spec.keys) this.keyAtStart(KEY_LINE);
     else if (fresh && this.spec.envKeys) this.keyAtStart(ENV_KEY);
     while (this.at < this.line.length) {
@@ -397,7 +414,7 @@ class Lexer {
 
   // A string that must close on this line; an unclosed quote is an apostrophe, left plain.
   quoted(quote) {
-    const end = closes(this.line, this.at + 1, quote);
+    const end = closes(this.line, this.at + 1, quote, this.spec.rawStrings);
     if (end < 0) return false;
     const key = this.spec.keys && /^\s*:/.test(this.line.slice(end));
     this.emit(end, key ? "property" : "string");
@@ -417,7 +434,7 @@ class Lexer {
 
   wordKind(word, at) {
     const { line, spec } = this;
-    if (spec.anyCase) return SQL_KEYWORDS.has(word.toLowerCase()) ? "keyword" : null;
+    if (spec.anyCase) return (spec.keywords ?? SQL_KEYWORDS).has(word.toLowerCase()) ? "keyword" : null;
     if (spec.data) return CONSTANTS.has(word) ? "constant" : null;
     const named = this.lastWord && DEFINES.has(this.lastWord.word);
     if (named && /^\s+$/.test(line.slice(this.lastWord.end, at))) return "function";

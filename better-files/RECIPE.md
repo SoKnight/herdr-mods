@@ -4,7 +4,7 @@ A read-only file browser for a person's Herdr window, for directing agents rathe
 
 ## What you see
 
-One framed sidebar panel, radius 10, with a 42px header: the plain title Files with the folder's name in a badge, and on the right a folder icon, a menu opening the folder in each editor or Finder (this computer only), and refresh.
+One framed sidebar panel, radius 10, with a 42px header: the plain title Files with the folder's name in a badge, and on the right a folder icon, a menu opening the folder in each editor or Finder, File Explorer on Windows (this computer only), and refresh.
 
 Below is a tree for the focused pane's folder: 26px rows of chevron, icon, name and a Git letter, directories first, with a dot on a folder holding changes. The icon is the plain file or folder in `muted`, or, when Better Icons is installed, its full-colour Material icon at 14px, open folders with their open icon. A file or diff tab has no folder, so focusing one leaves the tree where it was.
 
@@ -12,7 +12,7 @@ A click opens the file in one shared centre tab per space, named after the file,
 
 Image files show fitted to the pane instead of the editor, through a copy in `mods/better-files/cache/`, because `image()` only loads from under Herdr's folder; a space on another machine says it can't show them. The centre tab has one title row, the same as a Better Changes diff: file, folder and Preview while it's the shared one. It publishes that to `shared("pane-heads")`, which Better Changes' pane header shows, and draws its own 30px row only under another header. A Markdown file opens rendered, with Preview and Code beside Keep tab to switch to the file view; the choice is kept per tab, and `settings.markdown` sets the first one. Keep tab and Open in float over the file's top right corner, or sit in that row. Below is the file, read-only, in the code font at the terminals' size.
 
-Right-click opens a popup at the pointer with groups separated by rules: Open and Open in new tab (files); Open in each editor, Open in default app (files) and Show in Finder (this computer only); Show diff (a changed file, with Better Changes installed); Copy relative path and Copy full path; Send to each agent in the space, each also as `<name> (spawn)`, and to a new one of each installed kind.
+Right-click opens a popup at the pointer with groups separated by rules: Open and Open in new tab (files); Open in each editor, Open in default app (files) and Show in Finder, Show in File Explorer on Windows (this computer only); Show diff (a changed file, with Better Changes installed); Copy relative path and Copy full path; Send to each agent in the space, each also as `<name> (spawn)`, and to a new one of each installed kind.
 
 Choosing an agent opens a box docked at the bottom of the panel with who it goes to, the path, and a prompt that's required. Only Send delivers.
 
@@ -27,6 +27,8 @@ The menu closes at once, so it leaves its question in `better-files.compose` for
 The message to an agent is the prompt then the path, not the file's text. A running agent gets `hc send`; `(spawn)` runs `hc run --bg --parent <agent> --cwd <folder> <program> <message>` directly, so no shell sees the message; a new agent gets `tab.new` with the message as its first prompt.
 
 Editors are found by macOS app ID with `mdfind`, because a Nix or per-user install isn't in `/Applications`, and opened with `open -b`.
+
+Windows has no app IDs or `sh`, so there the mod runs the built-in `powershell.exe`. One PowerShell finds every editor, in the usual install folders and JetBrains Toolbox's scripts, else on PATH: VS Code, Cursor, Windsurf, Zed, Sublime Text, IntelliJ IDEA, PyCharm, WebStorm, GoLand, CLion, Rider and RustRover. `Start-Process` opens one without waiting for it to quit. `settings.editors` entries are `{ name, bundle?, command? }`: `bundle` on macOS, `command` (on PATH or a full path) on Windows. Open in default app is `Invoke-Item`, Show in File Explorer `explorer.exe /select,`, and Copy full path copies the path with backslashes. PowerShell also lists folders, all open ones in one call, and copies images into the cache. A remote machine without `sh` is taken as a Windows one and listed the same way.
 
 Show diff hands over in the form Better Changes' own list uses: `better-changes.selection` and `better-changes.diff-tabs`, keyed to the Git root, with `tab.new` when no diff tab is open.
 
@@ -44,7 +46,7 @@ Each view calls `followFileIcons(this, cx)` from `files/file-icons.js`, a copy o
 
 ## Watch out
 
-Herdr's shipped layouts are read-only, so the sidebar only shows in a layout the person owns. Never overwrite an unrelated mod on a name clash. `herdr-app check` draws only the sidebar's first frame, so look at the running app too.
+Herdr's shipped layouts are read-only, so the sidebar only shows in a layout the person owns. Never overwrite an unrelated mod on a name clash. On Windows, copy the mod with `.\sync.ps1` from PowerShell in the mod's folder. `herdr-app check` draws only the sidebar's first frame, so look at the running app too.
 
 ## Done when
 

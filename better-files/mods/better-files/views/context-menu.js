@@ -2,7 +2,8 @@
 import { div } from "gpui-kit";
 import { v_flex } from "gpui-base";
 import { closeOverlay, props, shared, theme } from "herdr";
-import { foundEditors } from "../actions/outside.js";
+import { editorId, fileManager, foundEditors } from "../actions/outside.js";
+import { nativePath } from "../paths.js";
 import { agentName } from "../actions/agents.js";
 import { TEXT } from "./ui.js";
 
@@ -19,7 +20,7 @@ export const contextMenuMethods = {
       ]);
     groups.push([
       ...editors.map((e) => ({
-        id: `editor-${e.bundle}`,
+        id: `editor-${editorId(e)}`,
         label: `Open in ${e.name}`,
         run: () => this.openInEditor(e, target.path),
       })),
@@ -27,7 +28,7 @@ export const contextMenuMethods = {
         ? [{ id: "default", label: "Open in default app", run: () => this.openWithDefault(target.path) }]
         : []),
       ...(local
-        ? [{ id: "reveal", label: "Show in Finder", run: () => this.revealInFinder(target.path) }]
+        ? [{ id: "reveal", label: `Show in ${fileManager()}`, run: () => this.revealInFinder(target.path) }]
         : []),
     ]);
     if (!target.dir && target.changed && shared("better-files.has-changes"))
@@ -38,7 +39,7 @@ export const contextMenuMethods = {
         label: "Copy relative path",
         run: (cx) => cx.write_to_clipboard(target.relative),
       },
-      { id: "copy-path", label: "Copy full path", run: (cx) => cx.write_to_clipboard(target.path) },
+      { id: "copy-path", label: "Copy full path", run: (cx) => cx.write_to_clipboard(nativePath(target.path)) },
     ]);
     const running = this.spaceAgents(this.menuSpace);
     groups.push([

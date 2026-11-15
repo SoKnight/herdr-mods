@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.join(__dirname, '../mods/better-files');
-const FILES = ['settings.js', 'files/model.js', 'files/file-icons.js', 'views/ui.js', 'files/reads.js', 'actions/open.js', 'actions/outside.js', 'actions/agents.js', 'actions/menus.js', 'views/tree.js', 'views/viewer.js', 'views/context-menu.js', 'main.js'];
+const FILES = ['paths.js', 'settings.js', 'files/model.js', 'files/file-icons.js', 'views/ui.js', 'files/reads.js', 'actions/open.js', 'actions/outside.js', 'actions/agents.js', 'actions/menus.js', 'views/tree.js', 'views/viewer.js', 'views/context-menu.js', 'main.js'];
 // syntax.js keeps a scope of its own, as a module does: its languageOf isn't model.js's.
 const lexer = fs.readFileSync(path.join(root, 'syntax.js'), 'utf8').replace(/^export /gm, '');
 const source = `const { highlightLines, tokenizeLine, syntaxColors, languageOf: lexerLanguage, WHOLE_FILE_LINES } = (() => {\n${lexer}\nreturn { highlightLines, tokenizeLine, syntaxColors, languageOf, WHOLE_FILE_LINES };\n})();\n`
@@ -19,8 +19,9 @@ const source = `const { highlightLines, tokenizeLine, syntaxColors, languageOf: 
 
 const TREE = { '/repo': [['d', 'src'], ['f', 'b.md'], ['f', 'a.md']], '/repo/src': [['f', 'main.go']] };
 
-function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
+function world({ platform = 'macos', windowsEditors = {}, gitError, copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
   const store = new Map(Object.entries(sharedInit));
+  const ps = [];
   const ran = [], execs = [], sent = [], clipboard = [], closed = [], overlays = [], urls = [];
   const live = { layout, panes: [{ pane: 'p1', tab: 'tab1', cwd }], focused: { space: 's', tab: 'tab1', pane: 'p1', cwd }, agents, texts: { ...texts } };
   const timers = [];
@@ -60,7 +61,7 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
     Popover: { new: (id) => el().id(id) }, Textarea: { new: () => el() }, TextareaState: { new: state },
     Scrollbar: { vertical: () => el() }, TextView: { markdown: (id, text) => el().id(id).child(`md:${text}`) }, v_virtual_list: (_id, count, sizes, key, render) => { const e = el().id('viewer-list'); if (Array.isArray(sizes) && sizes.length !== count) throw new Error('sizes'); for (let i = 0; i < count; i++) key(i); e.children(render({ start: 0, end: Math.min(count, 60) })); return e; }, Editor: { new: (s) => el().child(s.text) }, EditorState: { new: (o) => { const s = state(o); context.lastCode = s; return s; } },
     theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
-    settings: () => ({ font_family: 'Code', font_size: 14 }), window: () => ({ platform: 'macos' }),
+    settings: () => ({ font_family: 'Code', font_size: 14 }), window: () => ({ platform }),
     props: () => ({ mode, viewer, file, target, space: 's', overlay: 'ov1' }),
     // Space `s` is the active one; a pane with `space` set puts its tab in that space instead.
     spaces: () => {
@@ -81,9 +82,20 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
     hc: async (args) => { sent.push(args); return hcResult ?? { code: 0, stdout: '', stderr: '' }; },
     exec: async (bin, args, options) => {
       execs.push([bin, ...args]);
+      // PowerShell gets one script and its arguments quoted after it: `& { … } 'a' 'b'`.
+      if (bin === 'powershell') {
+        const command = args.at(-1);
+        const quoted = [...command.slice(command.lastIndexOf('} ') + 2).matchAll(/'((?:[^']|'')*)'/g)].map((m) => m[1].replace(/''/g, "'"));
+        ps.push({ command, args: quoted });
+        if (command.includes('Get-ChildItem')) return { code: 0, stdout: JSON.stringify(quoted.map((p) => (tree[p] ? { entries: tree[p].map(([k, n]) => ({ name: n, dir: k === 'd' })) } : { error: `Not a folder: ${p}` }))) };
+        if (command.includes('Get-Command')) return { code: 0, stdout: JSON.stringify(windowsEditors) };
+        if (command.includes('Copy-Item')) return copyImage ?? { code: 0, stdout: '' };
+        return { code: 0, stdout: '', stderr: '' };
+      }
       if (bin === 'sh' && args[2] === 'copy-image') return copyImage ?? { code: 0 };
       if (bin === 'sh') return { code: 0, stdout: (tree[args.at(-1)] ?? []).flatMap(([k, n]) => [k, n, '']).join('\0').replace(/\0\0/g, '\0') };
       if (bin === 'mdfind') return { code: 0, stdout: editors.some((b) => args[0].includes(b)) ? '/Apps/It.app\n' : '' };
+      if (bin === 'git' && args[0] === 'rev-parse' && gitError) return { code: 128, stdout: '', stderr: gitError };
       if (bin === 'git' && args[0] === 'rev-parse') return top ? { code: 0, stdout: `${top}\n` } : { code: 128, stdout: '' };
       if (bin === 'git' && args.includes('diff')) return { code: 0, stdout: diff };
       if (bin === 'git') return { code: 0, stdout: status };
@@ -96,7 +108,7 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
   const mod = new context.Mod();
   mod.init({}, cx);
   const flush = async () => { for (let i = 0; i < 25; i++) await new Promise(setImmediate); };
-  return { mod, cx, store, ran, execs, sent, clipboard, closed, overlays, urls, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
+  return { ps, mod, cx, store, ran, execs, sent, clipboard, closed, overlays, urls, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
 }
 const ready = async (o) => { const h = world(o); await h.flush(); return h; };
 const find = (node, id) => (node?.elementId === id ? node : node?.nodes?.map((n) => find(n, id)).find(Boolean));
@@ -106,6 +118,27 @@ const tabs = (h) => h.ran.filter(([n]) => n === 'tab.new');
 const viewers = (h) => Object.values(h.store.get('better-files.viewers') ?? {});
 const AGENT = (address, over = {}) => ({ address, space: 's', tab_name: `Agent ${address}`, status: 'idle', program: { key: 'claude' }, ...over });
 const CLAUDE = { key: 'claude', name: 'Claude Code', run: ['claude'], installed: true };
+
+test('a folder that vanished still lets the folders before it refresh, outside Windows', async () => {
+  const tree = { '/repo': [['d', 'src'], ['f', 'a.md']], '/repo/src': [['f', 'main.go']] };
+  const h = await ready({ tree });
+  click(h, 'files-row-src');
+  await h.flush();
+  const exec = h.context.exec;
+  h.context.exec = async (bin, args, o) => (bin === 'sh' && args.at(-1) === '/repo/src' ? { code: 1, stdout: '', stderr: 'gone' } : exec(bin, args, o));
+  tree['/repo'] = [['f', 'a.md'], ['f', 'new.md']];
+  h.mod.refresh(h.cx);
+  await h.flush();
+  assert.match(strings(find(h.mod.render(), 'files-list')), /new\.md/);
+});
+
+test('on macOS an editor with both a bundle and a command opens by its bundle', async () => {
+  const h = await ready();
+  h.mod.openInEditor({ name: 'PhpStorm', bundle: 'com.jetbrains.PhpStorm', command: 'phpstorm64' }, '/repo/a.md');
+  await h.flush();
+  assert.deepEqual(h.execs.at(-1), ['open', '-b', 'com.jetbrains.PhpStorm', '/repo/a.md']);
+  assert.equal(h.ps.length, 0);
+});
 
 test('the tree lists folders first, opens lazily and marks what changed', async () => {
   const h = await ready();
@@ -914,6 +947,116 @@ test('the lexer\'s edge cases keep text and state right', async () => {
   assert.deepEqual(coloured(['<Button onClick={() => go()} disabled />'], 'tsx')[0].filter(([, k]) => k === 'attribute'), [['onClick', 'attribute'], ['disabled', 'attribute']], 'an arrow in a prop does not close the tag');
   assert.deepEqual(coloured(["$a = 'hello';"], m.lexerLanguage('a.php')), [[["'hello'", 'string']]], 'PHP single quotes are strings');
   assert.deepEqual(coloured(["let c = 'x';"], 'rs')[0].filter(([, k]) => k === 'string'), [["'x'", 'string']], 'Rust keeps its char literals');
+});
+
+// Windows: Herdr says C:\proj, Git says C:/proj, and there is no `sh`, `rm` or `open`.
+const WIN_TREE = { 'C:\\proj': [['d', 'src'], ['f', 'b.md'], ['f', 'a.md']], 'C:\\proj\\src': [['f', 'main.go']] };
+const onWindows = (o) => ready({ platform: 'windows', cwd: 'C:\\proj', top: 'c:/proj', tree: WIN_TREE, ...o });
+
+test('on Windows the tree lists with PowerShell, every open folder at once, and marks changes', async () => {
+  const h = await onWindows();
+  assert.ok(!h.execs.some(([b]) => b === 'sh'));
+  assert.match(strings(find(h.mod.render(), 'files-list')), /src[\s\S]*a\.md[\s\S]*b\.md M/);
+  assert.match(strings(find(h.mod.render(), 'better-files')), /proj/, 'the badge is the folder name');
+  assert.doesNotMatch(strings(find(h.mod.render(), 'better-files')), /C:/);
+  click(h, 'files-row-src');
+  await h.flush();
+  assert.match(strings(find(h.mod.render(), 'files-row-src/main.go')), /main\.go M/);
+  const before = h.ps.length;
+  h.mod.refresh(h.cx);
+  await h.flush();
+  const lists = h.ps.slice(before).filter((p) => p.command.includes('Get-ChildItem'));
+  assert.equal(lists.length, 1, 'one PowerShell for every open folder');
+  assert.deepEqual(JSON.parse(JSON.stringify(lists[0].args)), ['C:\\proj', 'C:\\proj\\src']);
+  assert.ok(lists[0].command.startsWith('[Console]::OutputEncoding'), 'UTF-8 out');
+});
+
+test('on Windows a row\'s menu copies Windows paths and shows it in File Explorer', async () => {
+  const h = await onWindows();
+  find(h.mod.render(), 'files-row-src').handlers.click({ click_count: 1 }, h.cx);
+  await h.flush();
+  find(h.mod.render(), 'files-row-src/main.go').handlers['down-right']({}, h.cx);
+  const target = h.overlays[0].props.target;
+  assert.equal(target.path, 'C:/proj/src/main.go');
+  assert.equal(target.relative, 'src/main.go');
+  assert.equal(target.changed, true);
+  const menu = await ready({ platform: 'windows', mode: 'menu', target, sharedInit: { 'better-files.has-changes': true } });
+  assert.match(labels(menu), /Open in default app[\s\S]*Show in File Explorer[\s\S]*Show diff/);
+  click(menu, 'files-menu-copy-path');
+  assert.deepEqual(menu.clipboard, ['C:\\proj\\src\\main.go']);
+  click(menu, 'files-menu-reveal');
+  click(menu, 'files-menu-default');
+  await menu.flush();
+  assert.deepEqual(JSON.parse(JSON.stringify(menu.execs.find(([b]) => b === 'explorer.exe'))), ['explorer.exe', '/select,', 'C:\\proj\\src\\main.go']);
+  const opened = menu.ps.find((p) => p.command.includes('Invoke-Item'));
+  assert.deepEqual(JSON.parse(JSON.stringify(opened.args)), ['C:\\proj\\src\\main.go']);
+  assert.ok(!menu.execs.some(([b]) => b === 'open'));
+  click(menu, 'files-menu-diff');
+  const [, args] = tabs(menu).at(-1);
+  assert.equal(args.props.selection.path, 'src/main.go');
+});
+
+test('on Windows editors are found by program, IntelliJ IDEA too, and start detached', async () => {
+  const idea = 'C:\\Users\\x\\AppData\\Local\\Programs\\IntelliJ IDEA\\bin\\idea64.exe';
+  const code = 'C:\\Users\\x\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.cmd';
+  const h = await onWindows({ windowsEditors: { 'IntelliJ IDEA': idea, 'VS Code': code } });
+  const found = JSON.parse(JSON.stringify(h.store.get('better-files.editors')));
+  assert.deepEqual(found.map((e) => e.name), ['VS Code', 'IntelliJ IDEA']);
+  assert.ok(!h.execs.some(([b]) => b === 'mdfind'));
+  find(h.mod.render(), 'files-folder').handlers.open(true, h.cx);
+  assert.match(strings(find(h.mod.render(), 'files-folder-menu')), /Open in VS Code[\s\S]*Open in IntelliJ IDEA[\s\S]*Open in File Explorer/);
+  click(h, 'files-folder-option-IntelliJ IDEA');
+  await h.flush();
+  const launch = h.ps.find((p) => p.command.includes('Start-Process'));
+  assert.deepEqual(JSON.parse(JSON.stringify(launch.args)), [idea, 'C:\\proj']);
+  const finder = h.ps.find((p) => p.command.includes('Get-Command'));
+  assert.ok(finder.args.some((a) => a.startsWith('IntelliJ IDEA|idea|IntelliJ IDEA*\\bin\\idea64.exe')));
+});
+
+test('on Windows an image is copied with PowerShell and the cache cleared without rm', async () => {
+  const file = { path: 'C:/proj/shot.png', root: 'C:/proj', on: null };
+  const h = await ready({ platform: 'windows', mode: 'viewer', viewer: 'v', file });
+  assert.match(strings(find(h.mod.render(), 'viewer-image')), /cache\/v-1\.png/);
+  const copy = h.ps.find((p) => p.command.includes('Copy-Item'));
+  assert.deepEqual(JSON.parse(JSON.stringify(copy.args)), ['C:\\proj\\shot.png', '/app/mods/better-files/cache/v-1.png', '']);
+  await h.mod.close();
+  assert.ok(h.ps.at(-1).command.includes('Remove-Item'));
+  assert.deepEqual(JSON.parse(JSON.stringify(h.ps.at(-1).args)), ['/app/mods/better-files/cache/v-1.png']);
+  assert.ok(!h.execs.some(([b]) => b === 'sh' || b === 'rm'));
+});
+
+test('Windows links in Markdown resolve, and the same file in two spellings opens once', async () => {
+  const { context: m } = await ready();
+  assert.equal(m.resolvePath('C:/proj/docs', 'img\\a.png'), 'C:/proj/docs/img/a.png');
+  assert.equal(m.resolvePath('C:\\proj\\docs', '..\\b.md'), 'C:/proj/b.md');
+  assert.equal(m.resolvePath('C:/proj', 'D:\\pics\\x.png'), 'D:/pics/x.png');
+  assert.equal(m.resolvePath('C:/proj', 'c:/pics/x.png'), 'C:/pics/x.png');
+  assert.equal(m.resolvePath('/repo', 'file:///C:/pics/x.png'), 'C:/pics/x.png');
+  assert.equal(m.resolvePath('C:/proj', '../../..'), 'C:/');
+  assert.equal(m.resolvePath('/repo', 'a\\b.md'), '/repo/a\\b.md', 'a POSIX name may hold a backslash');
+  const h = await onWindows();
+  h.mod.openFile({ path: 'C:/proj/a.md', root: 'C:/proj', on: null }, h.cx);
+  h.mod.openFile({ path: 'c:\\proj\\a.md', root: 'C:\\proj', on: null }, h.cx);
+  assert.equal(tabs(h).length, 1);
+});
+
+test('a repository Git refuses says why', async () => {
+  const reason = "fatal: detected dubious ownership in repository at 'D:/proj'";
+  const h = await ready({ gitError: `${reason}\n` });
+  assert.match(strings(find(h.mod.render(), 'better-files')), /dubious ownership/);
+});
+
+test('PowerShell and batch files, and a Windows path\'s language', async () => {
+  const { context: m } = await ready();
+  const coloured = (list, lang) => JSON.parse(JSON.stringify(m.highlightLines(list, lang).map((runs) => runs.filter((r) => r.kind).map((r) => [r.text, r.kind]))));
+  assert.equal(m.lexerLanguage('C:\\proj\\sync.ps1'), 'ps1');
+  assert.equal(m.lexerLanguage('C:\\proj\\Dockerfile'), 'dockerfile');
+  assert.deepEqual(coloured(['<# note', 'still #>', 'Foreach ($x in $xs) { # done'], m.lexerLanguage('a.psm1')),
+    [[['<# note', 'comment']], [['still #>', 'comment']], [['Foreach', 'keyword'], ['in', 'keyword'], ['# done', 'comment']]]);
+  assert.deepEqual(coloured(["Copy-Item 'C:\\x\\' 'D:\\y'"], 'ps1')[0], [["'C:\\x\\'", 'string'], ["'D:\\y'", 'string']], 'a backslash escapes nothing');
+  assert.deepEqual(coloured(['@REM build', ':: note', 'IF EXIST "C:\\out\\" echo yes'], m.lexerLanguage('make.cmd')),
+    [[['@REM build', 'comment']], [[':: note', 'comment']], [['IF', 'keyword'], ['EXIST', 'keyword'], ['"C:\\out\\"', 'string'], ['echo', 'keyword']]]);
+  assert.deepEqual(coloured(['remark = 1'], 'bat')[0].filter(([, k]) => k === 'comment'), [], 'rem only as a word');
 });
 
 test('the row view recolours when another file has the same text', async () => {

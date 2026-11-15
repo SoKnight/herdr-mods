@@ -91,10 +91,16 @@
         },
         "editors": {
           "title": "More editors",
-          "description": "macOS app IDs to add to Open in, such as dev.zed.Zed. Shown only if installed.",
+          "description": "Editors to add to Open in, shown only if installed: on macOS by app ID ({\"name\": \"PhpStorm\", \"bundle\": \"com.jetbrains.PhpStorm\"}), on Windows by program ({\"name\": \"PhpStorm\", \"command\": \"phpstorm64\"}, on PATH or a full path).",
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "bundle": { "type": "string" },
+              "command": { "type": "string" }
+            },
+            "required": ["name"]
           },
           "default": []
         },

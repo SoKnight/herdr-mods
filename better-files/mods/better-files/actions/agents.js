@@ -1,6 +1,7 @@
 // Handing a file to an agent: one running, a sub-agent under it, or a new one. The file's
 // path goes, not its text: the agent reads it, and sees it as it is by then.
 import { agents, hc, run, shared, setShared } from "herdr";
+import { nativePath } from "../paths.js";
 
 const NEW_AGENT = "new:";
 const SPAWN = "spawn:";
@@ -106,7 +107,7 @@ export const agentMethods = {
     const prompt = this.editor.value().trim();
     const agent = this.agentAt(address);
     if (!agent || !prompt || this.sending) return;
-    const message = `${prompt}\n\n${target.dir ? "Folder" : "File"}: ${target.path}`;
+    const message = `${prompt}\n\n${target.dir ? "Folder" : "File"}: ${nativePath(target.path)}`;
     if (agent.isNew) {
       run("tab.new", { folder: target.root, argv: agent.run, task: message });
       this.say(`Started ${agentName(agent)} in a new tab.`, cx);

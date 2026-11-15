@@ -2,7 +2,7 @@
 // Every viewer has an ID in a shared registry, because a copy of a mod can't name its own
 // tab: it records the tab it was opened in, and the sidebar and menus act through that.
 import { panes, run, shared, setShared, spaces } from "herdr";
-import { baseName } from "../files/model.js";
+import { baseName, relativePath, samePath } from "../paths.js";
 
 const VIEWERS = "better-files.viewers";
 const OPENING_MS = 1500;
@@ -76,7 +76,7 @@ export const openMethods = {
     const space = spaces().find((s) => s.active)?.id;
     if (!space) return;
     const viewers = this.liveViewers(space);
-    const open = viewers.find(([, entry]) => entry.file?.path === file.path);
+    const open = viewers.find(([, entry]) => samePath(entry.file?.path, file.path));
     if (open) {
       if (open[1].tab) run("tab.select", { id: open[1].tab });
     } else {
@@ -98,7 +98,7 @@ export const openMethods = {
   // needs a second tab of its own.
   keepFile(file, cx) {
     const space = spaces().find((s) => s.active)?.id;
-    const open = this.liveViewers(space).find(([, entry]) => entry.file?.path === file.path);
+    const open = this.liveViewers(space).find(([, entry]) => samePath(entry.file?.path, file.path));
     if (open) this.setViewer(open[0], { preview: false });
     cx?.notify();
   },
@@ -107,7 +107,7 @@ export const openMethods = {
   openInNewTab(file, cx) {
     const space = spaces().find((s) => s.active)?.id;
     if (!space) return;
-    const open = this.liveViewers(space).find(([, entry]) => entry.file?.path === file.path);
+    const open = this.liveViewers(space).find(([, entry]) => samePath(entry.file?.path, file.path));
     if (open) {
       this.setViewer(open[0], { preview: false });
       if (open[1].tab) run("tab.select", { id: open[1].tab });
@@ -125,7 +125,7 @@ export const openMethods = {
       context: JSON.stringify(source),
       root: target.top,
       on: target.on ?? null,
-      path: target.path.slice(target.top.length + 1),
+      path: relativePath(target.path, target.top) ?? target.path.slice(target.top.length + 1),
       scope: target.staged ? "staged" : "unstaged",
       at: Date.now(),
     };

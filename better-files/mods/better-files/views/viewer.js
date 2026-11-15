@@ -2,9 +2,8 @@
 // belongs in the code editor it can open.
 import { div, image } from "gpui-kit";
 import { h_flex, v_flex, Editor, EditorState, Scrollbar, v_virtual_list } from "gpui-base";
-import { appHome, exec, focused, layout, panes, readTextFile, setShared, shared, theme } from "herdr";
+import { appHome, exec, focused, layout, panes, readTextFile, setShared, shared, theme, window } from "herdr";
 import {
-  baseName,
   buildRows,
   fileLinesOf,
   hunkKey,
@@ -19,7 +18,8 @@ import {
 } from "../files/model.js";
 import { WHOLE_FILE_LINES, highlightLines, languageOf as lexerLanguage, syntaxColors, tokenizeLine } from "../syntax.js";
 import { viewerEntries } from "../actions/open.js";
-import { foundEditors } from "../actions/outside.js";
+import { editorId, foundEditors, powershell } from "../actions/outside.js";
+import { baseName, insidePath, nativePath, relativePath, samePath } from "../paths.js";
 import { fileIcon, isLight } from "../files/file-icons.js";
 import { TEXT, FileIcon, Markdown, Message, MenuButton, TextButton, codeFont, codeSize } from "./ui.js";
 
@@ -31,6 +31,15 @@ const REMOVED_ROW = 8;
 // $1 the file, $2 its copy, $3 the copy of what this tab showed before. No file name reaches
 // the script itself, and only the cache's own copies are ever removed.
 const COPY_IMAGE = `[ -z "$3" ] || rm -f -- "$3"; mkdir -p -- "$(dirname -- "$2")" && { cmp -s -- "$1" "$2" || cp -- "$1" "$2"; }`;
+// The same in PowerShell. A copy is made only when the file changed (its size or time, which
+// Copy-Item keeps): rewriting it would reload the picture on every check.
+const COPY_IMAGE_WINDOWS = `$src, $dst, $old = $args; if ($old) { Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue }; $s = Get-Item -LiteralPath $src; New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dst) | Out-Null; $d = Get-Item -LiteralPath $dst -ErrorAction SilentlyContinue; if (-not $d -or $d.Length -ne $s.Length -or $d.LastWriteTimeUtc -ne $s.LastWriteTimeUtc) { Copy-Item -LiteralPath $src -Destination $dst -Force }`;
+
+// Copies a file of this computer's into the cache, where image() can load it.
+const copyImage = (file, copy, old) =>
+  window()?.platform === "windows"
+    ? powershell(COPY_IMAGE_WINDOWS, [nativePath(file), nativePath(copy), old ? nativePath(old) : ""])
+    : exec("sh", ["-c", COPY_IMAGE, "copy-image", file, copy, old], {});
 
 export const viewerMethods = {
   // What this tab shows: the registry, then what it was opened with, after a restart.
@@ -178,7 +187,8 @@ export const viewerMethods = {
     const file = this.file;
     if (!file) return null;
     const name = baseName(file.path);
-    const folder = file.path.slice(file.root.length + 1, -name.length - 1);
+    const inside = relativePath(file.path, file.root);
+    const folder = inside === null ? file.path.slice(file.root.length + 1, -name.length - 1) : inside.slice(0, -name.length - 1);
     const picture = fileIcon(this.fileIcons, file.path, { light: isLight(theme().background) });
     return {
       title: name,
@@ -382,11 +392,7 @@ export const viewerMethods = {
     this.imageOld = null;
     this.reading = true;
     cx.spawn(async (cx) => {
-      const result = await exec(
-        "sh",
-        ["-c", COPY_IMAGE, "copy-image", file.path, `${appHome()}/${copy}`, old],
-        {},
-      ).catch(() => null);
+      const result = await copyImage(file.path, `${appHome()}/${copy}`, old).catch(() => null);
       this.reading = false;
       if (this.file?.path !== file.path) return;
       const problem = result?.code === 0 ? null : "This file is no longer available.";
@@ -447,7 +453,7 @@ export const viewerMethods = {
       const copy = this.markdownCopies.get(path);
       this.markdownCopying.add(path);
       cx.spawn(async (cx) => {
-        const result = await exec("sh", ["-c", COPY_IMAGE, "copy-image", path, `${appHome()}/${copy}`, ""], {}).catch(() => null);
+        const result = await copyImage(path, `${appHome()}/${copy}`, "").catch(() => null);
         this.markdownCopying.delete(path);
         const shown = result?.code === 0;
         if (this.markdownShown.get(path) !== shown) {
@@ -464,8 +470,8 @@ export const viewerMethods = {
     if (/^https?:\/\//i.test(url)) return cx.open_url(url);
     const file = this.file;
     const path = resolvePath(parentOf(file.path), url);
-    if (!path || path === file.path) return;
-    const root = path.startsWith(`${file.root}/`) ? file.root : parentOf(path);
+    if (!path || samePath(path, file.path)) return;
+    const root = insidePath(path, file.root) ? file.root : parentOf(path);
     this.openFile({ path, root, on: file.on ?? null }, cx);
   },
 
@@ -555,9 +561,9 @@ export const viewerMethods = {
             accessibilityLabel: "Open in an editor",
             width: 200,
             trigger: MenuButton({ id: "viewer-open-in-trigger", label: "Open in" }),
-            choices: editors.map((e) => ({ id: e.bundle, label: e.name })),
-            onChoose: (bundle) => {
-              this.openInEditor(editors.find((e) => e.bundle === bundle), file.path);
+            choices: editors.map((e) => ({ id: editorId(e), label: e.name })),
+            onChoose: (id) => {
+              this.openInEditor(editors.find((e) => editorId(e) === id), file.path);
             },
           }),
         ),

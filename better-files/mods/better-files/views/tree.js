@@ -2,9 +2,10 @@
 import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { openOverlay, shared, theme } from "herdr";
-import { baseName, holdsChange, TOTAL_ROWS } from "../files/model.js";
+import { holdsChange, TOTAL_ROWS } from "../files/model.js";
+import { baseName, joinPath, relativePath, samePath } from "../paths.js";
 import { viewerEntries } from "../actions/open.js";
-import { foundEditors } from "../actions/outside.js";
+import { editorId, fileManager, foundEditors } from "../actions/outside.js";
 import { agentName } from "../actions/agents.js";
 import { TEXT, Badge, Button, Chevron, FileIcon, Icon, markColor, IconButton, Message, Panel, PanelHeader, StatusLetter, TextBox } from "./ui.js";
 
@@ -22,7 +23,7 @@ export const treeMethods = {
   // What a menu or an agent needs to know about a row, all of it plain data: it crosses to
   // the menu's own copy of this mod.
   targetOf(relative, dir) {
-    const path = `${this.root}/${relative}`;
+    const path = joinPath(this.root, relative);
     const change = this.marks[path];
     return {
       path,
@@ -30,7 +31,7 @@ export const treeMethods = {
       on: this.on ?? null,
       top: this.top,
       dir,
-      relative: this.top && path.startsWith(`${this.top}/`) ? path.slice(this.top.length + 1) : relative,
+      relative: (this.top && relativePath(path, this.top)) || relative,
       changed: Boolean(change),
       staged: Boolean(change?.staged),
     };
@@ -47,7 +48,7 @@ export const treeMethods = {
   },
 
   fileOf(relative) {
-    return { path: `${this.root}/${relative}`, root: this.root, on: this.on ?? null };
+    return { path: joinPath(this.root, relative), root: this.root, on: this.on ?? null };
   },
 
   clickFile(relative, event, cx) {
@@ -57,11 +58,11 @@ export const treeMethods = {
   },
 
   row(relative, name, dir, depth, t) {
-    const path = `${this.root}/${relative}`;
+    const path = joinPath(this.root, relative);
     const open = this.folders.has(relative);
     const change = this.marks[path];
     const color = dir ? (holdsChange(this.marks, path) ? t.ansi3 : null) : markColor(change?.mark, t);
-    const selected = !dir && Object.values(viewerEntries()).some((v) => v.file?.path === path);
+    const selected = !dir && Object.values(viewerEntries()).some((v) => samePath(v.file?.path, path));
     return h_flex()
       .id(`files-row-${relative}`)
       .h(26)
@@ -109,7 +110,7 @@ export const treeMethods = {
     }
   },
 
-  // The whole folder on show, in an editor or Finder. This computer's apps only.
+  // The whole folder on show, in an editor or the file manager. This computer's apps only.
   folderMenu(t) {
     const FINDER = "finder";
     const editors = foundEditors();
@@ -132,12 +133,12 @@ export const treeMethods = {
         .hover((el) => el.bg(t.hover).text_color(t.foreground))
         .child(Icon("folder", 15)),
       choices: [
-        ...editors.map((e) => ({ id: e.bundle, label: `Open in ${e.name}` })),
-        { id: FINDER, label: "Open in Finder" },
+        ...editors.map((e) => ({ id: editorId(e), label: `Open in ${e.name}` })),
+        { id: FINDER, label: `Open in ${fileManager()}` },
       ],
       onChoose: (id) => {
         if (id === FINDER) this.openWithDefault(this.root);
-        else this.openInEditor(editors.find((e) => e.bundle === id), this.root);
+        else this.openInEditor(editors.find((e) => editorId(e) === id), this.root);
       },
     });
   },
@@ -213,6 +214,7 @@ export const treeMethods = {
     );
     if (failure) root.child(Message(failure, true));
     if (this.notice) root.child(Message(this.notice));
+    if (this.gitProblem) root.child(Message(this.gitProblem));
     const body = v_flex().id("files-list").flex_1().min_h(0).min_w(0).overflow_y_scrollbar().p(6);
     if (!this.root) body.child(Message("Select a space to see its files."));
     else {
