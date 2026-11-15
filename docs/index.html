@@ -126,7 +126,7 @@
 
   <section id="build">
     <h2><i>04</i>Build your own on the same structure</h2>
-    <p class="lead">Copy any mod folder and keep its shape. Put Herdr's <code>herdr.d.ts</code> and <code>gpui-kit.d.ts</code> beside the code for editor types; they're gitignored, and <code>sync.sh</code> copies the mod into Herdr, which reloads it.</p>
+    <p class="lead">Copy any mod folder and keep its shape. Put Herdr's <code>herdr.d.ts</code> and <code>gpui-kit.d.ts</code> beside the code for editor types; they're gitignored, and <code>sync.sh</code> copies the mod into Herdr, which reloads it. On Windows, <code>sync.ps1</code> does the same: run <code>.\sync.ps1</code> from PowerShell in the mod's folder.</p>
 <pre>my-mod/
   mods/my-mod/
     main.js            <span class="d"># the View; reads props() to pick what to draw</span>
@@ -137,9 +137,13 @@
   tests/my-mod.test.cjs
   README.md            <span class="d"># for people</span>
   RECIPE.md            <span class="d"># for the agent that installs it</span>
-  sync.sh</pre>
+  sync.sh
+  sync.ps1             <span class="d"># the same, for Windows</span></pre>
 <pre>node --test */tests/*.test.cjs
 for d in */helper; do (cd "$d" &amp;&amp; go test ./... &amp;&amp; go vet ./...); done</pre>
+<pre><span class="d"># In PowerShell on Windows</span>
+node --test (Get-ChildItem */tests/*.test.cjs).FullName
+Get-Item */helper | ForEach-Object { go -C $_.FullName test ./...; go -C $_.FullName vet ./... }</pre>
   </section>
 
   <footer class="site-foot">

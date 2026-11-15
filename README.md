@@ -25,6 +25,8 @@ Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/
 
 The agent follows the mod's `RECIPE.md`. Installing one mod doesn't install the others.
 
+The mods also run on Windows. There Herdr's folder is `%USERPROFILE%\.config\herdr-app`, keys use Ctrl where macOS uses ⌘, and the mods call the built-in `powershell.exe` where macOS uses `sh`. Git needs to be on PATH as `git.exe` (Git for Windows). A mod that suggests keys ships `keys.windows.json` beside `keys.json`: on Windows merge `keys.windows.json` instead.
+
 ## The mods
 
 Full docs for each (install, use, settings, update, developer use) are on the [site](https://munza.github.io/herdr-mods/docs/better-changes.html).
@@ -59,7 +61,7 @@ A mod you already have is updated, not installed twice, and an existing layout c
 
 ## Settings and updates
 
-Every mod has a `version` in `mods/<name>/mod.json`. Change settings in Better Config, or edit the installed `~/.config/herdr-app/mods/<name>/mod.json`, which your editor checks against its schema; Herdr reloads the mod at once. Mods with a Go helper update with their installer's `--update`, which keeps your settings. The others update by copying their `mods/<name>/` folder again, after which Better Config offers to restore your settings. Each README lists its keys.
+Every mod has a `version` in `mods/<name>/mod.json`. Change settings in Better Config, or edit the installed `~/.config/herdr-app/mods/<name>/mod.json` (`%USERPROFILE%\.config\herdr-app\mods\<name>\mod.json` on Windows), which your editor checks against its schema; Herdr reloads the mod at once. Mods with a Go helper update with their installer's `--update`, which keeps your settings. The others update by copying their `mods/<name>/` folder again, after which Better Config offers to restore your settings. Each README lists its keys.
 
 ## Build your own on the same structure
 
@@ -77,10 +79,12 @@ my-mod/
   README.md            what it does, for people
   RECIPE.md            how to install it, for an agent
   sync.sh              copies mods/my-mod/ into Herdr while you work
+  sync.ps1             the same, in PowerShell, for Windows
 ```
 
-- Put Herdr's `herdr.d.ts` and `gpui-kit.d.ts` beside your code for editor types; they're gitignored and `sync.sh` skips them.
-- Run `./sync.sh` after a change; Herdr reloads the mod.
+- Put Herdr's `herdr.d.ts` and `gpui-kit.d.ts` beside your code for editor types; they're gitignored and `sync.sh` and `sync.ps1` skip them.
+- Run `./sync.sh` after a change; Herdr reloads the mod. On Windows, run `.\sync.ps1` from PowerShell in the mod's folder (`pwsh -File sync.ps1` also works). It copies into `$env:HERDR_APP_HOME` if set, else `%USERPROFILE%\.config\herdr-app`.
+- To copy every mod that has one at once, from the repository's root: `for s in */sync.sh; do "$s"; done`, or in PowerShell `Get-ChildItem */sync.ps1 | ForEach-Object { & $_.FullName }`.
 - In this repo, `better-config/tests/config.test.cjs` picks up every folder with a `mods/<name>/mod.json` and checks its `mod.json`, `mod.schema.json` and `DEFAULT_SETTINGS` against each other, so a new mod is covered without registering it.
 - Give the block a `props` value for each thing it can draw, and let layouts choose.
 
@@ -91,7 +95,14 @@ node --test */tests/*.test.cjs
 for d in */helper; do (cd "$d" && go test ./... && go vet ./...); done
 ```
 
-The mods run on Herdr's JavaScript runtime; Node.js is only for the tests. Each README lists what its mod calls at runtime (Git, `gh`, `hc`, Claude Code, macOS permissions).
+In PowerShell on Windows:
+
+```powershell
+node --test (Get-ChildItem */tests/*.test.cjs).FullName
+Get-Item */helper | ForEach-Object { go -C $_.FullName test ./...; go -C $_.FullName vet ./... }
+```
+
+The mods run on Herdr's JavaScript runtime; Node.js is only for the tests. Each README lists what its mod calls at runtime (Git, `gh`, `hc`, Claude Code, macOS permissions, PowerShell on Windows).
 
 ## License
 
