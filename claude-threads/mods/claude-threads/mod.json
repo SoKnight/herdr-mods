@@ -1,0 +1,7 @@
+{
+  "$schema": "./mod.schema.json",
+  "version": "1.0.0",
+  "place": "none",
+  "title": "Threads",
+  "overlay": { "width": 400, "height": 560 }
+}
