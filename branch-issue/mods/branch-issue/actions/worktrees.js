@@ -1,9 +1,36 @@
 // Starting work on an issue: its checkouts, and making a new one as a new space.
 import { InputState } from "gpui-base";
 import { spaces, exec, home, run, knownAgents } from "herdr";
+import { isWindowsPath, samePath } from "../paths.js";
 import { folderName, identifiersIn, issuePrompt, slug } from "../linear/model.js";
 
 const BRANCH_LIMIT = 100;
+
+// The home folder on a space's machine, "/"-separated, where ~/.herdr/worktrees lives. Git Bash
+// gives /c/Users/x, which Windows programs can't open, so it's asked for C:/Users/x; a machine
+// without sh, PowerShell.
+const HOME_SH = 'case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) cygpath -m "$HOME" ;; *) printf %s "$HOME" ;; esac';
+const HOME_PS = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; [Console]::Write($HOME)";
+
+async function homeOf(sp) {
+  if (!sp.machine) return home().replace(/\\/g, "/");
+  const ask = (program, args) => exec(program, args, { on: sp.machine }).catch(() => null);
+  let result = await ask("sh", ["-c", HOME_SH]);
+  if (result?.code !== 0 || !result.stdout.trim())
+    result = await ask("powershell.exe", ["-NoProfile", "-Command", HOME_PS]);
+  if (result?.code !== 0 || !result.stdout.trim())
+    throw new Error("Could not find the remote home folder.");
+  return result.stdout.trim().replace(/\\/g, "/");
+}
+
+// Windows can't make a folder named CON, NUL, COM1… or ending in a dot.
+function checkWindowsName(path, name) {
+  if (isWindowsPath(path) && (/^(con|prn|aux|nul|com\d|lpt\d)(\.|$)/i.test(name) || name.endsWith(".")))
+    throw new Error(`Windows can't name a folder “${name}”. Choose another worktree name.`);
+}
+
+// A Windows checkout under a deep folder can pass 260 characters, which Git refuses by default.
+const longPaths = (path) => (isWindowsPath(path) ? ["-c", "core.longpaths=true"] : []);
 
 export const worktreeMethods = {
   // Worktrees already checked out for this issue: branches whose
@@ -45,7 +72,7 @@ export const worktreeMethods = {
 
   worktreeSpace(worktree) {
     const machine = this.sp?.machine ?? null;
-    return spaces().find((s) => s.folder === worktree.path && (s.machine ?? null) === machine);
+    return spaces().find((s) => samePath(s.folder, worktree.path) && (s.machine ?? null) === machine);
   },
 
   // Open the form. Linear computes `branchName` with the team's convention; a
@@ -117,7 +144,7 @@ export const worktreeMethods = {
       options,
     );
     const names = (refs.stdout ?? "")
-      .split("\n")
+      .split(/\r?\n/)
       .filter((ref) => ref && ref !== "refs/remotes/origin/HEAD")
       .map((ref) => ref.replace(/^refs\/(heads|remotes\/origin)\//, ""));
     const here = current.code === 0 ? current.stdout.trim() : "";
@@ -162,10 +189,11 @@ export const worktreeMethods = {
           throw new Error("That branch already exists. Choose a new branch name.");
         if (existing.code !== 1)
           throw new Error(existing.stderr?.trim() || "Could not check existing branches.");
-        const root = this.settings.worktrees.root.replace(/^~(?=\/|$)/, await this.homeOf(sp));
+        const root = this.settings.worktrees.root.replace(/^~(?=[\\/]|$)/, await homeOf(sp));
         const path = `${root}/${folderName(sp.folder)}/${name}`;
+        checkWindowsName(path, name);
         const start = await this.worktreeStart(base, sp);
-        await git(["worktree", "add", "-b", branch, "--", path, start]);
+        await git([...longPaths(path), "worktree", "add", "-b", branch, "--", path, start]);
         // Retain the checkout if opening its space fails, so retry cannot create it twice.
         form.path = path;
         form.createdName = name;
@@ -203,29 +231,18 @@ export const worktreeMethods = {
     return ahead.code === 0 ? local : "FETCH_HEAD";
   },
 
-  // The home folder on the space's machine, where ~/.herdr/worktrees lives.
-  async homeOf(sp) {
-    if (!sp.machine) return home();
-    let result = await exec("sh", ["-c", 'printf %s "$HOME"'], { on: sp.machine });
-    if (result.code !== 0 || !result.stdout.trim())
-      result = await exec("powershell.exe", ["-NoProfile", "-Command", "[Console]::Write($HOME)"], {
-        on: sp.machine,
-      });
-    if (result.code !== 0 || !result.stdout.trim())
-      throw new Error("Could not find the remote home folder.");
-    return result.stdout.trim().replace(/\\/g, "/");
-  },
-
   // A new space for the checkout: nested under the repo at once, with a shell
-  // or the chosen agent in its first tab. An agent gets the issue as its prompt.
+  // or the chosen agent in its first tab. An agent gets the issue as its prompt: on Windows
+  // as its first message, since a multi-line argument doesn't survive a .cmd launcher.
   openWorktree(form, cx) {
     const agent = form.agents.find((a) => a.key === form.launch);
+    const prompt = issuePrompt(form.issue);
     try {
       run("space.new", {
         folder: form.path,
         machine: form.sp.machine ?? null,
         tab: form.createdName,
-        ...(agent ? { argv: [...agent.run, issuePrompt(form.issue)] } : {}),
+        ...(!agent ? {} : isWindowsPath(form.path) ? { argv: agent.run, task: prompt } : { argv: [...agent.run, prompt] }),
       });
       form.opened = true;
       form.error = null;

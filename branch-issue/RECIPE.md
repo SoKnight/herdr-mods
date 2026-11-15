@@ -38,7 +38,7 @@ Writes never retry by themselves. A failure keeps the draft and says to refresh 
 
 ## Built from
 
-`mods/branch-issue/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Branch Issue), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `linear/` (`model.js`, `discovery.js`, `reads.js`), `actions/` (`changes.js`, `agents.js`, `worktrees.js`, `menus.js`), `state/saved.js`, `views/` (`ui.js`, `list.js`, `detail.js`, `comments.js`, `worktrees.js`), `icons/`. `helper/` is `go.mod`, `main.go`, `main_test.go` with no dependencies; `helper/install/` builds it to `mods/branch-issue/bin/herdr-linear`. Remote spaces run Git there, and the helper stays local.
+`mods/branch-issue/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Branch Issue), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `linear/` (`model.js`, `discovery.js`, `reads.js`), `actions/` (`changes.js`, `agents.js`, `worktrees.js`, `menus.js`), `state/saved.js`, `views/` (`ui.js`, `list.js`, `detail.js`, `comments.js`, `worktrees.js`), `icons/`. `helper/` is `go.mod`, `main.go`, `main_test.go` with no dependencies; `helper/deploy/` builds it to `mods/branch-issue/bin/herdr-linear` (`herdr-linear.exe` on Windows); run it from the mod's folder with `go -C helper run ./deploy`, or `go -C helper run ./deploy --update` later. Remote spaces run Git there, and the helper stays local.
 
 ## Watch out
 
@@ -47,6 +47,8 @@ Before installing, explain the Git, Linear and `hc` access and the writes above.
 Herdr's shipped layouts are read-only, so the mod only shows in a layout the person owns. The installer doesn't edit layouts or keys.
 
 `herdr-app check` draws only the empty state, so look at the running app too.
+
+On Windows: the key is set with `setx LINEAR_API_KEY "lin_api_..."`, and the helper reads it from the registry (`HKCU\Environment`, then the machine's environment) before its own environment, so it's seen without restarting Herdr. The installer is in `deploy/`, not `install/`, because Windows asks for an administrator before running any program named install, setup or update. `--update` works while Herdr runs, moving the old `herdr-linear.exe` aside. A worktree lands under `C:/Users/<you>/.herdr/worktrees/...`. A new agent gets the issue prompt as its first message, not as a command-line argument. Messages to agents go to `hc` on a command line, which Windows caps at 32,767 characters, so a very long hand-off may need trimming.
 
 ## Done when
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -129,6 +130,9 @@ func TestMutationsAndKeyErrors(t *testing.T) {
 }
 
 func TestLoadKeyIgnoresAShellGreeting(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no login shell to ask; the registry is read instead")
+	}
 	shell := filepath.Join(t.TempDir(), "shell.sh")
 	script := "#!/bin/sh\nLINEAR_API_KEY=secret\necho Welcome back\neval \"$2\"\n"
 	if err := os.WriteFile(shell, []byte(script), 0o755); err != nil {
@@ -153,5 +157,52 @@ func TestABareNumberSearchesThatNumberInAnyTeam(t *testing.T) {
 	filter, _ = listFilter(Request{Search: "login"})
 	if len(array(filter["or"])) != 2 {
 		t.Fatalf("text search %v", filter)
+	}
+}
+
+func TestRegistryOutputGivesTheValue(t *testing.T) {
+	cases := map[string]string{
+		"\r\nHKEY_CURRENT_USER\\Environment\r\n    LINEAR_API_KEY    REG_SZ    lin_api_abc\r\n\r\n":      "lin_api_abc",
+		"\nHKEY_CURRENT_USER\\Environment\n    linear_api_key    REG_EXPAND_SZ    lin api with spaces\n": "lin api with spaces",
+		"\nHKEY_CURRENT_USER\\Environment\n    OTHER    REG_SZ    x\n":                                   "",
+		"": "",
+	}
+	for out, want := range cases {
+		if got := parseRegistry(out, "LINEAR_API_KEY"); got != want {
+			t.Errorf("parseRegistry(%q) = %q, want %q", out, got, want)
+		}
+	}
+}
+
+func TestOnWindowsTheRegistryWinsOverAStaleEnvironment(t *testing.T) {
+	old := registryValue
+	t.Cleanup(func() { registryValue = old })
+	t.Setenv("LINEAR_API_KEY", "stale")
+	values := map[string]string{}
+	registryValue = func(place, _ string) string { return values[place] }
+	if key, _ := windowsKey(); key != "stale" {
+		t.Fatalf("no registry value: got %q", key)
+	}
+	values[`HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment`] = "machine"
+	if key, _ := windowsKey(); key != "machine" {
+		t.Fatalf("got %q", key)
+	}
+	values[`HKCU\Environment`] = "user"
+	if key, _ := windowsKey(); key != "user" {
+		t.Fatalf("got %q", key)
+	}
+	t.Setenv("LINEAR_API_KEY", "")
+	values = map[string]string{}
+	if _, err := windowsKey(); err != missingKey {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestKeyErrorsKeepTheWordsTheModLooksFor(t *testing.T) {
+	for _, windows := range []bool{false, true} {
+		missing, rejected := keyErrors(windows)
+		if !strings.HasPrefix(missing.Error(), "LINEAR_API_KEY is not set") || !strings.Contains(rejected.Error(), "rejected LINEAR_API_KEY") {
+			t.Fatalf("windows=%v: %v / %v", windows, missing, rejected)
+		}
 	}
 }

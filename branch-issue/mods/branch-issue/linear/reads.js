@@ -1,16 +1,31 @@
 // Reads through the helper, which holds the key and the GraphQL. The key and the
 // helper stay on this computer, including for remote spaces.
-import { exec, appHome } from "herdr";
+import { exec, appHome, window, writeTextFile } from "herdr";
 import { duration } from "../settings.js";
 import { searchQuery } from "./model.js";
 
 const SEARCH_DEBOUNCE_MS = 450;
+// Windows caps a command line at 32,767 characters, each quote and backslash escaped.
+const COMMAND_LINE = 30000;
+
+// The helper is always this computer's: an .exe on Windows.
+const windows = () => window()?.platform === "windows";
+const helperPath = () => `${appHome()}/mods/branch-issue/bin/herdr-linear${windows() ? ".exe" : ""}`;
+
+// A request too long for the command line goes in a file beside the helper, which reads
+// and removes it.
+async function helperArgument(json) {
+  if (!windows() || json.length + (json.match(/["\\]/g)?.length ?? 0) <= COMMAND_LINE) return json;
+  const file = `${appHome()}/mods/branch-issue/bin/request-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}.json`;
+  await writeTextFile(file, json, null);
+  return `@${file}`;
+}
 
 export const readMethods = {
   async api(request, sp = this.sp) {
     const result = await exec(
-      `${appHome()}/mods/branch-issue/bin/herdr-linear`,
-      [JSON.stringify(request)],
+      helperPath(),
+      [await helperArgument(JSON.stringify(request))],
       { cwd: sp?.machine ? undefined : sp?.folder },
     );
     let data;

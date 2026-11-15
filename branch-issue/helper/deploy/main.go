@@ -1,5 +1,6 @@
 // Builds and installs only Branch Issue. Doesn't edit layouts or key bindings.
-// From the mod's folder: go -C helper run ./install [--update]
+// From the mod's folder: go -C helper run ./deploy [--update]
+// Not called install: Windows asks for an administrator to run a program named so.
 package main
 
 import (
@@ -37,6 +38,35 @@ var (
 		return cmd.Run()
 	}
 )
+
+// executable is the helper's file name on this system: Windows runs only .exe files.
+func executable() string {
+	if runtime.GOOS == "windows" {
+		return binary + ".exe"
+	}
+	return binary
+}
+
+// replace puts fresh where the helper is. Windows won't overwrite a program that is running,
+// and Herdr runs the helper every minute, but it will rename one: the old one moves aside
+// and goes once nothing runs it, here or on the next update.
+func replace(fresh, target string) error {
+	if runtime.GOOS != "windows" {
+		return os.Rename(fresh, target)
+	}
+	old := filepath.Join(filepath.Dir(target), "."+binary+".old.exe")
+	_ = os.Remove(old)
+	if _, err := os.Stat(target); err == nil {
+		if err := os.Rename(target, old); err != nil {
+			return err
+		}
+	}
+	if err := os.Rename(fresh, target); err != nil {
+		return err
+	}
+	_ = os.Remove(old)
+	return nil
+}
 
 // root is the mod's folder in this repo, wherever the command was run from.
 func root() string {
@@ -185,7 +215,8 @@ func install(appHome string, update bool) error {
 	}
 	var installed map[string]any
 	info, err := os.Lstat(target)
-	if err == nil && info.Mode()&os.ModeSymlink != 0 {
+	// A Windows junction reads as irregular: it points elsewhere just as a symlink does.
+	if err == nil && info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
 		return fmt.Errorf("refusing to overwrite a symlink: %s", target)
 	}
 	if err == nil {
@@ -206,7 +237,7 @@ func install(appHome string, update bool) error {
 		return err
 	}
 	defer os.RemoveAll(build)
-	built := filepath.Join(build, binary)
+	built := filepath.Join(build, executable())
 	if err := run(filepath.Join(root(), "helper"), nil, "go", "build", "-o", built, "."); err != nil {
 		return err
 	}
@@ -227,11 +258,11 @@ func install(appHome string, update bool) error {
 		return err
 	}
 	// A new file, not a rewrite: macOS kills a signed binary changed in place.
-	fresh := filepath.Join(bin, "."+binary+".new")
+	fresh := filepath.Join(bin, "."+executable()+".new")
 	if err := copyFile(built, fresh); err != nil {
 		return err
 	}
-	if err := os.Rename(fresh, filepath.Join(bin, binary)); err != nil {
+	if err := replace(fresh, filepath.Join(bin, executable())); err != nil {
 		return err
 	}
 	if err := run("", nil, "herdr-app", "check", target); err != nil {

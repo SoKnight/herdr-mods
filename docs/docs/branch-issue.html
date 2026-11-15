@@ -49,7 +49,7 @@
 
   <h3 id="branch-issue-start">Quick start</h3>
   <ol>
-    <li>Create a Linear personal API key, export it as <code>LINEAR_API_KEY</code> in your shell, then install with the prompt below.</li>
+    <li>Create a Linear personal API key, export it as <code>LINEAR_API_KEY</code> in your shell (on Windows, <code>setx LINEAR_API_KEY "lin_api_..."</code>), then install with the prompt below.</li>
     <li>Open the Issues panel: on a branch named like <code>ENG-123-…</code> it shows that issue; otherwise use the <b>All</b> tab.</li>
     <li>From <b>Actions</b>, choose <b>Create worktree</b> to start a new space with an agent that already has the issue.</li>
   </ol>
@@ -58,13 +58,15 @@
   <div class="prompt"><code>Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/branch-issue</code></div>
   <p>Requirements: Go 1.23+ to run the installer and build the helper, Git on the machines your spaces run on, and a Linear personal API key. Agent actions use <code>hc</code> and a running agent.</p>
   <p>The helper reads the key from the <code>LINEAR_API_KEY</code> environment variable and nothing else: there is no key field, keychain entry or token file. Create a personal key at https://linear.app/settings/api and export it in your shell. The helper checks its own environment, then asks your login shell, so a key exported in <code>.zshrc</code> or by home-manager is found even when Herdr was launched from the Dock. The key goes to api.linear.app only and is never stored. If it is missing or rejected, the panel says what to run and offers Try again.</p>
+  <p>On Windows, set the key with <code>setx LINEAR_API_KEY "lin_api_..."</code>. With no login shell to ask, the helper reads your user environment in the registry (<code>HKCU\Environment</code>), then the machine's, then its own, so a key set with <code>setx</code> is found without restarting Herdr.</p>
   <p>Before installing, the agent explains what the panel can write, and only on an explicit click: post comments and replies, change an issue's state, priority and assignee, fetch a base branch, create Git worktrees and branches, write the branch-to-issue link to Git config, open spaces, and send messages to agents. Nothing writes on its own.</p>
   <details>
   <summary>Install by hand</summary>
   <p>To install by hand, from the <code>branch-issue</code> folder:</p>
-  <pre>go -C helper run ./install          # first install
-go -C helper run ./install --update # later</pre>
+  <pre>go -C helper run ./deploy          # first install
+go -C helper run ./deploy --update # later</pre>
   <p>The installer builds the helper, copies only <code>mods/branch-issue/</code> to <code>~/.config/herdr-app/mods/branch-issue/</code>, and runs <code>herdr-app check</code>. It doesn't edit layouts or keys.</p>
+  <p>The same commands work on Windows. There the helper is <code>bin\herdr-linear.exe</code> and the mod goes to <code>%USERPROFILE%\.config\herdr-app\mods\branch-issue\</code>. The installer's folder is <code>deploy</code>, not <code>install</code>, because Windows asks for an administrator before running any program named like an installer.</p>
   </details>
   <p>The manifest has <code>place: none</code>, so add the panel to a layout you own, about 368px wide:</p>
   <pre>{ "id": "linear-issues", "type": "block", "content": { "mod": "branch-issue" } }</pre>
@@ -101,13 +103,13 @@ go -C helper run ./install --update # later</pre>
     <tr><td><code>list.default.scope</code></td><td><code>mine</code></td><td>The list's first scope until a saved view exists: <code>mine</code>, <code>cycle</code> or <code>all</code>.</td></tr>
     <tr><td><code>list.default.state</code></td><td><code>active</code></td><td>The first state filter: <code>active</code>, <code>backlog</code>, <code>started</code>, <code>done</code>, <code>cancelled</code> or <code>all</code>.</td></tr>
     <tr><td><code>list.default.team</code></td><td><code>""</code></td><td>A team key to filter by at first, such as DEM. Empty shows every team.</td></tr>
-    <tr><td><code>worktrees.root</code></td><td><code>~/.herdr/worktrees</code></td><td>Where new worktrees are put.</td></tr>
+    <tr><td><code>worktrees.root</code></td><td><code>~/.herdr/worktrees</code></td><td>Where new worktrees are put. On Windows, under <code>C:/Users/&lt;you&gt;/.herdr/worktrees/</code>.</td></tr>
     <tr><td><code>worktrees.open_with</code></td><td><code>terminal</code></td><td>What a new worktree opens: <code>terminal</code>, or an installed agent's key such as <code>claude</code>.</td></tr>
     <tr><td><code>worktrees.move_to_started</code></td><td><code>false</code></td><td>Preselect moving the issue to its started state when you create a worktree.</td></tr>
   </tbody></table>
 
   <h3 id="branch-issue-update">Update</h3>
-  <p>Run <code>go -C helper run ./install --update</code> from the <code>branch-issue</code> folder. Your <code>settings</code> block is kept.</p>
+  <p>Run <code>go -C helper run ./deploy --update</code> from the <code>branch-issue</code> folder. Your <code>settings</code> block is kept. On Windows this works while Herdr is running: the old <code>herdr-linear.exe</code> is moved aside.</p>
   <details>
   <summary>Upgrading from 1.x</summary>
   <p>2.0 is a rebuild around agents. The All issues center tab is gone (use the All sidebar tab, and remove any <code>props: { "mode": "browser" }</code> tab or command). Every command except <code>refresh</code> is gone. Editing comments, Markdown preview and editing labels are gone. The <code>tracker</code> setting is gone. Icons moved to <code>icons/</code>, so a Better Tabs button's <code>mods/branch-issue/issue.svg</code> becomes <code>mods/branch-issue/icons/issue.svg</code>.</p>
@@ -115,7 +117,7 @@ go -C helper run ./install --update # later</pre>
 
   <h3 id="branch-issue-developers">For developers</h3>
   <p><code>branch-issue.refresh</code> reloads the panel. Commands reach copies that are showing.</p>
-  <p>The helper, <code>mods/branch-issue/bin/herdr-linear</code>, is a JSON bridge to Linear's GraphQL API with validated requests and a 26-second timeout. The branch-to-issue link is plain Git config, comma separated, so you can set it yourself:</p>
+  <p>The helper, <code>mods/branch-issue/bin/herdr-linear</code> (<code>herdr-linear.exe</code> on Windows), is a JSON bridge to Linear's GraphQL API with validated requests and a 26-second timeout. The branch-to-issue link is plain Git config, comma separated, so you can set it yourself:</p>
   <pre>git config branch.&lt;branch&gt;.herdr-issue ENG-123</pre>
   <p>Messages the panel sends to agents tell them to treat Linear's text as data and not to post unless asked.</p>
   <h4>Work on the mod</h4>
@@ -125,10 +127,11 @@ go -C helper run ./install --update # later</pre>
     <li><code>actions/</code>: writes and handoffs (<code>changes.js</code>, <code>agents.js</code>, <code>worktrees.js</code>, <code>menus.js</code>).</li>
     <li><code>views/</code>: drawing, with the shared look in <code>views/ui.js</code>; <code>state/saved.js</code>; <code>icons/</code>.</li>
     <li><code>mod.schema.json</code>: settings and defaults, which must match <code>DEFAULT_SETTINGS</code> in the code.</li>
-    <li><code>helper/main.go</code>: the Linear bridge; <code>helper/install/</code>: the installer.</li>
+    <li><code>helper/main.go</code>: the Linear bridge; <code>helper/deploy/</code>: the installer.</li>
   </ul>
   <pre>node --test tests/*.test.cjs
-(cd helper &amp;&amp; go test ./... &amp;&amp; go vet ./...)
+go -C helper test ./...
+go -C helper vet ./...
 herdr-app check "$HOME/.config/herdr-app/mods/branch-issue"</pre>
   <p>Tests use stand-ins for Linear, and <code>herdr-app check</code> draws only the empty state, so also look at the running app. Never test writes against someone's workspace without their say-so.</p>
 </article>

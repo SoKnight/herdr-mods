@@ -13,7 +13,7 @@
 // reads LINEAR_API_KEY; the mod never sees the key.
 import { View } from "gpui-kit";
 import { InputState, TextareaState } from "gpui-base";
-import { spaces, panes, nextCommand, layout } from "herdr";
+import { spaces, panes, nextCommand, layout, window } from "herdr";
 import { loadSettings, duration } from "./settings.js";
 import { savedMethods } from "./state/saved.js";
 import { discoveryMethods } from "./linear/discovery.js";
@@ -186,7 +186,7 @@ class LinearIssues extends View {
 
   render() {
     const root = Panel({ id: "issue-root" });
-    const problem = keyProblem(this.error);
+    const problem = keyProblem(this.error, window()?.platform === "windows");
     if (problem) return this.renderKeyProblem(root, problem);
     if (this.issue) return this.renderDetail(root);
     return this.opening ? this.renderOpening(root) : this.renderList(root);

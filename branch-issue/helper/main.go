@@ -1,5 +1,5 @@
 // herdr-linear is a JSON bridge between the Herdr mod and Linear's GraphQL API.
-// The API key comes only from the LINEAR_API_KEY environment variable.
+// The API key comes only from LINEAR_API_KEY: the environment, or on Windows its registry.
 package main
 
 import (
@@ -12,7 +12,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -41,7 +43,19 @@ type Request struct {
 
 const endpoint = "https://api.linear.app/graphql"
 
-var missingKey = errors.New("LINEAR_API_KEY is not set. Export a personal API key from https://linear.app/settings/api in your shell environment, then refresh.")
+var missingKey, rejectedKey = keyErrors(runtime.GOOS == "windows")
+
+// The mod knows these by their start ("LINEAR_API_KEY is not set", "Linear rejected
+// LINEAR_API_KEY"); the rest says how to set a key here.
+func keyErrors(windows bool) (error, error) {
+	if windows {
+		return errors.New(`LINEAR_API_KEY is not set. Create a personal API key at https://linear.app/settings/api, run setx LINEAR_API_KEY "<key>" in a terminal, then refresh.`),
+			errors.New(`Linear rejected LINEAR_API_KEY. Set a valid key with setx LINEAR_API_KEY "<key>", then refresh.`)
+	}
+	return errors.New("LINEAR_API_KEY is not set. Export a personal API key from https://linear.app/settings/api in your shell environment, then refresh."),
+		errors.New("Linear rejected LINEAR_API_KEY. Export a valid key, then refresh.")
+}
+
 var identifierPattern = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9]*)-([1-9][0-9]*)$`)
 
 // Swapped in tests.
@@ -68,6 +82,9 @@ func httpPost(ctx context.Context, key string, payload []byte) (int, []byte, err
 
 // GUI-launched apps often lack the shell's exports, so ask a login shell too.
 func loadKey() (string, error) {
+	if runtime.GOOS == "windows" {
+		return windowsKey()
+	}
 	if key := strings.TrimSpace(os.Getenv("LINEAR_API_KEY")); key != "" {
 		return key, nil
 	}
@@ -88,6 +105,45 @@ func loadKey() (string, error) {
 	return "", missingKey
 }
 
+// Windows has no login shell to ask. A key set with setx is in the registry at once, while
+// Herdr's environment is the one it started with, so the registry comes first: the user's,
+// then the machine's, then the environment.
+func windowsKey() (string, error) {
+	for _, place := range []string{`HKCU\Environment`, `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment`} {
+		if key := registryValue(place, "LINEAR_API_KEY"); key != "" {
+			return key, nil
+		}
+	}
+	if key := strings.TrimSpace(os.Getenv("LINEAR_API_KEY")); key != "" {
+		return key, nil
+	}
+	return "", missingKey
+}
+
+// Swapped in tests. reg.exe by its full path: a reg.exe earlier on PATH isn't Windows'.
+var registryValue = func(place, name string) string {
+	reg := filepath.Join(os.Getenv("SystemRoot"), "System32", "reg.exe")
+	out, err := hidden(exec.Command(reg, "query", place, "/v", name)).Output()
+	if err != nil {
+		return ""
+	}
+	return parseRegistry(string(out), name)
+}
+
+// parseRegistry reads a value from `reg query` output:
+//
+//	HKEY_CURRENT_USER\Environment
+//	    LINEAR_API_KEY    REG_SZ    lin_api_…
+func parseRegistry(out, name string) string {
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.SplitN(strings.TrimSpace(line), "    ", 3)
+		if len(fields) == 3 && strings.EqualFold(fields[0], name) && strings.HasPrefix(fields[1], "REG_") {
+			return strings.TrimSpace(fields[2])
+		}
+	}
+	return ""
+}
+
 func gql(ctx context.Context, key, query string, vars Obj) (Obj, error) {
 	payload, _ := json.Marshal(Obj{"query": query, "variables": vars})
 	status, raw, err := transport(ctx, key, payload)
@@ -95,7 +151,7 @@ func gql(ctx context.Context, key, query string, vars Obj) (Obj, error) {
 		return nil, err
 	}
 	if status == 401 || status == 403 {
-		return nil, errors.New("Linear rejected LINEAR_API_KEY. Export a valid key, then refresh.")
+		return nil, rejectedKey
 	}
 	var res struct {
 		Data   Obj `json:"data"`
@@ -109,7 +165,7 @@ func gql(ctx context.Context, key, query string, vars Obj) (Obj, error) {
 	if len(res.Errors) > 0 {
 		msg := res.Errors[0].Message
 		if strings.Contains(strings.ToLower(msg), "authentication") {
-			return nil, errors.New("Linear rejected LINEAR_API_KEY. Export a valid key, then refresh.")
+			return nil, rejectedKey
 		}
 		return nil, fmt.Errorf("Linear: %s", msg)
 	}
@@ -359,7 +415,11 @@ func main() {
 		os.Exit(1)
 	}
 	var r Request
-	if err := json.Unmarshal([]byte(os.Args[1]), &r); err != nil {
+	raw, err := request(os.Args[1])
+	if err == nil {
+		err = json.Unmarshal(raw, &r)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

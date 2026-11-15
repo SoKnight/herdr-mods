@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const dir = path.join(__dirname, '../mods/branch-issue');
-const FILES = ['settings.js', 'linear/model.js', 'views/ui.js', 'state/saved.js', 'linear/discovery.js', 'linear/reads.js', 'actions/menus.js', 'actions/agents.js', 'actions/changes.js', 'actions/worktrees.js', 'views/list.js', 'views/detail.js', 'views/comments.js', 'views/worktrees.js', 'main.js'];
+const FILES = ['paths.js', 'settings.js', 'linear/model.js', 'views/ui.js', 'state/saved.js', 'linear/discovery.js', 'linear/reads.js', 'actions/menus.js', 'actions/agents.js', 'actions/changes.js', 'actions/worktrees.js', 'views/list.js', 'views/detail.js', 'views/comments.js', 'views/worktrees.js', 'main.js'];
 const source = FILES.map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
   .join('\n')
   .replace(/^import\s+[\s\S]*?;$/gm, '')
@@ -14,7 +14,7 @@ const source = FILES.map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
   .replace(/^export /gm, '')
   + '\nObject.assign(globalThis, { person, who, agentName, slug, folderName });';
 
-function harness({ storage = new Map(), exec, hc, known = [] } = {}) {
+function harness({ storage = new Map(), exec, hc, known = [], platform = 'macos', homeDir = '/home/sam', written = [] } = {}) {
   const pending = [], timers = [], after = [], ran = [], sent = [], opened = [];
   const cx = { focus_handle: () => ({ focus() {} }), stop_propagation() {}, notify() {}, open_url: (u) => opened.push(u), write_to_clipboard() {}, spawn(fn) { pending.push(fn(cx)); }, timer: { every(_ms, fn) { timers.push(fn); }, after(_ms, fn) { after.push(fn); } } };
   function el() {
@@ -48,7 +48,7 @@ function harness({ storage = new Map(), exec, hc, known = [] } = {}) {
     exec: exec ?? (async () => ({ code: 1, stdout: '', stderr: '' })),
     hc: hc ?? (async (args) => { sent.push(args); return { code: 0, stdout: '', stderr: '' }; }),
     run: (name, args) => ran.push([name, args]),
-    home: () => '/home/sam', appHome: () => '/app', theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
+    home: () => homeDir, appHome: () => '/app', window: () => ({ platform }), writeTextFile: async (p, t) => { written.push([p, t]); }, theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
     layout: () => live.layout, settings: () => ({ font_family: 'Code' }), readTextFile: async () => null,
     nextCommand: () => new Promise(() => {}), knownAgents: async () => known,
     localStorage: { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) },
@@ -574,6 +574,37 @@ test('Create worktree uses Linear\'s branch name and opens a space, the agent ge
   assert.equal(args.argv[0], 'claude');
   assert.match(args.argv[1], /^You are being given background only[\s\S]*Linear issue ENG-1/);
   assert.equal(h.mod.worktreeForm, null);
+});
+
+test('on Windows a worktree goes under the user folder with long paths, and the agent gets the issue as its first message', async () => {
+  const log = [];
+  const h = harness({ exec: gitRepo(log), platform: 'windows', homeDir: 'C:\\Users\\sam', known: [{ key: 'claude', name: 'Claude', installed: true, run: ['claude'] }] });
+  h.mod.sp = { id: 'space', folder: 'C:\\code\\repo' };
+  h.mod.issue = ISSUE();
+  h.mod.api = async () => ISSUE();
+  h.mod.showWorktree(h.cx); await h.flush();
+  const form = h.mod.worktreeForm;
+  form.launch = 'claude';
+  form.name.set_value('com1');
+  h.mod.createWorktree(h.cx); await h.flush();
+  assert.match(form.error, /Windows can't name a folder/);
+  form.name.set_value('fix-login');
+  h.mod.createWorktree(h.cx); await h.flush();
+  assert.ok(log.some((l) => l.includes('git -c core.longpaths=true worktree add -b sam/eng-1-fix-login -- C:/Users/sam/.herdr/worktrees/repo/fix-login FETCH_HEAD')), log.join('\n'));
+  const [name, args] = h.ran.at(-1);
+  assert.equal(name, 'space.new');
+  same(args.argv, ['claude']);
+  assert.match(args.task, /Linear issue ENG-1/);
+});
+
+test('on Windows the key panel says setx, and the helper is an .exe', async () => {
+  const { context: m } = harness();
+  assert.equal(m.keyProblem('LINEAR_API_KEY is not set.', true).command, 'setx LINEAR_API_KEY "…"');
+  assert.equal(m.keyProblem('Linear rejected LINEAR_API_KEY.').command, 'export LINEAR_API_KEY=…');
+  const calls = [];
+  const h = harness({ platform: 'windows', exec: async (bin, args) => { calls.push([bin, args]); return { code: 0, stdout: '{}', stderr: '' }; } });
+  await h.mod.api({ action: 'viewer' });
+  assert.equal(calls[0][0], '/app/mods/branch-issue/bin/herdr-linear.exe');
 });
 
 test('the base can be picked, and a stacked branch starts from what it has locally', async () => {

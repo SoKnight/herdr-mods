@@ -33,16 +33,26 @@ Requirements: **Go 1.23+** to run the installer and build the helper, Git on the
 
 The helper talks to Linear's GraphQL API with the key from the **`LINEAR_API_KEY`** environment variable and nothing else: there's no key field, keychain entry or token file. Create a personal key at https://linear.app/settings/api and export it in your shell. The helper reads its own environment, then asks your login shell, so a key exported in `.zshrc` or by home-manager is found even when Herdr was launched from the Dock. If the key is missing or rejected, the panel says so, shows what to run, and offers Try again.
 
+On Windows, set it once for your user:
+
+```powershell
+setx LINEAR_API_KEY "lin_api_..."
+```
+
+There's no login shell to ask, so the helper reads your user environment in the registry (`HKCU\Environment`), then the machine's, then its own environment. A key set with `setx` is found without restarting Herdr.
+
 Read [RECIPE.md](RECIPE.md) and the source before installing. The helper sends your key to api.linear.app only and never stores it. On an explicit click the panel can **post comments and replies, change an issue's state, priority and assignee, fetch a base branch and create Git worktrees and branches, write the branch-to-issue link to Git config, open spaces, and send messages to agents.** Nothing writes on its own. Messages to agents tell them to treat Linear's text as data and not to post unless asked.
 
 From this folder:
 
 ```sh
-go -C helper run ./install          # first install
-go -C helper run ./install --update # later
+go -C helper run ./deploy          # first install
+go -C helper run ./deploy --update # later
 ```
 
 The installer builds the helper, copies only `mods/branch-issue/` to `~/.config/herdr-app/mods/branch-issue/`, and runs `herdr-app check`. It doesn't edit layouts or keys.
+
+The same commands work on Windows, in PowerShell or `cmd`. There the helper is `bin\herdr-linear.exe` and the mod goes to `%USERPROFILE%\.config\herdr-app\mods\branch-issue\`. `--update` works while Herdr is running: the old helper is moved aside. The installer's folder is `deploy`, not `install`, because Windows asks for an administrator before running any program named like an installer.
 
 ### Place the sidebar
 
@@ -90,13 +100,14 @@ Add a `settings` block to the installed `mods/branch-issue/mod.json` with only w
 }
 ```
 
-`refresh.every` is how often a visible panel re-reads. `branch.max_identifiers` caps how many identifiers one branch may carry. `list.default` picks the first filters until a saved view exists. `worktrees.root` is where Start work puts checkouts; `open_with` is `terminal` or an installed agent's key; `move_to_started` preselects that option. Unknown keys and wrong types are reported at the top of the panel and ignored.
+`refresh.every` is how often a visible panel re-reads. `branch.max_identifiers` caps how many identifiers one branch may carry. `list.default` picks the first filters until a saved view exists. `worktrees.root` is where Start work puts checkouts; on Windows `~` is your user folder, so they land under `C:/Users/<you>/.herdr/worktrees/`. `open_with` is `terminal` or an installed agent's key; `move_to_started` preselects that option. Unknown keys and wrong types are reported at the top of the panel and ignored.
 
 ## Development
 
 ```sh
 node --test tests/*.test.cjs
-(cd helper && go test ./... && go vet ./...)
+go -C helper test ./...
+go -C helper vet ./...
 herdr-app check "$HOME/.config/herdr-app/mods/branch-issue"
 ```
 

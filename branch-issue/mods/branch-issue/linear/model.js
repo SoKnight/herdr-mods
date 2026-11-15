@@ -1,4 +1,5 @@
 // What Linear's answers mean, as plain functions: no Herdr, no drawing.
+import { insidePath } from "../paths.js";
 const pad = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export const person = (user) => user?.displayName || user?.name || "";
@@ -41,19 +42,24 @@ export function timeAgo(iso, now = Date.now()) {
 
 // The helper's plain words for a key that can't be used at all, which is worth a
 // whole panel rather than a line: nothing else can work until it's fixed.
-export function keyProblem(message) {
+// On Windows the key is a user environment variable, which setx saves.
+export function keyProblem(message, windows = false) {
+  const command = windows ? 'setx LINEAR_API_KEY "…"' : "export LINEAR_API_KEY=…";
   if (/LINEAR_API_KEY is not set/.test(message ?? ""))
     return {
       title: "No Linear API key",
-      detail:
-        "This panel reads LINEAR_API_KEY from your shell. Create a key, export it, then try again.",
-      command: "export LINEAR_API_KEY=…",
+      detail: windows
+        ? "This panel reads LINEAR_API_KEY from your Windows environment. Create a key, save it with setx, then try again."
+        : "This panel reads LINEAR_API_KEY from your shell. Create a key, export it, then try again.",
+      command,
     };
   if (/rejected LINEAR_API_KEY/.test(message ?? ""))
     return {
       title: "Linear rejected the API key",
-      detail: "LINEAR_API_KEY isn't valid any more. Create a new key, export it, then try again.",
-      command: "export LINEAR_API_KEY=…",
+      detail: windows
+        ? "LINEAR_API_KEY isn't valid any more. Create a new key, save it with setx, then try again."
+        : "LINEAR_API_KEY isn't valid any more. Create a new key, export it, then try again.",
+      command,
     };
   return null;
 }
@@ -162,7 +168,7 @@ export function commentThreads(issue) {
 // space on a branch naming it.
 export function agentsOnIssue({ agents, panes, issue, worktrees = [], space }) {
   const pane = new Map(panes.map((p) => [p.pane, p]));
-  const within = (cwd, path) => cwd === path || cwd?.startsWith(`${path}/`);
+  const within = (cwd, path) => Boolean(cwd && path) && insidePath(cwd, path);
   return agents.filter((agent) => {
     const where = pane.get(agent.pane);
     if (worktrees.some((w) => within(where?.cwd, w.path))) return true;
