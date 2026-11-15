@@ -4,6 +4,7 @@
 import { div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { panes, props, run, theme, home, shared } from "herdr";
+import { isWindowsPath, relativePath } from "../paths.js";
 
 function programIcon(program, size, color) {
   if (!program?.icon) return null;
@@ -14,6 +15,12 @@ function programIcon(program, size, color) {
 function shortFolder(cwd) {
   if (!cwd) return "";
   const homeFolder = home();
+  // Windows: either separator, any case, and shown with backslashes as Windows writes it.
+  if (isWindowsPath(cwd)) {
+    const rest = relativePath(cwd, homeFolder);
+    if (rest === null) return cwd;
+    return rest ? `~\\${rest.replace(/\//g, "\\")}` : "~";
+  }
   if (cwd === homeFolder) return "~";
   return cwd.startsWith(`${homeFolder}/`) ? `~${cwd.slice(homeFolder.length)}` : cwd;
 }

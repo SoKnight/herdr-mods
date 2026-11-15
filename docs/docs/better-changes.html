@@ -61,9 +61,11 @@
   <summary>Install by hand</summary>
   <p>To install by hand, copy <code>mods/better-changes/</code> into Herdr's mods folder. A symlink loads the code but not the icons. From a clone of the repository, <code>sync.sh</code> does the copy:</p>
   <pre>./better-changes/sync.sh</pre>
+  <p>On Windows, run <code>.\sync.ps1</code> from PowerShell in the <code>better-changes</code> folder instead (<code>pwsh -File sync.ps1</code> also works).</p>
   </details>
   <p>To open the panel from a key, bind any key to <code>mod.open:better-changes</code> in <code>~/.config/herdr-app/keys.json</code>:</p>
   <pre>"global": { "cmd-alt-g": "mod.open:better-changes" }</pre>
+  <p>On Windows, pick a Ctrl key instead, such as <code>ctrl-shift-g</code>, and add the line yourself.</p>
   <p>It opens the panel and selects it if it shares a stack, such as Herdr's Files and Changes. On an open panel it does nothing, unless <code>panel.toggle</code> is on: then it closes it. A layout without the panel shows a notification.</p>
 
   <h3 id="better-changes-use">Use</h3>
@@ -112,7 +114,7 @@
     <li><code>git/repository.js</code>: following the repository, the index, history, commit and amend. <code>git/reads.js</code>: plain functions that read from Git. <code>git/model.js</code>: parsing with no Herdr calls.</li>
     <li><code>views/sidebar.js</code>, <code>views/diff.js</code>, <code>views/pane-header.js</code>: the three things it draws. <code>views/ui.js</code>: the design kit.</li>
     <li><code>icons/</code>: Lucide icons and Herdr's pane header icons. <code>mod.schema.json</code>: every setting with its default, which must match the code's <code>DEFAULT_SETTINGS</code>.</li>
-    <li><code>sync.sh</code>, beside <code>mods/</code>: copies the mod into Herdr, which reloads it.</li>
+    <li><code>sync.sh</code>, beside <code>mods/</code>: copies the mod into Herdr, which reloads it. <code>sync.ps1</code> does the same on Windows: run <code>.\sync.ps1</code> from PowerShell.</li>
   </ul>
   <pre>node --test tests/*.test.cjs
 herdr-app check "$PWD/mods/better-changes"</pre>

@@ -244,7 +244,7 @@ export const diffMethods = {
     // A diff handed over whole, as Branch PR does with GitHub's patch for a PR's file.
     // shortcut: Full file has no effect here, GitHub's patch has only its hunks.
     if (this.scope === "patch")
-      return { lines: file.patch?.split("\n") ?? [NO_PATCH] };
+      return { lines: file.patch?.split(/\r?\n/) ?? [NO_PATCH] };
     if (file.fresh) return this.readFreshFile(path, root, on);
     if (file.conflict) {
       const { rows, message } = await this.readConflict(path, root, on);
@@ -260,7 +260,7 @@ export const diffMethods = {
       return { lines: ["Cannot preview this file: binary, too large, or unreadable."] };
     if (text.includes("\0")) return { lines: ["Binary file · no text diff"] };
     if (!text) return { lines: ["Empty new file"] };
-    const all = text.replace(/\n$/, "").split("\n");
+    const all = text.replace(/^﻿/, "").replace(/\r?\n$/, "").split(/\r?\n/);
     return {
       freshLines: all.length,
       lines: [`@@ -0,0 +1,${all.length} @@`, ...all.map((line) => `+${line}`)],
@@ -274,7 +274,7 @@ export const diffMethods = {
     args.push("--no-ext-diff", "--no-textconv", "--no-color", "--", path);
     const result = await this.git(args, root, on);
     if (result.code !== 0) throw Error(result.stderr || "Cannot read diff");
-    const all = result.stdout.replace(/\n$/, "").split("\n");
+    const all = result.stdout.replace(/\r?\n$/, "").split(/\r?\n/);
     const first = all.findIndex((line) => line.startsWith("@@"));
     if (first >= 0) return all.slice(first);
     return [file.binary ? "Binary file changed" : "No text diff (mode or submodule change)"];

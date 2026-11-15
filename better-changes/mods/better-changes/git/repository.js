@@ -19,7 +19,27 @@ const READ_ONLY = [
   "-c",
   "diff.autoRefreshIndex=false",
 ];
-const BULK_PATHS = 200; // Per command, to stay under the system's argument limit.
+// Per command, to stay under the system's argument limit: Windows caps a whole
+// command line at 32,767 characters, so a batch is also cut by its length.
+const BULK_PATHS = 200;
+const BULK_CHARS = 24000;
+
+function batches(paths) {
+  const all = [];
+  let batch = [];
+  let size = 0;
+  for (const path of paths) {
+    if (batch.length === BULK_PATHS || (batch.length && size + path.length + 3 > BULK_CHARS)) {
+      all.push(batch);
+      batch = [];
+      size = 0;
+    }
+    batch.push(path);
+    size += path.length + 3;
+  }
+  if (batch.length) all.push(batch);
+  return all;
+}
 
 // The active terminal's folder, or the repository saved for our own diff tab,
 // since a mod pane has no terminal folder.
@@ -60,7 +80,8 @@ export const gitMethods = {
   },
 
   git(args, root = this.root, on = this.on) {
-    return exec("git", [...READ_ONLY, ...args], { cwd: root, on });
+    // Status and commit in a big repository, or behind a slow hook, outlast exec's 30 s.
+    return exec("git", [...READ_ONLY, ...args], { cwd: root, on, timeout: 120000 });
   },
 
   // A slow read may finish after the person moved to another repository.
@@ -121,7 +142,10 @@ export const gitMethods = {
     if (top.code !== 0) {
       this.root = null;
       this.files = [];
-      this.error = "Not a Git repository";
+      // Git's own words for a folder it refuses as another user's, common on Windows: they
+      // say how to allow it.
+      const reason = top.stderr.trim();
+      this.error = /dubious ownership|safe\.directory/.test(reason) ? reason : "Not a Git repository";
       return;
     }
 
@@ -203,16 +227,11 @@ export const gitMethods = {
       return [["--literal-pathspecs", "rm", "--cached", "-r", "-f", "--", "."]];
     }
     const wanted = this.allFiles.filter((f) => !f.conflict && (stage ? f.unstaged : f.staged));
-    const commands = [];
-    for (let i = 0; i < wanted.length; i += BULK_PATHS) {
-      const paths = wanted.slice(i, i + BULK_PATHS).map((f) => f.path);
-      commands.push(
-        stage
-          ? ["--literal-pathspecs", "add", "--", ...paths]
-          : ["--literal-pathspecs", "reset", "-q", "HEAD", "--", ...paths],
-      );
-    }
-    return commands;
+    return batches(wanted.map((f) => f.path)).map((paths) =>
+      stage
+        ? ["--literal-pathspecs", "add", "--", ...paths]
+        : ["--literal-pathspecs", "reset", "-q", "HEAD", "--", ...paths],
+    );
   },
 
   indexAction(action, path, cx) {

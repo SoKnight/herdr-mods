@@ -23,7 +23,9 @@ Copy this prompt into your Herdr agent:
 
 [RECIPE.md](RECIPE.md) guides the install. Herdr's shipped layouts are read-only, so the mod only shows in a layout you own. On a shipped layout, your agent clones it and points its Changes slot at `better-changes`.
 
-Requires Git on each machine you use.
+Requires Git on each machine you use. On Windows that's `git.exe` on PATH, from Git for Windows.
+
+If Git refuses a repository as "dubious ownership", which on Windows happens when another user owns the folder (on another drive or a share, say), the panel shows Git's own message. `git config --global --add safe.directory <path>` lets Git read it.
 
 ## Commit and amend
 
@@ -81,6 +83,8 @@ Bind any key to `mod.open:better-changes` in `keys.json`:
 "global": { "cmd-alt-g": "mod.open:better-changes" }
 ```
 
+On Windows, pick a Ctrl key instead, such as `ctrl-shift-g`. No `keys.windows.json` ships for it, so add the line yourself.
+
 It opens the panel, and selects it if it shares a stack such as Herdr's Files and Changes. On an open panel it does nothing, unless `panel.toggle` is `true`: then it closes it. A layout without the panel shows a notification.
 
 ## Limits
@@ -98,7 +102,7 @@ In `mods/better-changes/`:
 - `views/sidebar.js`, `views/diff.js`, `views/pane-header.js`: the three things it can draw. `views/ui.js`: the design kit, Herdr's sizes and small components. Every look lives here, except the token colours, which are in `syntax.js`.
 - `icons/`: Lucide icons, the set Herdr uses, and Herdr's own pane header icons.
 
-- `sync.sh`: copies the mod into Herdr, which reloads it. A symlink loads the code but not the icons.
+- `sync.sh`: copies the mod into Herdr, which reloads it. A symlink loads the code but not the icons. On Windows, run `.\sync.ps1` from PowerShell in this folder instead (`pwsh -File sync.ps1` also works).
 
 ```sh
 node --test tests/*.test.cjs

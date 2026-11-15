@@ -101,7 +101,7 @@ function load(cwd, { props, saved, home = "/nonexistent", tree, calls = [] } = {
       },
     }),
   };
-  const source = ["settings.js", "file-icons.js", "git/reads.js", "git/repository.js", "views/sidebar.js", "views/diff.js", "views/pane-header.js", "main.js"]
+  const source = ["paths.js", "settings.js", "file-icons.js", "git/reads.js", "git/repository.js", "views/sidebar.js", "views/diff.js", "views/pane-header.js", "main.js"]
     .map(read)
     .join("\n");
   const Mod = new Function(...Object.keys(env), source)(...Object.values(env));
@@ -138,6 +138,8 @@ function repo() {
   git("init", "-q", "-b", "main");
   git("config", "user.email", "t@example.com");
   git("config", "user.name", "T");
+  // Not the machine's own: Git for Windows turns autocrlf on; tests choose line endings.
+  git("config", "core.autocrlf", "false");
   fs.writeFileSync(`${root}/a.txt`, "one\n");
   git("add", "a.txt");
   git("commit", "-qm", "first");
@@ -709,4 +711,66 @@ test("a diff is coloured per side, and a hunk header starts both sides afresh", 
   assert.deepEqual(coloured("*/ z"), [], "a hunk header starts afresh");
   assert.deepEqual(coloured("const w = 1"), [["const", "keyword"], ["1", "number"]]);
   assert.equal(mod.runsOf(mod.rows.find((r) => r.kind === "@")), null);
+});
+
+// Git for Windows checks files out with CRLF (core.autocrlf=true), so every line ends "\r\n".
+test("a conflict with CRLF line endings still shows its markers", async () => {
+  const root = conflicted();
+  const file = `${root}/a.txt`;
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace(/\n/g, "\r\n"));
+  const mod = await openDiff(root, "a.txt");
+  assert.match(mod.head().detail, /1 conflict/);
+  assert.ok(mod.rows.some((row) => row.kind === "yours" && row.text === "main"));
+  assert.ok(!mod.rows.some((row) => row.text.includes("\r")));
+});
+
+test("CRLF files diff and preview without a stray carriage return", async () => {
+  const { root, git } = repo();
+  fs.writeFileSync(`${root}/win.txt`, "a\r\nb\r\n");
+  git("add", "win.txt");
+  git("commit", "-qm", "crlf");
+  fs.writeFileSync(`${root}/win.txt`, "a\r\nc\r\n");
+  fs.writeFileSync(`${root}/new.txt`, "\uFEFFone\r\ntwo\r\n");
+  const source = { cwd: root, on: null };
+  const context = JSON.stringify(source);
+  for (const [path, added] of [["win.txt", "c"], ["new.txt", "one"]]) {
+    const selection = { context, root, on: null, path, scope: "unstaged", at: 1 };
+    const { mod, cx } = load(root, { props: { mode: "diff", space: "s", source, selection } });
+    await cx.settle();
+    assert.ok(mod.rows.some((row) => row.kind === "+" && row.text === added), path);
+    assert.ok(!mod.rows.some((row) => row.text.includes("\r")), path);
+  }
+});
+
+test("stage all during a merge cuts long path lists to fit a Windows command line", () => {
+  const { mod } = load("/nowhere");
+  mod.conflicts = true;
+  const paths = Array.from({ length: 450 }, (_, i) => `${"deep/".repeat(30)}file-${i}.txt`);
+  mod.allFiles = paths.map((path) => ({ path, unstaged: true }));
+  const commands = mod.bulkIndexCommands("stage");
+  assert.ok(commands.length > 3);
+  for (const args of commands) {
+    const listed = args.slice(args.indexOf("--") + 1);
+    assert.ok(listed.length <= 200);
+    assert.ok(listed.join(" ").length <= 24000);
+  }
+  assert.deepEqual(commands.flatMap((args) => args.slice(args.indexOf("--") + 1)), paths);
+});
+
+test("a folder Git refuses shows Git's reason, not 'Not a Git repository'", async () => {
+  const { root } = repo();
+  const { mod, cx } = load(root);
+  await cx.settle();
+  const context = mod.contextKey();
+  const answer = (stderr) => async () => ({ code: 128, stdout: "", stderr });
+  mod.git = answer("fatal: detected dubious ownership in repository at 'D:/proj'\n");
+  await mod.readRepository("D:\proj", null, context, cx);
+  assert.match(mod.error, /dubious ownership/);
+  mod.git = answer("fatal: not a git repository (or any of the parent directories): .git\n");
+  await mod.readRepository("D:\proj", null, context, cx);
+  assert.equal(mod.error, "Not a Git repository");
+  // Inside .git or a bare repository, as before.
+  mod.git = answer("fatal: this operation must be run in a work tree\n");
+  await mod.readRepository("/r/.git", null, context, cx);
+  assert.equal(mod.error, "Not a Git repository");
 });

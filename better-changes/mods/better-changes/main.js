@@ -13,6 +13,7 @@ import { props, shared, setShared, nextCommand, layout, run, notify, closeOverla
 import { loadSettings, duration } from "./settings.js";
 import { followFileIcons } from "./file-icons.js";
 import { panelCommands } from "./panel.js";
+import { samePath } from "./paths.js";
 import { gitMethods } from "./git/repository.js";
 import { sidebarMethods } from "./views/sidebar.js";
 import { diffMethods } from "./views/diff.js";
@@ -179,7 +180,8 @@ class BetterChanges extends View {
     if (
       reload &&
       reload.at !== this.reload &&
-      reload.root === this.root &&
+      this.root &&
+      samePath(reload.root, this.root) &&
       reload.on === (this.on ?? null) &&
       !this.loading &&
       !this.busy
