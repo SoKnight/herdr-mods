@@ -123,6 +123,18 @@
                         "stack": "panel-body",
                         "target": "linear-issues"
                       }
+                    },
+                    {
+                      "id": "panel",
+                      "label": "Panel",
+                      "icon": "mods/better-sidebar/icons/panel-right.svg",
+                      "action": {
+                        "type": "command",
+                        "name": "layout.toggle",
+                        "args": {
+                          "id": "panel"
+                        }
+                      }
                     }
                   ]
                 }
@@ -131,19 +143,6 @@
                 "weight": 1
               },
               "window_drag": true
-            },
-            {
-              "id": "panel-toggle",
-              "type": "block",
-              "size": {
-                "px": 36
-              },
-              "content": {
-                "mod": "better-sidebar",
-                "props": {
-                  "view": "panel-toggle"
-                }
-              }
             }
           ]
         },

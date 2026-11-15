@@ -58,19 +58,20 @@
   <div class="prompt"><code>Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/munza/herdr-mods/tree/main/estro</code></div>
   <p>The agent copies <code>layouts/estro.json</code>, then adds all seven mods with each mod's own prompt, telling you what each can do as it goes. It skips each mod's layout step, because Estro already places it, and updates any mod you already have. It never overwrites a mod or a layout already there under the same name. Last, it runs <code>herdr-app check</code> on each mod and switches to the layout.</p>
   <p>Branch PR needs <code>gh</code> and Branch Issue a Linear API key; both need Go 1.23+ to build their helper. Tell the agent to leave out any of them, and it drops that mod's button and block.</p>
+  <p>On Windows, Herdr's folder is <code>%USERPROFILE%\.config\herdr-app</code>. The Better mods are copied with <code>.\sync.ps1</code> from PowerShell in each mod's folder, and the two helpers are built with <code>go -C helper run ./deploy</code> from the mod's folder. In Windows PowerShell 5.1, and PowerShell before 7.3, escape the inner quotes of JSON given to <code>herdr-app do</code>: <code>herdr-app do layout.switch '{\"name\": \"estro\"}'</code>.</p>
 
   <h3 id="estro-use">Use</h3>
   <ul>
     <li><b>Sidebar, 268px:</b> Herdr's brand block, then Better Sidebar's spaces and agents in one block under Spaces and Agents tabs, with each space's tabs beneath it, and its one-line footer with Settings, Mod settings (<a href="better-config.html">Better Config</a>) and Add machine.</li>
-    <li><b>Work area:</b> <a href="better-tabs.html">Better Tabs</a> at the top with Better Sidebar's panel toggle at the far right, the active tab's terminals in the middle, and Herdr's status bar at the bottom.</li>
-    <li><b>The panel, 368px:</b> one view at a time, picked from the Better Tabs toolbar: Files, Changes, PRs and Issues. Each space remembers which panel it had open.</li>
+    <li><b>Work area:</b> <a href="better-tabs.html">Better Tabs</a> across the top, the active tab's terminals in the middle, and Herdr's status bar at the bottom. On Windows and Linux the window buttons sit in the top-right corner.</li>
+    <li><b>The panel, 368px:</b> one view at a time, picked from the Better Tabs toolbar: Files, Changes, PRs and Issues. Each space remembers which panel it had open. The toolbar's <b>Panel</b> button hides or shows the whole panel.</li>
   </ul>
 
   <h3 id="estro-update">Update</h3>
   <p>Run the same prompt again: mods you already have are updated instead of installed again, and your existing <code>estro</code> layout is left alone.</p>
 
   <h3 id="estro-developers">For developers</h3>
-  <p><code>estro/mods/</code> holds a one-line pointer per mod, not copies, so there is one copy of each mod in the repo. <a href="https://github.com/munza/herdr-mods/blob/main/estro/RECIPE.md">RECIPE.md</a> is the brief: enough to build Estro from an empty folder. The toolbar buttons are <code>panel</code> actions with <code>container: "panel"</code> and <code>stack: "panel-body"</code>.</p>
+  <p><code>estro/mods/</code> holds a one-line pointer per mod, not copies, so there is one copy of each mod in the repo. <a href="https://github.com/munza/herdr-mods/blob/main/estro/RECIPE.md">RECIPE.md</a> is the brief: enough to build Estro from an empty folder. The four panel buttons are <code>panel</code> actions with <code>container: "panel"</code> and <code>stack: "panel-body"</code>. The Panel button is a <code>command</code> action running <code>layout.toggle</code> with <code>{"id": "panel"}</code>. To give it a key, add a <code>layout:estro</code> section to <code>keys.json</code>: <code>"ctrl-shift-r": {"command": "layout.toggle", "args": {"id": "panel"}}</code>, or <code>cmd-shift-b</code> on macOS.</p>
 <pre>node --test estro/tests/*.test.cjs</pre>
 </article>
       <nav class="pager" aria-label="More docs"><a href="branch-issue.html"><span>Previous</span>Branch Issue</a></nav>

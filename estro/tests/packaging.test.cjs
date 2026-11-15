@@ -19,8 +19,10 @@ test('every mod the layout names is here or ships with Herdr', () => {
 test('every toolbar button points at a panel and an icon that exist', () => {
   const tabs = blocks(layout).find((b) => b.content.mod === 'better-tabs');
   const ids = new Set(blocks(layout).map((b) => b.id));
+  // A command button toggles a container, such as the panel itself.
+  (function all(n) { ids.add(n.id); (n.children ?? []).forEach(all); })(layout);
   for (const button of tabs.content.props.buttons) {
-    assert.ok(ids.has(button.action.target), button.id);
+    assert.ok(ids.has(button.action.target ?? button.action.args?.id), button.id);
     if (button.icon.startsWith('mods/')) assert.ok(fs.existsSync(path.join(root, '..', button.icon.split('/')[1], button.icon)), button.icon);
   }
 });

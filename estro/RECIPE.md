@@ -12,7 +12,7 @@ A row filling the window, with no title bar, `canvas` behind and 1px `border` di
 
 **Sidebar, 268px.** Herdr's `workspace-chrome` brand block at 46px. Below, Better Sidebar's spaces and agents in one block (`view: lists`), under Spaces and Agents tabs, each space's tabs and agents beneath it on Spaces: branches beside space names, a pull request's state at the right of the row, and worktrees nested under their repository. Better Sidebar's one-line footer closes it at 37px, with Settings, Mod settings (Better Config's dialog) and Add machine.
 
-**Work area, the rest.** At the top, 42px, Better Tabs with Better Sidebar's 36px panel toggle at the far right. In the middle, the active tab's terminals, with a 368px panel on the right. At the bottom, Herdr's 28px `workspace-status`.
+**Work area, the rest.** At the top, 42px, Better Tabs across the whole row, so on Windows and Linux its window buttons sit in the top-right corner. In the middle, the active tab's terminals, with a 368px panel on the right. At the bottom, Herdr's 28px `workspace-status`.
 
 **The panel** is a stack of one view at a time, chosen from the toolbar in Better Tabs:
 
@@ -25,7 +25,7 @@ A row filling the window, with no title bar, `canvas` behind and 1px `border` di
 
 Better Config has no block: it's a dialog of every mod's settings, opened from the footer's Mod settings button.
 
-The toolbar's buttons are `panel` actions with `container: "panel"` and `stack: "panel-body"`, and each space remembers its panel through `rememberPanels`.
+The toolbar's four panel buttons are `panel` actions with `container: "panel"` and `stack: "panel-body"`, and each space remembers its panel through `rememberPanels`. After them, set apart, a Panel button hides or shows the whole panel: a `command` action running `layout.toggle` with `{"id": "panel"}`, with Better Sidebar's `mods/better-sidebar/icons/panel-right.svg` as its icon. A key for it is a `layout:estro` binding in `keys.json`, offered only with the person's say-so: `"ctrl-shift-r": {"command": "layout.toggle", "args": {"id": "panel"}}` on Windows, `cmd-shift-b` on macOS.
 
 ## Installing it
 
@@ -41,6 +41,8 @@ Anyone who doesn't want one of them can drop its button and block from the layou
 
 Then `herdr-app check` each mod and `layout.switch {"name": "estro"}`.
 
+On Windows, Herdr's folder is `%USERPROFILE%\.config\herdr-app`, so the layout goes in its `layouts\`. The Better mods are copied with `.\sync.ps1` from PowerShell in each mod's folder, and Branch PR and Branch Issue build their helpers with `go -C helper run ./deploy` (`--update` for one already installed). In Windows PowerShell 5.1, and PowerShell before 7.3, JSON given to `herdr-app do` needs its inner quotes escaped: `herdr-app do layout.switch '{\"name\": \"estro\"}'`. Where a mod ships `keys.windows.json`, merge that instead of `keys.json`.
+
 ## Built from
 
 `layouts/estro.json`, with `cloned_from` Herdr's `main`, and `mods/`, a one-line pointer for each of `better-files`, `better-sidebar`, `better-tabs`, `better-changes`, `better-config`, `branch-pr` and `branch-issue`. `workspace-chrome` and `workspace-status` ship with Herdr. Each mod's own `RECIPE.md` in [munza/herdr-mods](https://github.com/munza/herdr-mods) is the brief for that mod.
@@ -51,5 +53,6 @@ Never overwrite a mod or layout already there under the same name. The panel is 
 
 ## Done when
 
-- `herdr-app check` passes for each mod, and the layout shows with all four panel buttons.
+- `herdr-app check` passes for each mod, and the layout shows with the four panel buttons plus Panel.
 - Each button opens its panel, and a mod with a helper shows real data or says what's missing.
+- Panel hides and shows the right panel, and on Windows the window buttons sit in the top-right corner.
