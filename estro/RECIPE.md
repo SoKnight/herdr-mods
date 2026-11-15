@@ -12,7 +12,7 @@ A row filling the window, with no title bar, `canvas` behind and 1px `border` di
 
 **Sidebar, 268px.** Herdr's `workspace-chrome` brand block at 46px. Below, Better Sidebar's spaces and agents in one block (`view: lists`), under Spaces and Agents tabs, each space's tabs and agents beneath it on Spaces: branches beside space names, a pull request's state at the right of the row, and worktrees nested under their repository. Better Sidebar's one-line footer closes it at 37px, with Settings, Mod settings (Better Config's dialog) and Add machine.
 
-**Work area, the rest.** At the top, 42px, Better Tabs across the whole row, so on Windows and Linux its window buttons sit in the top-right corner. In the middle, the active tab's terminals, with a 368px panel on the right. At the bottom, Herdr's 28px `workspace-status`.
+**Work area, the rest.** At the top, 42px, Better Tabs across the whole row, so on Windows and Linux its window buttons sit in the top-right corner. In the middle, the active tab's terminals, with a 368px panel on the right. At the bottom, a 28px row: Herdr's `workspace-status`, and on its right, 300px wide, nozikov's [Usage Limits](https://github.com/nozikov/herdr-usage-limits) with Claude Code and Codex limits.
 
 **The panel** is a stack of one view at a time, chosen from the toolbar in Better Tabs:
 
@@ -30,13 +30,13 @@ The toolbar's five panel buttons are `panel` actions with `container: "panel"` a
 
 ## Installing it
 
-**`mods/` here holds pointers, not mods: don't copy it.** Each `mods/<mod>/RECIPE.md` names the mod's real home in [munza/herdr-mods](https://github.com/munza/herdr-mods). Two of them need a helper built from source, which copying could never do, and this keeps one copy of each mod.
+**`mods/` here holds pointers, not mods: don't copy it.** Each `mods/<mod>/RECIPE.md` names the mod's real home: [munza/herdr-mods](https://github.com/munza/herdr-mods), or for Usage Limits its own repo. Two of them need a helper built from source, which copying could never do, and this keeps one copy of each mod.
 
 Copy only `layouts/estro.json`. Then add each mod with its pointer's prompt, for example:
 
 > Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-changes
 
-Do that for `better-files`, `better-changes`, `better-sidebar`, `better-tabs`, `better-config`, `branch-pr`, `branch-issue` and `claude-threads`, reading each mod's README and telling the person what it can do first. Skip any step in a mod's recipe that places it in a layout, because Estro already does. Where a mod is already installed, update it instead.
+Do that for `better-files`, `better-changes`, `better-sidebar`, `better-tabs`, `better-config`, `branch-pr`, `branch-issue`, `claude-threads` and `usage-limits`, reading each mod's README and telling the person what it can do first. Skip any step in a mod's recipe that places it in a layout, because Estro already does. Where a mod is already installed, update it instead.
 
 Anyone who doesn't want one of them can drop its button and block from the layout: Branch PR needs `gh`, Branch Issue a Linear key and Claude Threads Claude Code. The two Branch panels need Go 1.23+ to build their helper.
 
@@ -46,7 +46,7 @@ On Windows, Herdr's folder is `%USERPROFILE%\.config\herdr-app`, so the layout g
 
 ## Built from
 
-`layouts/estro.json`, with `cloned_from` Herdr's `main`, and `mods/`, a one-line pointer for each of `better-files`, `better-sidebar`, `better-tabs`, `better-changes`, `better-config`, `branch-pr`, `branch-issue` and `claude-threads`. `workspace-chrome` and `workspace-status` ship with Herdr. Each mod's own `RECIPE.md` in [munza/herdr-mods](https://github.com/munza/herdr-mods) is the brief for that mod.
+`layouts/estro.json`, with `cloned_from` Herdr's `main`, and `mods/`, a one-line pointer for each of `better-files`, `better-sidebar`, `better-tabs`, `better-changes`, `better-config`, `branch-pr`, `branch-issue`, `claude-threads` and `usage-limits`. `workspace-chrome` and `workspace-status` ship with Herdr. The status bar is a row, not resizable, of `status` (`workspace-status`, weight 1) and `usage-limits` (300px). Each mod's own `RECIPE.md` in [munza/herdr-mods](https://github.com/munza/herdr-mods) is the brief for that mod.
 
 ## Watch out
 
