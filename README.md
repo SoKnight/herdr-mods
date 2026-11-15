@@ -49,9 +49,13 @@ Your PR and your Linear issue, next to the branch.
 - [Branch PR](branch-pr/README.md) (`branch-pr`): GitHub PR panel that shows what stands between a PR and a merge, lists its files with diffs, hands failures and comments to agents, and merges when ready. Needs Go 1.23+ and `gh`.
 - [Branch Issue](branch-issue/README.md) (`branch-issue`): Linear panel that follows the branch, edits state, priority and assignee, and opens a worktree with an agent holding the issue. Needs Go 1.23+ and a Linear API key.
 
+### Claude Threads
+
+- [Claude Threads](claude-threads/README.md) (`claude-threads`): past Claude Code sessions for the repo you're in or every folder, searchable by any prompt; click to resume one in a new tab, shift-click to fork it, and an open one is focused instead.
+
 ## Estro: all of them in one layout
 
-[Estro](estro/RECIPE.md) puts every mod in one window for directing agents: spaces and agents on the left, the session in the middle, and Files, Changes, PRs and Issues in a panel on the right. One prompt installs the layout and all seven mods:
+[Estro](estro/RECIPE.md) puts every mod in one window for directing agents: spaces and agents on the left, the session in the middle, and Files, Changes, PRs, Issues and Threads in a panel on the right. One prompt installs the layout and all eight mods:
 
 ```text
 Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/munza/herdr-mods/tree/main/estro

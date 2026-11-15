@@ -125,6 +125,18 @@
                       }
                     },
                     {
+                      "id": "threads",
+                      "label": "Threads",
+                      "icon": "mods/claude-threads/icons/threads.svg",
+                      "group": "panels",
+                      "action": {
+                        "type": "panel",
+                        "container": "panel",
+                        "stack": "panel-body",
+                        "target": "threads"
+                      }
+                    },
+                    {
                       "id": "panel",
                       "label": "Panel",
                       "icon": "mods/better-sidebar/icons/panel-right.svg",
@@ -213,6 +225,13 @@
                       "type": "block",
                       "content": {
                         "mod": "branch-issue"
+                      }
+                    },
+                    {
+                      "id": "threads",
+                      "type": "block",
+                      "content": {
+                        "mod": "claude-threads"
                       }
                     }
                   ],
