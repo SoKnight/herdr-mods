@@ -12,21 +12,23 @@ When an update, or anything else, has put defaults back over the person's values
 
 ## How it works
 
-It lists the folders in `~/.config/herdr-app/mods/` and reads each `mod.json` and the `mod.schema.json` beside it, keeping those with settings in either. Under the schema's `properties.settings`, each leaf is a setting at its dotted key, read for `title`, `description`, `type`, `default`, `enum`, `minimum`, `maximum`, `format` (`duration`, `size`), `x-step`, `x-unit` and `x-labels`. A key in `settings` the schema doesn't describe still shows, with its type guessed from its value.
+It lists the folders in `~/.config/herdr-app/mods/` (`%USERPROFILE%\.config\herdr-app\mods\` on Windows) and reads each `mod.json` and the `mod.schema.json` beside it, keeping those with settings in either. Under the schema's `properties.settings`, each leaf is a setting at its dotted key, read for `title`, `description`, `type`, `default`, `enum`, `minimum`, `maximum`, `format` (`duration`, `size`), `x-step`, `x-unit` and `x-labels`. A key in `settings` the schema doesn't describe still shows, with its type guessed from its value.
 
 A change edits only that key in the mod's `mod.json` and writes the whole file with `writeTextFile`, passing the text it read, so it fails if the file changed meanwhile; then it rereads and tries again, up to three times, as Herdr's Settings does with `settings.json`. Herdr reloads a mod when its `mod.json` is saved. A value equal to the default, and so Reset, removes the key, and an empty `settings` block goes too: `settings` holds only what the person changed.
 
-`~/.config/herdr-mods/better-config/<mod>.json` holds `{ version, values }`: the dotted keys that differ from their defaults. After each write it's updated at once. On each read, a kept value that's gone from `mod.json`, or back at its default, or different after a version change, is lost: the page offers to restore it. Anything else that differs is a hand edit, and the copy follows the file. It rereads every 3 seconds while open.
+`~/.config/herdr-mods/better-config/<mod>.json` (`%USERPROFILE%\.config\herdr-mods\better-config\<mod>.json` on Windows) holds `{ version, values }`: the dotted keys that differ from their defaults. After each write it's updated at once. On each read, a kept value that's gone from `mod.json`, or back at its default, or different after a version change, is lost: the page offers to restore it. Anything else that differs is a hand edit, and the copy follows the file. It rereads every 3 seconds while open.
 
 Text boxes are made after each read, never during a render, which Herdr forbids. The dropdown is base's `Select` with a `Popup`, and moves the keyboard onto its list when opened by a click.
 
 ## Built from
 
-`mods/better-config/`: `main.js` (the dialog), `model.js` (fields, checks, typed input, what changed and what was lost; no Herdr calls), `mod.json` (`place: none`, title Better Config, a dialog `overlay`), `mod.schema.json`, `icons/` (Lucide chevron-down, check). `keys.json` suggests a key. The look follows Herdr's `frame/settings/main.js`.
+`mods/better-config/`: `main.js` (the dialog), `model.js` (fields, checks, typed input, what changed and what was lost; no Herdr calls), `mod.json` (`place: none`, title Better Config, a dialog `overlay`), `mod.schema.json`, `icons/` (Lucide chevron-down, check). `keys.json` suggests a key, `cmd-alt-,`, and `keys.windows.json` the Windows one, `ctrl-shift-,`. The look follows Herdr's `frame/settings/main.js`.
 
 ## Watch out
 
-Merge `keys.json` into the person's only when they agree: Herdr stops updating the default shortcuts of a `keys.json` that's been edited. Never overwrite an unrelated mod on a name clash.
+Merge `keys.json` into the person's only when they agree: Herdr stops updating the default shortcuts of a `keys.json` that's been edited. On Windows merge `keys.windows.json` instead. Never overwrite an unrelated mod on a name clash.
+
+On Windows, copy the mod with `.\sync.ps1` from PowerShell in the mod's folder. In Windows PowerShell 5.1, and PowerShell before 7.3, JSON given to `herdr-app do` needs its inner quotes escaped: `herdr-app do mod.open '{\"name\":\"better-config\"}'`.
 
 ## Done when
 

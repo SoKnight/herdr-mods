@@ -6,7 +6,8 @@
 // update wiped can be put back.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, InputState, Input, Select, Popup, Checkbox } from "gpui-base";
-import { appHome, home, exec, readTextFile, writeTextFile, theme, props, closeOverlay, run } from "herdr";
+import { appHome, home, exec, readTextFile, writeTextFile, theme, props, closeOverlay, run, window } from "herdr";
+import { readdir } from "fs/promises";
 import {
   fieldsOf,
   getPath,
@@ -53,10 +54,31 @@ export default class BetterConfig extends View {
     return `${home()}/.config/herdr-mods/better-config`;
   }
 
-  // Every installed mod with settings: described by its mod.schema.json, or set in its mod.json. Returns whether anything changed.
+  // A failed read says why instead of loading forever; what was read before stays.
   async load() {
-    const listing = await exec("/bin/sh", ["-c", 'cd "$1" && ls -d */ 2>/dev/null', "sh", `${appHome()}/mods`]);
-    const names = listing.stdout.split("\n").map((n) => n.replace(/\/$/, "")).filter(Boolean);
+    try {
+      const changed = await this.read();
+      this.loadError = null;
+      return changed;
+    } catch (e) {
+      const before = this.loadError;
+      this.loadError = `Couldn't read the mods: ${e?.message ?? e}`;
+      return before !== this.loadError;
+    }
+  }
+
+  // The mods folder's folders. Windows has no /bin/sh; reading the folder starts nothing.
+  async modNames() {
+    const folder = `${appHome()}/mods`;
+    if (window()?.platform === "windows")
+      return (await readdir(folder, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name);
+    const listing = await exec("/bin/sh", ["-c", 'cd "$1" && ls -d */ 2>/dev/null', "sh", folder]);
+    return listing.stdout.split("\n").map((n) => n.replace(/\/$/, "")).filter(Boolean);
+  }
+
+  // Every installed mod with settings: described by its mod.schema.json, or set in its mod.json. Returns whether anything changed.
+  async read() {
+    const names = await this.modNames();
     const mods = [];
     for (const name of names) {
       const path = `${appHome()}/mods/${name}/mod.json`;
@@ -109,7 +131,7 @@ export default class BetterConfig extends View {
     if (mod.kept && equal(mod.kept, next)) return;
     const text = `${JSON.stringify(next, null, 2)}\n`;
     try {
-      if (mod.keptRaw === null) await exec("mkdir", ["-p", this.keptFolder()]);
+      // writeTextFile makes the folder when it's missing.
       await writeTextFile(mod.keptPath, text, mod.keptRaw);
       mod.kept = next;
       mod.keptRaw = text;
@@ -728,7 +750,7 @@ export default class BetterConfig extends View {
                 div()
                   .px(28)
                   .py(22)
-                  .child(this.loaded ? this.page(t, mod) : div().text_size(13).text_color(t.dim).child("Loading…")),
+                  .child(this.loaded ? this.page(t, mod) : div().text_size(13).text_color(t.dim).child(this.loadError ?? "Loading…")),
               ),
           )
           .child(Scrollbar.vertical("bc-body").mode("always").absolute().inset_0()),

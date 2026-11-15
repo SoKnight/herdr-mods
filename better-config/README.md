@@ -28,13 +28,19 @@ Herdr's command palette doesn't list mods, so give it a key. [keys.json](keys.js
 { "global": { "cmd-alt-,": "mod.open:better-config" } }
 ```
 
-Herdr stops adding new default shortcuts to a `keys.json` you've edited, so if you've never changed yours, this is the edit that makes it yours. Without a key, `herdr-app do mod.open '{"name":"better-config"}'` opens it too. The same key, or Esc, closes it.
+On Windows, merge [keys.windows.json](keys.windows.json) into `%USERPROFILE%\.config\herdr-app\keys.json` instead. It suggests **Ctrl+Shift+,**:
+
+```json
+{ "global": { "ctrl-shift-,": "mod.open:better-config" } }
+```
+
+Herdr stops adding new default shortcuts to a `keys.json` you've edited, so if you've never changed yours, this is the edit that makes it yours. Without a key, `herdr-app do mod.open '{"name":"better-config"}'` opens it too. In Windows PowerShell 5.1, and PowerShell before 7.3, escape the inner quotes: `herdr-app do mod.open '{\"name\":\"better-config\"}'`. The same key, or Esc, closes it.
 
 ## Where values live
 
 Values stay where each mod already reads them: the `settings` block of its installed `mod.json`, which holds only what you changed. A change back to the default removes the key. Nothing about a mod changes, and a mod works the same with or without Better Config.
 
-Better Config also keeps a copy of only what you changed in `~/.config/herdr-mods/better-config/<mod>.json`, outside every mod's folder. When a kept value is missing from `mod.json`, or is back at its default, it asks whether to restore it. A value you changed by hand to something else is taken as yours, and the copy follows it. Every write goes through only if the file hasn't changed since it was read, so it never overwrites an edit made meanwhile.
+Better Config also keeps a copy of only what you changed in `~/.config/herdr-mods/better-config/<mod>.json` (`%USERPROFILE%\.config\herdr-mods\better-config\<mod>.json` on Windows), outside every mod's folder. When a kept value is missing from `mod.json`, or is back at its default, it asks whether to restore it. A value you changed by hand to something else is taken as yours, and the copy follows it. Every write goes through only if the file hasn't changed since it was read, so it never overwrites an edit made meanwhile.
 
 ## Describe a mod's settings
 
@@ -90,6 +96,8 @@ node --test tests/*.test.cjs
 ./sync.sh
 herdr-app check "$HOME/.config/herdr-app/mods/better-config"
 ```
+
+On Windows, run `.\sync.ps1` from PowerShell in this folder instead of `./sync.sh` (`pwsh -File sync.ps1` also works). The other two lines work there as they are.
 
 `mods/better-config/model.js` holds everything that doesn't touch Herdr, and the tests run it as it is. Tests can't draw the dialog, so also look at the running app.
 

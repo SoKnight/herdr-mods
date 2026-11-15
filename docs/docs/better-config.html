@@ -49,7 +49,7 @@
 
   <h3 id="better-config-start">Quick start</h3>
   <ol>
-    <li>Install with the prompt below and say yes to the suggested key, <b>⌘⌥,</b>.</li>
+    <li>Install with the prompt below and say yes to the suggested key, <b>⌘⌥,</b> (<b>Ctrl+Shift+,</b> on Windows).</li>
     <li>Press the key and pick a mod from the list. Change a setting: it's checked, saved and applied at once.</li>
     <li>A dot marks what you changed. After a mod updates, a box at the top offers to restore your values.</li>
   </ol>
@@ -61,11 +61,15 @@
   <summary>Install by hand</summary>
   <p>To install by hand from a clone of the repository, <code>sync.sh</code> copies <code>mods/better-config/</code> into Herdr's mods folder:</p>
   <pre>./better-config/sync.sh</pre>
+  <p>On Windows, run <code>.\sync.ps1</code> from PowerShell in the <code>better-config</code> folder instead (<code>pwsh -File sync.ps1</code> also works).</p>
   </details>
   <p>Herdr's command palette doesn't list mods, so give it a key. <code>keys.json</code> suggests <b>⌘⌥,</b>, next to Herdr's own <b>⌘,</b> for Settings. Merge it into <code>~/.config/herdr-app/keys.json</code>:</p>
   <pre>{ "global": { "cmd-alt-,": "mod.open:better-config" } }</pre>
+  <p>On Windows, merge <code>keys.windows.json</code> into <code>%USERPROFILE%\.config\herdr-app\keys.json</code> instead. It suggests <b>Ctrl+Shift+,</b>:</p>
+  <pre>{ "global": { "ctrl-shift-,": "mod.open:better-config" } }</pre>
   <p>Herdr stops adding new default shortcuts to a <code>keys.json</code> you've edited, so if you've never changed yours, this edit makes it yours. Without a key, this opens it too:</p>
   <pre>herdr-app do mod.open '{"name":"better-config"}'</pre>
+  <p>In Windows PowerShell 5.1, and PowerShell before 7.3, escape the inner quotes: <code>herdr-app do mod.open '{\"name\":\"better-config\"}'</code>.</p>
 
   <h3 id="better-config-use">Use</h3>
   <ul>
@@ -121,11 +125,12 @@
     <li><code>mods/better-config/main.js</code>: the dialog.</li>
     <li><code>mods/better-config/model.js</code>: fields, checks, typed input, what changed and what was lost. No Herdr calls, and the tests run it as it is.</li>
     <li><code>mods/better-config/mod.json</code>, <code>mod.schema.json</code>, <code>icons/</code>.</li>
-    <li><code>keys.json</code>: the suggested key.</li>
+    <li><code>keys.json</code>: the suggested key. <code>keys.windows.json</code>: the Windows one.</li>
   </ul>
   <pre>node --test tests/*.test.cjs
 ./sync.sh
 herdr-app check "$HOME/.config/herdr-app/mods/better-config"</pre>
+  <p>On Windows, run <code>.\sync.ps1</code> from PowerShell instead of <code>./sync.sh</code>.</p>
   <p>Tests can't draw the dialog, so also look at the running app.</p>
 </article>
       <nav class="pager" aria-label="More docs"><a href="better-tabs.html"><span>Previous</span>Better Tabs</a><a class="next" href="better-icons.html"><span>Next</span>Better Icons</a></nav>
