@@ -23,7 +23,7 @@ Copy this prompt into your Herdr agent:
 
 - About 5 MB of icons. Better Files and Better Changes use them so far.
 - Mods reread the table when Better Icons' folder changes, so an update shows at once. An install, or a folder replaced by copying, shows within 10 seconds.
-- A symlinked mod folder loads code but not icons, so install by copying, as `sync.sh` does.
+- A symlinked mod folder loads code but not icons, so install by copying, as `sync.sh` and `sync.ps1` do.
 
 ## Update
 
@@ -35,6 +35,8 @@ Copy `mods/better-icons/` again. Mods that use it reread the table when its fold
 node --test tests/*.test.cjs
 ./sync.sh    # copies mods/better-icons/ into Herdr
 ```
+
+On Windows, run `.\sync.ps1` from PowerShell in this folder instead of `./sync.sh` (`pwsh -File sync.ps1` also works).
 
 To move to another Material Icon Theme release, change `VERSION` in `generate.mjs`, then:
 

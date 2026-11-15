@@ -60,6 +60,7 @@
   <summary>Install by hand</summary>
   <p>To install by hand from a clone of the repository, <code>sync.sh</code> copies <code>mods/better-icons/</code> into Herdr's mods folder:</p>
   <pre>./better-icons/sync.sh</pre>
+  <p>On Windows, run <code>.\sync.ps1</code> from PowerShell in the <code>better-icons</code> folder instead (<code>pwsh -File sync.ps1</code> also works).</p>
   </details>
 
   <h3 id="better-icons-use">Use</h3>
@@ -89,6 +90,7 @@ node generate.mjs package
 node --test tests/*.test.cjs
 ./sync.sh
 herdr-app check "$HOME/.config/herdr-app/mods/better-icons"</pre>
+  <p>On Windows, run <code>.\sync.ps1</code> from PowerShell instead of <code>./sync.sh</code>.</p>
   <p>The icons are MIT-licensed, copyright (c) 2025 Material Extensions; the licence ships beside them.</p>
 </article>
       <nav class="pager" aria-label="More docs"><a href="better-config.html"><span>Previous</span>Better Config</a><a class="next" href="branch-pr.html"><span>Next</span>Branch PR</a></nav>
