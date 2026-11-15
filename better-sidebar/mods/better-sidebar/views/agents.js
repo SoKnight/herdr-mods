@@ -52,7 +52,9 @@ function title(tab, l) {
     !/^[~/]|^[A-Za-z]:\\/.test(live) &&
     !live.includes("@") &&
     live.toLowerCase() !== l?.program?.key;
-  return tab.name === prog && telling ? live : tab.name;
+  // As Better Tabs shows it: a tab nobody named takes its agent's title.
+  const unnamed = tab.name === prog || (!tab.named && l?.program?.agent);
+  return unnamed && telling ? live : tab.name;
 }
 const RANK = { blocked: 4, done: 3, working: 2, idle: 1 };
 // A sub-agent without a pane isn't in agents(): its raw word, error counting as
@@ -660,13 +662,12 @@ export class Agents {
       .child(pic);
   }
 
-  // The tab's title, then quietly its space; nested under its space's row, its program.
+  // The tab's title, then quietly its space; nested under its space's row, the title alone.
   agentName(a, view, t) {
     const label = view.label(a);
     const namesSpace = !view.nested;
-    // A row is its tab's title, as Herdr's tab bar shows it; the icon says which agent.
-    const name = a.tab_name || label;
-    const prog = a.program?.name;
+    // A row is its tab's title, as Better Tabs shows it; the icon says which agent.
+    const name = label;
     const idle = a.status === "idle" && !a.focused;
     return h_flex()
       .flex_1()
@@ -684,9 +685,7 @@ export class Agents {
       // The space, quietly after the name.
       .when(namesSpace && Boolean(a.space_name), (el) =>
         el.child(div().flex_1().min_w(0).truncate().text_size(TEXT.caption).text_color(t.dim).child(a.space_name)),
-      )
-      // Under its space, the program instead.
-      .when(view.nested && Boolean(prog) && prog !== name, (el) => el.child(this.programName(prog, t)));
+      );
   }
 
   // The fold chevron; folded, the count too, colored by the most urgent one.

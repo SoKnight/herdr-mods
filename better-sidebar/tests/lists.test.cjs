@@ -28,7 +28,8 @@ async function harness({ settings = {}, tab = null, panes = [], sharedValues = {
   const pending = [];
   const stored = { "lists.tab": tab };
   const live = { order: [] };
-  const tabOf = (id) => ({ id, name: id });
+  // Unnamed, as Herdr gives them: called by their place.
+  const tabOf = (id) => ({ id, name: { a: "1", b: "2", c: "1", d: "3" }[id], named: false });
   const spaces = [
     { id: "shop", name: "shop", folder: "/shop", tabs: [tabOf("a"), tabOf("b"), tabOf("d")] },
     { id: "docs", name: "docs", folder: "/docs", tabs: [tabOf("c")] },
@@ -94,8 +95,9 @@ test("Spaces shows each space's tabs beneath it, as their agents where they have
   const { mod, live } = await harness();
   const drawn = ids(mod.render()).filter((id) => /^(space-(shop|docs)|ag-t\d|tab-\w)$/.test(id));
   assert.deepEqual(drawn, ["space-shop", "ag-t1", "ag-t3", "tab-d", "space-docs", "ag-t2"]);
-  // Its tab's title, then its program, quietly.
-  assert.match(text(find(mod.render(), "ag-t1")), /^\s*1\s+Claude Code/);
+  // Its tab's title alone: the icon says which agent.
+  assert.match(text(find(mod.render(), "ag-t1")), /^\s*1\b/);
+  assert.doesNotMatch(text(find(mod.render(), "ag-t1")), /Claude Code/);
   assert.deepEqual(live.order, ["t1", "t3", "t2"]);
 });
 
@@ -138,6 +140,15 @@ test("in Spaces a pinned agent sits above every space", async () => {
 test("an Agents row reads its tab's title, then its space", async () => {
   const { mod } = await harness({ tab: "agents" });
   assert.match(text(find(mod.render(), "ag-t1")), /^\s*1\s+shop/);
+});
+
+test("an unnamed tab's agent row reads the agent's title, as Better Tabs shows it", async () => {
+  const claude = { name: "Claude Code", key: "claude", agent: true };
+  const { mod } = await harness({
+    tab: "agents",
+    panes: [{ pane: "p-t1", tab: "a", terminal: "t1", program: claude, title: "✳ Fix the login bug" }],
+  });
+  assert.match(text(find(mod.render(), "ag-t1")), /^\s*Fix the login bug\s+shop/);
 });
 
 test("a mod's tab shows the icon the mod publishes, and a tab with neither keeps the gap", async () => {

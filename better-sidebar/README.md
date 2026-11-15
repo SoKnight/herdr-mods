@@ -24,8 +24,8 @@ The agents block is adapted from Herdr's shipped panel and keeps its pins, sub-a
 
 A block with `"props": { "view": "lists" }` shows both lists, under two tabs:
 
-- **Spaces:** the spaces list, with each space's tabs beneath it in order, joined by tree lines: each row is its tab's title as Herdr's tab bar shows it, then its program quietly beside it, like `1 Claude Code` or `2 zsh`. Clicking one opens it. Pinned agents sit in a Pinned group above every space. Next-agent keys follow the same order.
-- **Agents:** the agents list, with its grouping menu at the right of the tabs. Each row reads its tab's title, then its space quietly beside it, like `1 herdr-mods`; the icon says which agent it is.
+- **Spaces:** the spaces list, with each space's tabs beneath it in order, joined by tree lines: each row is its tab's title as Better Tabs shows it (an unnamed tab with an agent takes the agent's title, such as Claude's session topic), like `Fix the login bug`; a tab without an agent adds its program quietly beside it, like `2 zsh`. Clicking one opens it. Pinned agents sit in a Pinned group above every space. Next-agent keys follow the same order.
+- **Agents:** the agents list, with its grouping menu at the right of the tabs. Each row reads its tab's title, then its space quietly beside it, like `Fix the login bug herdr-mods`; the icon says which agent it is.
 
 The Agents tab shows how many agents there are. For the ones that need you first, sort Agents by priority. The tab you pick is remembered. On the narrow rail, the two lists sit one above the other.
 
