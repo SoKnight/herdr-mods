@@ -105,6 +105,9 @@ func Attribute(raw Raw, rules *Rules, corr []Correction, s Settings, from, to in
 
 	windows, locks, calls := newCursor(byKind["window"]), newCursor(byKind["lock"]), newCursor(byKind["call"])
 	input := newCursor(mergeSpans(byKind["input"], idle))
+	// Presence is asked only while the computer is on and the collector saw it: a sleep or a nodata
+	// stretch is absence, so input on both sides of it is never glued across.
+	power, nodata := newCursor(mergeSpans(byKind["power"], 1)), newCursor(mergeSpans(byKind["nodata"], 1))
 
 	var tl Timeline
 	var lastProject, lastWhy string // last project found by a rule while I was here
@@ -115,7 +118,7 @@ func Attribute(raw Raw, rules *Rules, corr []Correction, s Settings, from, to in
 			beats.advance(t)
 			call := calls.at(t)
 			inCall := call != nil && isCallApp(rules, call.Exe)
-			if locks.at(t) != nil || (input.at(t) == nil && !inCall) {
+			if power.at(t) == nil || nodata.at(t) != nil || locks.at(t) != nil || (input.at(t) == nil && !inCall) {
 				t = end
 				continue
 			}

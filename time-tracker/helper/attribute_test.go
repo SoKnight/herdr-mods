@@ -20,7 +20,18 @@ func win(exe, title string, s, e int) Span {
 func inp(s, e int) Span    { return Span{Kind: "input", Start: at(s), End: at(e)} }
 func lock(s, e int) Span   { return Span{Kind: "lock", Start: at(s), End: at(e)} }
 func call(s, e int) Span   { return Span{Kind: "call", Start: at(s), End: at(e), Exe: "telemost.exe"} }
+func power(s, e int) Span  { return Span{Kind: "power", Start: at(s), End: at(e)} }
+func nodata(s, e int) Span { return Span{Kind: "nodata", Start: at(s), End: at(e)} }
 func spans(sp ...Span) Raw { return Raw{Spans: sp} }
+
+func hasKind(raw Raw, kind string) bool {
+	for _, sp := range raw.Spans {
+		if sp.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
 
 func agent(term, cwd string, s, e int) Span {
 	return Span{Kind: "agent", Start: at(s), End: at(e), Term: term, Cwd: cwd}
@@ -60,8 +71,13 @@ func testRules(t *testing.T) *Rules {
 	})
 }
 
+// attrRange keeps the computer on over the whole range (and the hour of data before it), unless the
+// test brings its own power spans.
 func attrRange(t *testing.T, raw Raw, from, to int, corr ...Correction) Timeline {
 	t.Helper()
+	if !hasKind(raw, "power") {
+		raw.Spans = append(raw.Spans, power(from-60, to))
+	}
 	s := DefaultSettings()
 	s.Loc = msk
 	return Attribute(raw, testRules(t), corr, s, at(from), at(to))
@@ -165,6 +181,27 @@ func TestLockIsAbsence(t *testing.T) {
 func TestLockBeatsCall(t *testing.T) {
 	tl := attr(t, spans(win("telemost.exe", "Лекция", 0, 30), call(0, 30), lock(10, 20)))
 	assertMeIntervals(t, tl, []Interval{m(0, 10), m(20, 30)})
+}
+
+func TestShortSleepIsNotPresence(t *testing.T) {
+	// A 3-minute sleep is shorter than idle, yet the computer was off: never glued into presence.
+	tl := attr(t, spans(power(0, 10), power(13, 30), win("idea64.exe", "x", 0, 30), inp(0, 10), inp(13, 30)))
+	assertMeIntervals(t, tl, []Interval{m(0, 10), m(13, 30)})
+	var total int64
+	for _, s := range tl.Me {
+		total += s.End - s.Start
+	}
+	assertEq(t, total, 27*minMs)
+}
+
+func TestPresenceNeedsPowerForCalls(t *testing.T) {
+	tl := attr(t, spans(power(0, 40), call(0, 60)))
+	assertMe(t, tl, 0, 40)
+}
+
+func TestNoDataIsNotPresence(t *testing.T) {
+	tl := attr(t, spans(power(0, 30), nodata(0, 10), win("idea64.exe", "x", 0, 30), inp(0, 30)))
+	assertMe(t, tl, 10, 30)
 }
 
 func TestBeatBeatsTitleOnlyForMatchingApp(t *testing.T) {
