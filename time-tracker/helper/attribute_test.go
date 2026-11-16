@@ -1,6 +1,7 @@
 package main
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -21,6 +22,16 @@ func lock(s, e int) Span   { return Span{Kind: "lock", Start: at(s), End: at(e)}
 func call(s, e int) Span   { return Span{Kind: "call", Start: at(s), End: at(e), Exe: "telemost.exe"} }
 func spans(sp ...Span) Raw { return Raw{Spans: sp} }
 
+func agent(term, cwd string, s, e int) Span {
+	return Span{Kind: "agent", Start: at(s), End: at(e), Term: term, Cwd: cwd}
+}
+
+func fix(id int64, kind, target string, s, e int, project string) Correction {
+	return Correction{ID: id, Kind: kind, Target: target, Start: at(s), End: at(e), Project: project}
+}
+
+const minMs = 60_000
+
 func beat(source string, minute int, path, entity string) Heartbeat {
 	return Heartbeat{Source: source, Time: at(minute), ProjectPath: path, Entity: entity}
 }
@@ -37,6 +48,7 @@ func testRules(t *testing.T) *Rules {
 			{ID: "tricky", Name: "Tricky Network", Titles: []string{"Tricky"}},
 			{ID: "site", Name: "Site", URLs: []string{`^https://site\.example/`}},
 			{ID: "study", Name: "Учёба", Apps: []string{"telemost.exe"}},
+			{ID: "universe", Name: "Universe", Paths: []string{`C:\Dev\starmc`}},
 		},
 		Apps: []AppRule{
 			{Exe: "idea64.exe", Activity: "development", Source: "idea"},
@@ -48,14 +60,16 @@ func testRules(t *testing.T) *Rules {
 	})
 }
 
-func attrRange(t *testing.T, raw Raw, from, to int) Timeline {
+func attrRange(t *testing.T, raw Raw, from, to int, corr ...Correction) Timeline {
 	t.Helper()
 	s := DefaultSettings()
 	s.Loc = msk
-	return Attribute(raw, testRules(t), nil, s, at(from), at(to))
+	return Attribute(raw, testRules(t), corr, s, at(from), at(to))
 }
 
-func attr(t *testing.T, raw Raw) Timeline { return attrRange(t, raw, -60, 240) }
+func attr(t *testing.T, raw Raw, corr ...Correction) Timeline {
+	return attrRange(t, raw, -60, 240, corr...)
+}
 
 // meIntervals glues touching Me segments, so presence can be checked apart from attribution.
 func meIntervals(tl Timeline) []Interval {
@@ -268,4 +282,148 @@ func TestWhyNeverEmptyWithoutProject(t *testing.T) {
 	assertEq(t, len(tl.Me), 1)
 	assertEq(t, tl.Me[0].Project, "")
 	assertWhyHas(t, tl.Me[0], "без проекта")
+}
+
+func agentIntervals(tl Timeline, project string) []Interval {
+	var out []Interval
+	for _, a := range tl.Agents {
+		if a.Project == project {
+			out = append(out, Interval{a.Start, a.End})
+		}
+	}
+	return out
+}
+
+func assertAgents(t *testing.T, tl Timeline, project string, want ...Interval) {
+	t.Helper()
+	if got := agentIntervals(tl, project); !reflect.DeepEqual(got, want) {
+		t.Errorf("agents %q = %v, want %v", project, got, want)
+	}
+}
+
+func assertAgentTotal(t *testing.T, tl Timeline, project string, want int64) {
+	t.Helper()
+	var got int64
+	for _, iv := range agentIntervals(tl, project) {
+		got += iv.End - iv.Start
+	}
+	assertEq(t, got, want)
+}
+
+func TestAgentsUnionPerProject(t *testing.T) {
+	tl := attr(t, spans(agent("t1", `C:\Dev\easyx\EasyLauncher`, 0, 30), agent("t2", `C:\Dev\easyx\EasyLauncher`, 20, 50), agent("t3", `C:\Dev\starmc\x`, 0, 10)))
+	assertAgentTotal(t, tl, "easylauncher", 50*minMs)
+	assertAgentTotal(t, tl, "universe", 10*minMs)
+	assertAgents(t, tl, "easylauncher", m(0, 50))
+	assertEq(t, len(tl.Me), 0)
+}
+
+func TestAgentsIndependentOfPresence(t *testing.T) {
+	tl := attr(t, spans(agent("t1", `C:\Dev\easyx`, 0, 30), agent("t2", `C:\Elsewhere`, 0, 5)))
+	assertEq(t, len(tl.Me), 0)
+	assertAgents(t, tl, "easylauncher", m(0, 30))
+	assertAgents(t, tl, "", m(0, 5)) // a folder outside every project still shows
+	for _, a := range tl.Agents {
+		if !strings.Contains(a.Why, "агент t") {
+			t.Errorf("Why %q lacks the terminal", a.Why)
+		}
+	}
+}
+
+func TestAgentCorrectionBeforeUnion(t *testing.T) {
+	raw := spans(agent("t1", `C:\Dev\easyx`, 0, 30), agent("t2", `C:\Dev\easyx`, 20, 50))
+	tl := attr(t, raw, fix(1, "project", "agents", 0, 25, "tricky"))
+	assertAgents(t, tl, "easylauncher", m(25, 50))
+	assertAgents(t, tl, "tricky", m(0, 25))
+	for _, a := range tl.Agents {
+		assertEq(t, a.Corrected, a.Project == "tricky")
+		if a.Project == "tricky" && !strings.Contains(a.Why, "правка #1") {
+			t.Errorf("Why %q lacks the correction", a.Why)
+		}
+	}
+
+	tl = attr(t, raw, fix(1, "exclude", "agents", 10, 40, ""))
+	assertAgents(t, tl, "easylauncher", m(0, 10), m(40, 50))
+}
+
+func TestCorrectionTargetMeLeavesAgents(t *testing.T) {
+	raw := spans(win("idea64.exe", "Tricky", 0, 60), inp(0, 60), agent("t1", `C:\Dev\easyx`, 0, 60))
+	tl := attr(t, raw, fix(1, "exclude", "me", 0, 60, ""))
+	assertEq(t, len(tl.Me), 0)
+	want := attr(t, raw).Agents
+	if len(want) == 0 || !reflect.DeepEqual(tl.Agents, want) {
+		t.Errorf("Agents = %+v, want %+v", tl.Agents, want)
+	}
+}
+
+func TestLaterCorrectionWins(t *testing.T) {
+	raw := spans(win("idea64.exe", "Tricky", 0, 60), inp(0, 60), agent("t1", `C:\Dev\easyx`, 0, 60))
+	// Passed out of order: the ID decides, not the position.
+	tl := attr(t, raw, fix(2, "project", "both", 30, 60, "b"), fix(1, "project", "both", 0, 60, "a"))
+	assertEq(t, segAt(t, tl, 29, 59).Project, "a")
+	s := segAt(t, tl, 30, 0)
+	assertEq(t, s.Project, "b")
+	assertEq(t, s.Corrected, true)
+	if !strings.HasPrefix(s.Why, "правка #2: ") || !strings.Contains(s.Why, "правка #1: ") {
+		t.Errorf("Why %q: want the newest correction first, then the older one", s.Why)
+	}
+	assertWhyHas(t, s, "заголовок") // the original reason stays after the prefixes
+	assertMe(t, tl, 0, 60)
+	assertAgents(t, tl, "a", m(0, 30))
+	assertAgents(t, tl, "b", m(30, 60))
+}
+
+func TestAddManualTimeNoDoubleCount(t *testing.T) {
+	add := Correction{ID: 1, Kind: "add", Target: "me", Start: at(20), End: at(40), Project: "study", Activity: "study"}
+	tl := attr(t, spans(win("idea64.exe", "Tricky", 0, 30), inp(0, 30)), add)
+	assertMe(t, tl, 0, 40)
+	s := segAt(t, tl, 19, 59)
+	assertEq(t, s.Project, "tricky")
+	assertEq(t, s.Manual, false)
+	assertEq(t, s.Corrected, false)
+	s = segAt(t, tl, 20, 0)
+	assertEq(t, s.End, at(40))
+	assertEq(t, s.Project, "study")
+	assertEq(t, s.Activity, "study")
+	assertEq(t, s.Manual, true)
+	assertEq(t, s.Corrected, true)
+	assertWhyHas(t, s, "правка #1")
+}
+
+func TestRemovedCorrectionRestores(t *testing.T) {
+	raw := spans(win("idea64.exe", "Tricky", 0, 60), inp(0, 60), agent("t1", `C:\Dev\easyx`, 0, 60))
+	base := attr(t, raw)
+	note := Correction{ID: 3, Kind: "note", Target: "me", Start: at(0), End: at(10), Note: "созвон"}
+	act := Correction{ID: 4, Kind: "activity", Target: "agents", Start: at(0), End: at(10), Activity: "design"}
+	fixed := attr(t, raw, fix(1, "project", "both", 0, 30, "site"), fix(2, "exclude", "both", 50, 60, ""), note, act)
+	s := segAt(t, fixed, 5, 0)
+	assertEq(t, s.Note, "созвон")
+	assertEq(t, s.Activity, "design") // activity and note touch Me whatever the target
+	assertEq(t, s.Project, "site")
+	assertMe(t, fixed, 0, 50)
+	assertAgents(t, fixed, "site", m(0, 30))
+	assertAgents(t, fixed, "easylauncher", m(30, 50))
+	if again := attr(t, raw); !reflect.DeepEqual(again, base) {
+		t.Errorf("without corrections = %+v, want %+v", again, base)
+	}
+}
+
+func TestPowerAndNoData(t *testing.T) {
+	tl := attr(t, spans(
+		Span{Kind: "power", Start: at(-90), End: at(-30)},
+		Span{Kind: "power", Start: at(0), End: at(120)},
+		Span{Kind: "nodata", Start: at(5), End: at(12)},
+		Span{Kind: "nodata", Start: at(0), End: at(10)},
+		Span{Kind: "nodata", Start: at(12), End: at(15)},
+		Span{Kind: "agents_unknown", Start: at(200), End: at(300)},
+	))
+	if !reflect.DeepEqual(tl.Power, []Interval{m(-60, -30), m(0, 120)}) {
+		t.Errorf("Power = %v", tl.Power)
+	}
+	if !reflect.DeepEqual(tl.NoData, []Interval{m(0, 15)}) {
+		t.Errorf("NoData = %v", tl.NoData)
+	}
+	if !reflect.DeepEqual(tl.AgentsUnknown, []Interval{m(200, 240)}) {
+		t.Errorf("AgentsUnknown = %v", tl.AgentsUnknown)
+	}
 }
