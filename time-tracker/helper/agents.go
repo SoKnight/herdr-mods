@@ -127,11 +127,14 @@ func hcPath() string {
 // streamAgents follows `hc events` until ctx is done, calling lost() and retrying after 10s on any break.
 func streamAgents(ctx context.Context, emit func(map[string]AgentState), lost func()) {
 	for ctx.Err() == nil {
-		cmd := hidden(exec.CommandContext(ctx, hcPath(), "events"))
+		run, stop := context.WithCancel(ctx)
+		cmd := hidden(exec.CommandContext(run, hcPath(), "events"))
 		if out, err := cmd.StdoutPipe(); err == nil && cmd.Start() == nil {
 			readEvents(out, emit)
+			stop() // kill hc so Wait cannot block on a full pipe after a scan error
 			cmd.Wait()
 		}
+		stop()
 		if ctx.Err() != nil {
 			return
 		}

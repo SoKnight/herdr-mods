@@ -53,3 +53,15 @@ func TestReadEventsLongLinesAndGarbage(t *testing.T) {
 	must(t, err)
 	assertEq(t, n, 1)
 }
+
+func TestAgentVanishedAndConcurrent(t *testing.T) {
+	var a AgentTracker
+	a.Feed(map[string]AgentState{"t1": {Cwd: "a", Working: true}, "t2": {Cwd: "b", Working: true}}, 0)
+	assertEq(t, len(a.Open(10)), 2)
+	got := a.Feed(map[string]AgentState{"t2": {Cwd: "b", Working: true}}, 100)
+	assertEq(t, len(got), 1)
+	assertEq(t, got[0], Span{Kind: "agent", Start: 0, End: 100, Term: "t1", Cwd: "a"})
+	got = a.Lost(200)
+	assertEq(t, len(got), 1)
+	assertEq(t, got[0].Term, "t2")
+}
