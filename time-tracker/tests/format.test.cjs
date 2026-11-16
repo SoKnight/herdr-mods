@@ -12,7 +12,8 @@ test('durations', () => {
 });
 
 test('activity labels fall back to the id', () => {
-  assert.equal(F.activityLabel('development'), 'Разработка');
+  const labels = { development: 'Разработка', architecture: 'Проектирование', design: 'Дизайн', documentation: 'Документация', study: 'Учёба' };
+  for (const [id, label] of Object.entries(labels)) assert.equal(F.activityLabel(id), label);
   assert.equal(F.activityLabel('custom'), 'custom');
 });
 

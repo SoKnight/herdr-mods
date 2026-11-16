@@ -17,8 +17,11 @@ export class Status {
   }
 
   poll(cx) {
+    if (this.polling) return;
+    this.polling = true;
     cx.spawn(async (cx) => {
       this.status = await call(["status"]);
+      this.polling = false;
       cx.notify();
     });
   }

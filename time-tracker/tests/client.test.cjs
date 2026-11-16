@@ -5,7 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const dir = path.join(__dirname, '../mods/time-tracker');
 const strip = (f) => fs.readFileSync(path.join(dir, f), 'utf8').replace(/^import .*$/gm, '').replace(/^export /gm, '');
-const load = (exec) => new Function('exec', 'appHome', `${strip('format.js')}\n${strip('client.js')}\nreturn call;`)(exec, () => 'H');
+const load = (exec, exists = async () => true) =>
+  new Function('exec', 'appHome', 'exists', `${strip('format.js')}\n${strip('client.js')}\nreturn call;`)(exec, () => 'H', exists);
 
 test('call runs the installed exe with --json and parses the output', async () => {
   let seen;
@@ -18,4 +19,12 @@ test('a missing exe is down, other failures are errors', async () => {
   assert.deepEqual(await load(async () => { throw new Error('program not found'); })(['status']), { down: true });
   assert.deepEqual(await load(async () => { throw new Error('boom'); })(['status']), { error: 'boom' });
   assert.deepEqual(await load(async () => ({ code: 3, stdout: '{"error":"down"}' }))(['status']), { down: true });
+});
+
+test('an exe that is not there is down without running anything', async () => {
+  let ran = false;
+  const call = load(async () => ((ran = true), { code: 0, stdout: '{}' }), async () => false);
+  assert.deepEqual(await call(['status']), { down: true });
+  assert.equal(ran, false);
+  assert.deepEqual(await load(async () => ({ code: 0, stdout: '{}' }), async () => { throw new Error('x'); })(['status']), { down: true });
 });

@@ -6,7 +6,7 @@ export function formatDuration(ms) {
   return h ? `${h}ч ${m % 60}м` : `${m}м`;
 }
 
-const ACTIVITIES = { development: "Разработка", architecture: "Архитектура", design: "Дизайн", documentation: "Документация", study: "Учёба" };
+const ACTIVITIES = { development: "Разработка", architecture: "Проектирование", design: "Дизайн", documentation: "Документация", study: "Учёба" };
 export const activityLabel = (id) => ACTIVITIES[id] ?? id ?? "";
 
 // What `herdr-time ... --json` printed: exit code 3 means the collector isn't running.
