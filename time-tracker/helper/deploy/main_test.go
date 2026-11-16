@@ -19,10 +19,12 @@ type fakes struct {
 func fakeTools(t *testing.T) *fakes {
 	t.Helper()
 	f := &fakes{}
-	oldRun, oldLook, oldOut, oldSet, oldStart, oldQuit := run, lookPath, out, setAutostart, startDetached, quit
+	oldRun, oldLook, oldOut, oldSet, oldStart, oldQuit, oldBuild := run, lookPath, out, setAutostart, startDetached, quit, buildPath
 	t.Cleanup(func() {
-		run, lookPath, out, setAutostart, startDetached, quit = oldRun, oldLook, oldOut, oldSet, oldStart, oldQuit
+		run, lookPath, out, setAutostart, startDetached, quit, buildPath = oldRun, oldLook, oldOut, oldSet, oldStart, oldQuit, oldBuild
 	})
+	built := filepath.Join(t.TempDir(), "bin", executable()) // never the repo's own bin/
+	buildPath = func() string { return built }
 	out = &strings.Builder{}
 	lookPath = func(string) (string, error) { return "available", nil }
 	run = func(_ string, args ...string) error {
@@ -36,12 +38,12 @@ func fakeTools(t *testing.T) *fakes {
 	return f
 }
 
-func TestInstallBuildsIntoModAndCopiesItToAppHome(t *testing.T) {
+func TestInstallBuildsAndCopiesItToAppHome(t *testing.T) {
 	f := fakeTools(t)
+	t.Setenv("HERDR_TIME_HOME", t.TempDir())
 	app := filepath.Join(t.TempDir(), "app home")
-	built := filepath.Join(root(), "mods", mod, "bin", executable())
-	t.Cleanup(func() { os.Remove(built) })
-	if err := install(app, false); err != nil {
+	built := buildPath()
+	if err := install(app); err != nil {
 		t.Fatal(err)
 	}
 	call := strings.Join(f.calls[0], " ")
@@ -52,19 +54,18 @@ func TestInstallBuildsIntoModAndCopiesItToAppHome(t *testing.T) {
 	if b, _ := os.ReadFile(installed); string(b) != "built" {
 		t.Fatalf("installed exe = %q", b)
 	}
-	if f.runKey != runKey(installed) || f.started != installed || len(f.quit) != 0 {
+	if f.runKey != runKey(installed) || f.started != installed || len(f.quit) != 1 {
 		t.Fatalf("runKey %q started %q quit %v", f.runKey, f.started, f.quit)
 	}
 }
 
-func TestUpdateQuitsTheCollectorOnItsPortBeforeReplacing(t *testing.T) {
+func TestDeployQuitsTheCollectorOnItsPortBeforeReplacing(t *testing.T) {
 	f := fakeTools(t)
 	home := t.TempDir()
 	t.Setenv("HERDR_TIME_HOME", home)
 	if err := os.WriteFile(filepath.Join(home, "settings.json"), []byte(`{"port":5555}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Remove(filepath.Join(root(), "mods", mod, "bin", executable())) })
 	app := t.TempDir()
 	installed := filepath.Join(app, "mods", mod, "bin", executable())
 	if err := os.MkdirAll(filepath.Dir(installed), 0o755); err != nil {
@@ -73,7 +74,7 @@ func TestUpdateQuitsTheCollectorOnItsPortBeforeReplacing(t *testing.T) {
 	if err := os.WriteFile(installed, []byte("old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := install(app, true); err != nil {
+	if err := install(app); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.quit) != 1 || f.quit[0] != 5555 {
@@ -104,7 +105,7 @@ func TestDefaultPortWithoutSettings(t *testing.T) {
 func TestMissingGoFailsBeforeBuilding(t *testing.T) {
 	f := fakeTools(t)
 	lookPath = func(string) (string, error) { return "", os.ErrNotExist }
-	if install(t.TempDir(), false) == nil || len(f.calls) != 0 {
+	if install(t.TempDir()) == nil || len(f.calls) != 0 {
 		t.Fatal("built without go")
 	}
 }

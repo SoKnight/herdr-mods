@@ -502,7 +502,22 @@ func TestDryRunExportMatchesTheRealOneAndClosesNothing(t *testing.T) {
 func TestDryRunRefusesOut(t *testing.T) {
 	d := testDaemon(t)
 	_, err := buildCall(d.S, "export", []string{"--from", "1", "--to", "2", "--project", "easy", "--dry-run", "--out", "x.md"})
-	if err == nil {
-		t.Fatal("--dry-run with --out was accepted")
+	if err == nil || !strings.Contains(err.Error(), "--dry-run") {
+		t.Fatalf("--dry-run with --out: %v", err)
 	}
+}
+
+func TestCLIReopensWhenOutFails(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	cliHome(t, portOf(t, api.url))
+	seed(t, d, power(0, 120), inp(0, 22), win("idea64.exe", "Easy – Main.kt", 0, 22))
+	bad := filepath.Join(t.TempDir(), "missing", "easy.md")
+	var out, errOut bytes.Buffer
+	args := []string{"export", "--project", "easy", "--from", fmt.Sprint(at(0)), "--to", fmt.Sprint(at(60)), "--out", bad}
+	assertEq(t, runCLI(args, &out, &errOut), 1)
+	assertEq(t, errOut.Len() > 0, true)
+	ps, err := d.Store.Periods()
+	must(t, err)
+	assertEq(t, len(ps), 0) // no file, so nothing stays closed
 }

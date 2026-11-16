@@ -104,6 +104,9 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		if err := os.WriteFile(c.save, []byte(ex.Content), 0o644); err != nil {
+			if ex.Period != 0 { // no file, no closed period
+				send(s, "POST", fmt.Sprintf("/v1/periods/%d/reopen", ex.Period), nil)
+			}
 			fmt.Fprintln(stderr, err)
 			return 1
 		}

@@ -1,5 +1,5 @@
 // Builds and installs the Time Tracker: the collector, its autostart and the mod's folder.
-// From the mod's folder: go -C helper run ./deploy [--update]
+// From the mod's folder: go -C helper run ./deploy (again to update: the running collector is replaced)
 // Not called install: Windows asks for an administrator to run a program named so.
 package main
 
@@ -15,7 +15,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 )
 
@@ -40,6 +39,7 @@ var (
 	setAutostart  = registerRun // writes the HKCU Run value
 	startDetached = launch      // starts the collector without a console
 	quit          = quitCollector
+	buildPath     = func() string { return filepath.Join(root(), "mods", mod, "bin", executable()) }
 )
 
 func executable() string {
@@ -146,12 +146,12 @@ func copyFile(from, to string) error {
 	return os.WriteFile(to, b, 0o755)
 }
 
-func install(appHome string, update bool) error {
+func install(appHome string) error {
 	if _, err := lookPath("go"); err != nil {
 		return errors.New("go is required (Go 1.23+ builds the collector)")
 	}
 	src := filepath.Join(root(), "mods", mod)
-	built := filepath.Join(src, "bin", executable())
+	built := buildPath()
 	if err := os.MkdirAll(filepath.Dir(built), 0o755); err != nil {
 		return err
 	}
@@ -159,10 +159,9 @@ func install(appHome string, update bool) error {
 	if err := run(filepath.Join(root(), "helper"), "go", "build", "-ldflags", "-H=windowsgui", "-o", built, "."); err != nil {
 		return err
 	}
-	if update {
-		if err := quit(port()); err != nil {
-			return err
-		}
+	// Always: a collector left running would keep the old program in use.
+	if err := quit(port()); err != nil {
+		return err
 	}
 	target := filepath.Join(appHome, "mods", mod)
 	if err := copyTree(src, target); err != nil {
@@ -204,8 +203,7 @@ func main() {
 	if appHome == "" {
 		appHome = filepath.Join(home, ".config", "herdr-app")
 	}
-	update := len(os.Args) > 1 && strings.TrimLeft(os.Args[1], "-") == "update"
-	if err := install(appHome, update); err != nil {
+	if err := install(appHome); err != nil { // an --update from older docs changes nothing
 		fmt.Fprintln(os.Stderr, err)
 		fmt.Fprintln(os.Stderr, title+" installation failed")
 		os.Exit(1)
