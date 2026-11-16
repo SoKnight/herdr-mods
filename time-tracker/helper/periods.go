@@ -24,6 +24,7 @@ func (d *Daemon) postExport(r *http.Request) (int, any, error) {
 		Format  string `json:"format"`
 		Round   int    `json:"round"`
 		Agents  bool   `json:"agents"`
+		DryRun  bool   `json:"dry_run"` // the content only: no period is closed
 	}
 	if err := decode(r, &req); err != nil {
 		return 0, nil, err
@@ -72,6 +73,9 @@ func (d *Daemon) postExport(r *http.Request) (int, any, error) {
 		content = ExportCSV(total, notes, req.Round, req.Agents, d.S)
 	} else {
 		content = ExportMarkdown(name, req.From, req.To, total, notes, req.Round, req.Agents, d.S)
+	}
+	if req.DryRun {
+		return http.StatusOK, map[string]any{"content": content}, nil
 	}
 	snap.ExportedAt = nowMs()
 	saved, err := d.Store.AddPeriod(snap)

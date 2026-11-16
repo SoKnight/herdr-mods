@@ -20,8 +20,9 @@ export default class TimeTracker extends View {
     }
     this.tab = "day";
     const openDay = (date, cx) => {
-      this.parts.day.show(date === this.parts.day.today ? null : date, cx);
-      this.open("day", cx);
+      this.tab = "day";
+      this.parts.day.show(date === this.parts.day.today ? null : date, cx); // loads once; the tick finds it fresh
+      cx.notify();
     };
     this.parts = { day: new Day(), week: new Table("week", openDay), month: new Table("month", openDay), report: new Report() };
     if (checking()) return;

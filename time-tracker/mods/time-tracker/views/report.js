@@ -1,10 +1,10 @@
 // The Report tab: one project over a period, rounded, previewed as Markdown and saved as a file.
 // Saving closes the period for that project, so it asks first; closed periods are listed below.
 import { div } from "gpui-kit";
-import { h_flex, v_flex, InputState, Input } from "gpui-base";
+import { h_flex, v_flex, InputState, Input, TextView } from "gpui-base";
 import { theme, props, layout, home, pickFolder } from "herdr";
 import { call } from "../client.js";
-import { weekRange, monthRange, exportName, previewMarkdown, dayString } from "../format.js";
+import { weekRange, monthRange, exportName, dayString } from "../format.js";
 import { Message, TEXT } from "../ui.js";
 import { Link } from "./menu.js";
 import { panelShown } from "./day.js";
@@ -27,9 +27,10 @@ export class Report {
     this.custom = { from: null, to: null }; // InputStates, made when "custom" is first picked
     this.today = null;
     this.dayStart = 4 * 3600_000;
-    this.total = null; // the project's total for the period
+    this.preview = null; // the file as the collector would write it now
     this.periods = [];
     this.error = null;
+    this.readError = null; // the preview or the periods could not be read
     this.message = null; // { text, error? }
     this.loading = false;
     this.seq = 0;
@@ -83,16 +84,17 @@ export class Report {
     });
   }
 
+  // The preview is the collector's own dry run, so it is what the file will say; the periods come with it.
   async loadData(seq = this.seq) {
     if (!this.project) return;
     const r = this.range();
-    const [rep, periods] = await Promise.all([
-      r ? call(["report", "--from", String(r.from), "--to", String(r.to), "--project", this.project]) : null,
-      call(["periods", "--project", this.project]),
-    ]);
+    const args = ["export", "--from", String(r?.from), "--to", String(r?.to), "--project", this.project, "--format", "md", "--round", String(this.round), "--dry-run"];
+    if (this.agents) args.push("--agents");
+    const [dry, periods] = await Promise.all([r ? call(args) : null, call(["periods", "--project", this.project])]);
     if (seq !== this.seq) return;
-    const ok = rep && !rep.error && !rep.down;
-    this.total = ok ? (rep.projects.find((p) => p.project === this.project) ?? { days: {}, activities: {}, me: 0, agents: 0 }) : null;
+    const problem = (x) => (x.down ? "Сборщик не запущен" : x.error);
+    this.preview = dry && !problem(dry) ? dry.content : null;
+    this.readError = dry?.error === "closed" ? "Период уже закрыт выгрузкой: переоткройте его в списке ниже." : (dry && problem(dry)) || (!Array.isArray(periods) && problem(periods)) || null;
     if (Array.isArray(periods)) this.periods = periods;
   }
 
@@ -125,11 +127,21 @@ export class Report {
     cx.notify();
   }
 
+  // The warning comes after the preview is read again, so what is closed is what was shown.
+  ask(format, cx) {
+    const seq = ++this.seq;
+    cx.spawn(async (cx) => {
+      await this.loadData(seq);
+      if (seq === this.seq && this.preview) this.confirm = format;
+      cx.notify();
+    });
+  }
+
   save(format, cx) {
     const r = this.range();
     this.confirm = null;
     if (!r || !this.project) return;
-    const path = `${this.folder}/${exportName(this.project, r.from, r.to, format)}`;
+    const path = `${this.folder}/${exportName(this.project, r.from, r.to, format, this.dayStart)}`;
     const args = ["export", "--from", String(r.from), "--to", String(r.to), "--project", this.project, "--format", format, "--round", String(this.round), "--out", path];
     if (this.agents) args.push("--agents");
     cx.spawn(async (cx) => {
@@ -179,7 +191,7 @@ export class Report {
       .child(row("").child(choice("rep-agents", `${this.agents ? "☑" : "☐"} Показать время агентов (для справки)`, this.agents, (cx) => ((this.agents = !this.agents), cx.notify()))))
       .child(row("Папка").child(div().min_w(0).truncate().text_size(TEXT.small).child(this.folder)).child(Link({ id: "rep-folder", label: "Выбрать…", onClick: (cx) => this.chooseFolder(cx) })));
 
-    const preview = r && this.total ? previewMarkdown(this.name(this.project), r.from, r.to, this.total, this.round, this.agents) : null;
+    const preview = this.preview;
     root.child(
       div()
         .id("rep-preview")
@@ -192,7 +204,7 @@ export class Report {
         .bg(t.raised)
         .text_size(TEXT.small)
         .whitespace_normal()
-        .child(preview ?? (r ? "Загрузка…" : "Введите даты в виде ГГГГ-ММ-ДД, начало не позже конца.")),
+        .child(preview ? TextView.markdown("rep-preview-text", preview).text_size(TEXT.small).w_full().min_w(0).scrollable(false).selectable(true) : div().text_color(this.readError ? t.ansi1 : t.dim).child(this.readError ?? (r ? "Загрузка…" : "Введите даты в виде ГГГГ-ММ-ДД, начало не позже конца."))),
     );
 
     if (this.confirm) {
@@ -213,8 +225,8 @@ export class Report {
           .px(14)
           .pb(8)
           .gap(16)
-          .child(Link({ id: "rep-save-csv", label: "Сохранить CSV", onClick: (cx) => ((this.confirm = "csv"), cx.notify()) }))
-          .child(Link({ id: "rep-save-md", label: "Сохранить Markdown", onClick: (cx) => ((this.confirm = "md"), cx.notify()) })),
+          .child(Link({ id: "rep-save-csv", label: "Сохранить CSV", onClick: (cx) => this.ask("csv", cx) }))
+          .child(Link({ id: "rep-save-md", label: "Сохранить Markdown", onClick: (cx) => this.ask("md", cx) })),
       );
     }
     if (this.message) root.child(div().px(14).pb(8).text_size(TEXT.small).text_color(this.message.error ? t.ansi1 : t.muted).whitespace_normal().child(this.message.text));
@@ -231,7 +243,7 @@ export class Report {
           .gap(12)
           .items_center()
           .text_size(TEXT.small)
-          .child(div().w(150).flex_none().child(`${label(p.from)} – ${label(p.to - DAY)}`))
+          .child(div().w(150).flex_none().child(`${label(p.from - this.dayStart)} – ${label(p.to - 1 - this.dayStart)}`))
           .child(div().flex_1().min_w(0).text_color(p.delta_ms ? t.ansi3 : t.dim).child(p.delta_ms ? `правила изменили бы ${minutes(p.delta_ms)}` : "без расхождений"))
           .child(Link({ id: `rep-reopen-${p.id}`, label: "Переоткрыть", onClick: (cx) => this.reopen(p.id, cx) })),
       );

@@ -6,7 +6,7 @@ export function formatDuration(ms) {
   return h ? `${h}ч ${m % 60}м` : `${m}м`;
 }
 
-const ACTIVITIES = { development: "Разработка", architecture: "Проектирование", design: "Дизайн", documentation: "Документация", study: "Учёба" };
+const ACTIVITIES = { development: "Разработка", architecture: "Проектирование", design: "Дизайн", documentation: "Документация", study: "Учёба", "": "Без вида" };
 export const activityLabel = (id) => ACTIVITIES[id] ?? id ?? "";
 
 // What `herdr-time ... --json` printed: exit code 3 means the collector isn't running. An error keeps
@@ -45,26 +45,8 @@ export function monthRange(day, dayStartMs = 4 * 3600_000) {
   return { from: new Date(y, m - 1, 1).getTime() + dayStartMs, to: new Date(y, m, 1).getTime() + dayStartMs };
 }
 
-// `to` is exclusive: the file names the last day inside.
-export function exportName(project, from, to, format) {
-  return `${project}_${dayString(from)}_${dayString(to - 24 * 3600_000)}.${format}`;
-}
-
-// What the export file will say, from a report's project total (notes are added only in the file).
-export function previewMarkdown(name, from, to, p, step, agents) {
-  const round = (ms) => Math.floor((ms + (step * 30_000)) / (step * 60_000)) * step;
-  const out = [`# ${name}: ${dayString(from)} – ${dayString(to - 24 * 3600_000)}`];
-  let total = 0;
-  for (const day of Object.keys(p.days).sort()) {
-    const rows = Object.entries(p.days[day].activities).filter(([, ms]) => ms > 0);
-    if (!rows.length) continue;
-    out.push("", `## ${day}`, "", "| Вид | Минуты |", "|---|---|");
-    for (const [a, ms] of rows) {
-      total += round(ms);
-      out.push(`| ${activityLabel(a) || "Без вида"} | ${round(ms)} |`);
-    }
-  }
-  out.push("", `**Итого: ${total} мин**`);
-  if (agents) out.push("", `Время агентов (для справки): ${Object.values(p.days).reduce((s, d) => s + round(d.agents), 0)} мин`);
-  return out.join("\n");
+// The file's name: the days it covers, the last one as the collector counts it (the end cut at now, `to`
+// being exclusive) and the day starting dayStartMs after midnight.
+export function exportName(project, from, to, format, dayStartMs = 0, now = Date.now()) {
+  return `${project}_${dayString(from - dayStartMs)}_${dayString(Math.min(to, now) - 1 - dayStartMs)}.${format}`;
 }

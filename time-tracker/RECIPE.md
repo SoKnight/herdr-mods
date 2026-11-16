@@ -8,7 +8,7 @@ Say all of this before installing:
 
 - The collector polls Windows every 5 seconds (`poll_seconds`): time since the last input, the foreground window (exe, title, folder), whether the screen is locked, and which desktop apps hold the microphone (`HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone\NonPackaged`, read only).
 - It runs `hc events` (Herdr's command line, from `%LOCALAPPDATA%\Programs\herdr-core\hc.exe`) to follow agents.
-- It serves HTTP on `127.0.0.1:47613` only. The mod and the `herdr-time` command talk to it; nothing listens on another address and nothing is sent anywhere.
+- It serves HTTP on `127.0.0.1:47613` only. The mod and the `herdr-time` command talk to it; nothing listens on another address and nothing is sent anywhere. It also answers CORS preflights from any `moz-extension://` origin (for a future Firefox extension), so any Firefox extension you install could read the collector's data.
 - It writes `%LOCALAPPDATA%\herdr-time\`: raw samples, corrections, closed periods, `projects.json`, optional `settings.json`.
 - The installer adds a `herdr-time` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` so the collector starts with Windows, and starts it.
 - The mod runs `herdr-time.exe` with `--json` for every read and change, and opens the system folder picker for the export. A saved report is a file in the folder you pick.

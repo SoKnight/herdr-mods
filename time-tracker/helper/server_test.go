@@ -423,3 +423,23 @@ func TestExportNeverClosesTheFuture(t *testing.T) {
 	assertEq(t, ps[0].To, at(30))
 	assertEq(t, api.do("POST", "/v1/export", exportBody("other", at(40), at(100), 15), nil), http.StatusBadRequest)
 }
+
+func TestDryRunExportMatchesTheRealOneAndClosesNothing(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	seed(t, d, power(0, 120), inp(0, 22), win("idea64.exe", "Easy – Main.kt", 0, 22))
+	body := exportBody("easy", at(0), at(60), 15)
+	body["dry_run"] = true
+	var dry, real exportResult
+	assertEq(t, api.do("POST", "/v1/export", body, &dry), http.StatusOK)
+	ps, err := d.Store.Periods()
+	must(t, err)
+	assertEq(t, len(ps), 0)
+
+	assertEq(t, api.do("POST", "/v1/export", exportBody("easy", at(0), at(60), 15), &real), http.StatusOK)
+	if dry.Content == "" || dry.Content != real.Content {
+		t.Errorf("dry run differs:\n%s\nreal:\n%s", dry.Content, real.Content)
+	}
+	// A closed range answers a dry run with the same conflict.
+	assertEq(t, api.do("POST", "/v1/export", body, nil), http.StatusConflict)
+}

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/format.js'), 'utf8');
-const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, exportName, previewMarkdown };`)();
+const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, exportName };`)();
 
 test('durations', () => {
   assert.equal(F.formatDuration(18_720_000), '5ч 12м');
@@ -15,6 +15,7 @@ test('activity labels fall back to the id', () => {
   const labels = { development: 'Разработка', architecture: 'Проектирование', design: 'Дизайн', documentation: 'Документация', study: 'Учёба' };
   for (const [id, label] of Object.entries(labels)) assert.equal(F.activityLabel(id), label);
   assert.equal(F.activityLabel('custom'), 'custom');
+  assert.equal(F.activityLabel(''), 'Без вида');
 });
 
 test('down result', () => {
@@ -41,16 +42,15 @@ test('month range', () => {
   assert.deepEqual(F.monthRange('2026-11-18'), { from: at('2026-11-01', 4), to: at('2026-12-01', 4) });
 });
 
-test('export file name', () => {
-  assert.equal(F.exportName('easylauncher', at('2026-11-01'), at('2026-12-01'), 'md'), 'easylauncher_2026-11-01_2026-11-30.md');
-  assert.equal(F.exportName('easylauncher', at('2026-11-16', 4), at('2026-11-23', 4), 'csv'), 'easylauncher_2026-11-16_2026-11-22.csv');
+test('export file name follows the collector days', () => {
+  // end cut at now: a week in progress is named by its last day so far
+  assert.equal(F.exportName('easy', at('2026-11-16', 4), at('2026-11-23', 4), 'md', DAY_START, at('2026-11-18', 10)), 'easy_2026-11-16_2026-11-18.md');
+  // just after 04:00 the new day has begun
+  assert.equal(F.exportName('easy', at('2026-11-16', 4), at('2026-11-23', 4), 'md', DAY_START, at('2026-11-18', 3)), 'easy_2026-11-16_2026-11-17.md');
 });
 
-test('preview rounds each cell and keeps agents out of the total', () => {
-  const p = { days: { '2026-11-16': { agents: 20 * 60_000, activities: { development: 37 * 60_000, '': 4 * 60_000 } } } };
-  const md = F.previewMarkdown('Easy', at('2026-11-16', 4), at('2026-11-17', 4), p, 15, true);
-  assert.match(md, /\| Разработка \| 30 \|/);
-  assert.match(md, /\| Без вида \| 0 \|/);
-  assert.match(md, /\*\*Итого: 30 мин\*\*/);
-  assert.match(md, /агентов \(для справки\): 15 мин/);
+test('export file name', () => {
+  assert.equal(F.exportName('easylauncher', at('2026-11-01'), at('2026-12-01'), 'md', 0, at('2026-12-05')), 'easylauncher_2026-11-01_2026-11-30.md');
+  assert.equal(F.exportName('easylauncher', at('2026-11-16', 4), at('2026-11-23', 4), 'csv', DAY_START, at('2026-12-01')), 'easylauncher_2026-11-16_2026-11-22.csv');
 });
+

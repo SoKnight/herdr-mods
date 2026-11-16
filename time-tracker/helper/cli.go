@@ -26,7 +26,7 @@ const usage = `herdr-time <команда> [--json]
   timeline [--day YYYY-MM-DD] [--fresh]   --fresh: без снимков закрытых периодов
   projects
   report --from --to [--project id]
-  export --from --to --project id [--format md|csv] [--round 1|5|15] [--agents] [--out файл]
+  export --from --to --project id [--format md|csv] [--round 1|5|15] [--agents] [--out файл] [--dry-run]
   correct add <json> | rm <id> | ls
   beat <json>
   unassigned --from --to
@@ -169,6 +169,7 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 	agents := fs.Bool("agents", false, "")
 	out := fs.String("out", "", "")
 	fresh := fs.Bool("fresh", false, "")
+	dry := fs.Bool("dry-run", false, "")
 	if err := fs.Parse(args); err != nil {
 		return apiCall{}, err
 	}
@@ -223,7 +224,7 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 			return apiCall{}, err
 		}
 		body, err := json.Marshal(map[string]any{"project": *project, "from": from, "to": to,
-			"format": *format, "round": *round, "agents": *agents})
+			"format": *format, "round": *round, "agents": *agents, "dry_run": *dry})
 		return apiCall{method: "POST", path: "/v1/export", body: body, save: *out, show: showExport(*out)}, err
 	case cmd == "correct" && sub == "add":
 		body, err := arg(1, "<json>")

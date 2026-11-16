@@ -55,7 +55,7 @@ Where to put the chip and the panel in a layout of your own is in [RECIPE.md](RE
 - Windows only, and only Herdr's agents.
 - IDEA and Firefox are told apart by the window title for now, so a project rule for their folder or URL is a title match.
 - A report's end is cut at the present moment: time that hasn't happened yet stays open.
-- The preview is built from the report's numbers; notes you added appear only in the saved file.
+- The preview is the collector's dry run of the export, so it matches the file.
 
 ## Development
 
