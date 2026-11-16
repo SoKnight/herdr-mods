@@ -16,6 +16,19 @@ func closedBy(periods []Period, project string, s, e int64) *Period {
 	return nil
 }
 
+// overlaps tells whether any of a shares time with any of b; each is already cut to its own period.
+// ponytail: pairwise, O(len(a)·len(b)); sort and sweep if long exports get slow.
+func overlaps(a, b []Segment) bool {
+	for _, x := range a {
+		for _, y := range b {
+			if x.Start < y.End && y.Start < x.End {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (d *Daemon) postExport(r *http.Request) (int, any, error) {
 	var req struct {
 		Project string `json:"project"`
@@ -54,6 +67,12 @@ func (d *Daemon) postExport(r *http.Request) (int, any, error) {
 		return 0, nil, err
 	}
 	snap := Snapshot(tl, req.Project, req.From, req.To)
+	// The same minutes never go to two clients: another project's export may already hold some of them.
+	for _, p := range periods {
+		if p.Project != req.Project && overlaps(snap.Me, p.Me) {
+			return 0, nil, closedPeriod(p.ID)
+		}
+	}
 	total := ProjectTotal{Project: req.Project, Activities: map[string]int64{}, Days: map[string]DayTotal{}}
 	if rep := Summarize(Timeline{Me: snap.Me, Agents: snap.Agents}, d.S, nil); len(rep.Projects) > 0 {
 		total = rep.Projects[0]

@@ -243,6 +243,42 @@ func TestExportClosesPeriodAndRounds(t *testing.T) {
 	assertEq(t, api.do("POST", "/v1/export", exportBody("other", at(0), at(60), 10), nil), http.StatusBadRequest)
 }
 
+func TestExportRefusesMinutesBilledToAnotherProject(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	seed(t, d, power(0, 120), inp(0, 22), win("idea64.exe", "Easy – Main.kt", 0, 10), win("idea64.exe", "Easy – Spec.kt", 10, 22))
+	var a exportResult
+	assertEq(t, api.do("POST", "/v1/export", exportBody("easy", at(0), at(60), 15), &a), http.StatusOK)
+
+	c := serverConfig() // a new rule takes 10–22 to the other project
+	c.Projects[0].Titles = []string{"Main"}
+	c.Projects[1].Titles = []string{"Spec"}
+	must(t, d.setConfig(c))
+	var conflict struct {
+		Error  string `json:"error"`
+		Period int64  `json:"period"`
+	}
+	for _, body := range []map[string]any{exportBody("other", at(0), at(60), 15), exportBody("other", at(15), at(30), 15)} {
+		assertEq(t, api.do("POST", "/v1/export", body, &conflict), http.StatusConflict)
+		assertEq(t, conflict.Error, "closed")
+		assertEq(t, conflict.Period, a.Period)
+	}
+	dry := exportBody("other", at(0), at(60), 15)
+	dry["dry_run"] = true
+	assertEq(t, api.do("POST", "/v1/export", dry, nil), http.StatusConflict) // the preview says so too
+
+	// Range overlap alone is no conflict: other's time after 22 was never billed.
+	seed(t, d, inp(30, 40), win("idea64.exe", "Spec v2", 30, 40))
+	assertEq(t, api.do("POST", "/v1/export", exportBody("other", at(25), at(60), 15), nil), http.StatusOK)
+
+	assertEq(t, api.do("POST", fmt.Sprintf("/v1/periods/%d/reopen", a.Period), nil, nil), http.StatusNoContent)
+	var b exportResult
+	assertEq(t, api.do("POST", "/v1/export", exportBody("other", at(0), at(25), 15), &b), http.StatusOK)
+	if !strings.Contains(b.Content, "total,,12,15,") {
+		t.Errorf("other's export:\n%s", b.Content)
+	}
+}
+
 func TestTimelineFreshSkipsSnapshots(t *testing.T) {
 	d := testDaemon(t)
 	api := serve(t, d)
