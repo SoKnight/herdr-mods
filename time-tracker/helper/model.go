@@ -45,6 +45,7 @@ type Segment struct {
 	End       int64  `json:"end"`
 	App       string `json:"app"`
 	Title     string `json:"title"`
+	Path      string `json:"path"` // folder from the app's fresh signal, for "assign a project"
 	Project   string `json:"project"`
 	Activity  string `json:"activity"`
 	Note      string `json:"note"`

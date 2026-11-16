@@ -253,6 +253,18 @@ func TestNewerBeatReplacesOlderOfSameSource(t *testing.T) {
 	assertWhyHas(t, s, "перенос")
 }
 
+func TestSegmentKeepsSignalPath(t *testing.T) {
+	tl := attr(t, spans(win("herdr-app.exe", "shell", 0, 4), inp(0, 4)).with(
+		beat("herdr", 0, `C:\Dev\a`, ""),
+		beat("herdr", 2, `C:\Dev\b`, ""),
+	))
+	// Same attribution apart from the folder: still two segments, one per folder.
+	assertEq(t, len(tl.Me), 2)
+	assertEq(t, tl.Me[0].Path, `C:\Dev\a`)
+	assertEq(t, tl.Me[1].Path, `C:\Dev\b`)
+	assertEq(t, tl.Me[1].Start, at(2))
+}
+
 func TestCarryStopsAfter15Minutes(t *testing.T) {
 	tl := attr(t, spans(win("idea64.exe", "Tricky", 0, 10), win("notepad.exe", "x", 10, 40), inp(0, 40)))
 	assertEq(t, segAt(t, tl, 24, 59).Project, "tricky")

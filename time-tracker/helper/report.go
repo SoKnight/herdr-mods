@@ -6,27 +6,31 @@ import (
 )
 
 type DayTotal struct {
-	Me, Agents int64
-	Activities map[string]int64
+	Me         int64            `json:"me"`
+	Agents     int64            `json:"agents"`
+	Activities map[string]int64 `json:"activities"`
 }
 
 type ProjectTotal struct {
-	Project    string
-	Me, Agents int64
-	Activities map[string]int64
-	Days       map[string]DayTotal
+	Project    string              `json:"project"`
+	Me         int64               `json:"me"`
+	Agents     int64               `json:"agents"`
+	Activities map[string]int64    `json:"activities"`
+	Days       map[string]DayTotal `json:"days"`
 }
 
 type Report struct {
-	Uptime, Me, Agents int64
-	Projects           []ProjectTotal
+	Uptime   int64          `json:"uptime"`
+	Me       int64          `json:"me"`
+	Agents   int64          `json:"agents"`
+	Projects []ProjectTotal `json:"projects"`
 }
 
 // Divergence says a closed period no longer matches what fresh rules would give.
 type Divergence struct {
-	Period  int64
-	Project string
-	DeltaMs int64
+	Period  int64  `json:"period"`
+	Project string `json:"project"`
+	DeltaMs int64  `json:"delta_ms"`
 }
 
 // RoundMinutes rounds ms to the nearest multiple of step minutes, exactly half up.

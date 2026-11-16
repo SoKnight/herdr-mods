@@ -9,12 +9,17 @@ import (
 // beatTTL is how long a signal stays fresh unless a newer one from the same source replaces it.
 const beatTTL = 120_000
 
-type Interval struct{ Start, End int64 }
+type Interval struct {
+	Start int64 `json:"start"`
+	End   int64 `json:"end"`
+}
 
 type Timeline struct {
-	Power, NoData, AgentsUnknown []Interval
-	Me                           []Segment
-	Agents                       []AgentSeg
+	Power         []Interval `json:"power"`
+	NoData        []Interval `json:"nodata"`
+	AgentsUnknown []Interval `json:"agents_unknown"`
+	Me            []Segment  `json:"me"`
+	Agents        []AgentSeg `json:"agents"`
 }
 
 // cursor finds the span covering t among spans sorted by Start, for t that never decreases.
@@ -150,6 +155,9 @@ func Attribute(raw Raw, rules *Rules, corr []Correction, s Settings, from, to in
 			activity, actWhy := activityOf(rules, app, hb)
 
 			seg.End, seg.Project, seg.Activity = end, project, activity
+			if hb != nil {
+				seg.Path = hb.ProjectPath
+			}
 			seg.Why = callWhy + why + "; " + actWhy
 			if t >= from {
 				tl.Me = appendSegment(tl.Me, seg)
@@ -354,7 +362,7 @@ func activityOf(rules *Rules, app *AppRule, hb *Heartbeat) (activity, why string
 func appendSegment(me []Segment, seg Segment) []Segment {
 	if n := len(me); n > 0 {
 		p := &me[n-1]
-		if p.End == seg.Start && p.App == seg.App && p.Title == seg.Title &&
+		if p.End == seg.Start && p.App == seg.App && p.Title == seg.Title && p.Path == seg.Path &&
 			p.Project == seg.Project && p.Activity == seg.Activity && p.Why == seg.Why {
 			p.End = seg.End
 			return me
