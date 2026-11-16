@@ -100,3 +100,11 @@ func TestClosedPeriodClipsAtBounds(t *testing.T) {
 	}
 	assertEq(t, sum, int64(60*minMs)) // the part outside the period is untouched
 }
+
+func TestAgentTimeCrossingDayBoundarySplits(t *testing.T) {
+	tl := Timeline{Agents: []AgentSeg{{Start: mskAt(2026, 11, 16, 3, 0), End: mskAt(2026, 11, 16, 5, 0), Project: "easylauncher"}}}
+	p := Summarize(tl, tsettings(), []string{"easylauncher"}).Projects[0]
+	assertEq(t, p.Days["2026-11-15"].Agents, int64(60*minMs))
+	assertEq(t, p.Days["2026-11-16"].Agents, int64(60*minMs))
+	assertEq(t, p.Agents, int64(120*minMs))
+}

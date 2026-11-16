@@ -67,16 +67,17 @@ func noteComments(notes []Segment, s Settings) map[[2]string]string {
 	sorted := append([]Segment(nil), notes...)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Start < sorted[j].Start })
 	out := map[[2]string]string{}
+	seen := map[[3]string]bool{}
 	for _, n := range sorted {
-		if n.Note == "" {
+		k := [2]string{s.DayOf(n.Start), n.Activity}
+		if n.Note == "" || seen[[3]string{k[0], k[1], n.Note}] {
 			continue
 		}
-		k := [2]string{s.DayOf(n.Start), n.Activity}
-		if cur := out[k]; cur == "" {
-			out[k] = n.Note
-		} else if !strings.Contains("; "+cur+"; ", "; "+n.Note+"; ") {
-			out[k] = cur + "; " + n.Note
+		seen[[3]string{k[0], k[1], n.Note}] = true
+		if out[k] != "" {
+			out[k] += "; "
 		}
+		out[k] += n.Note
 	}
 	return out
 }

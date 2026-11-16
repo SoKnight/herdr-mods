@@ -35,20 +35,12 @@ func RoundMinutes(ms int64, step int) int64 {
 	return (ms + unit/2) / unit * int64(step)
 }
 
-// nextDayStart is the first instant after ms at which the next day begins.
+// nextDayStart is the first instant after ms at which the next day begins, shifted the way DayOf shifts.
 func nextDayStart(s Settings, ms int64) int64 {
-	loc := s.Loc
-	if loc == nil {
-		loc = time.Local
-	}
-	start, err := time.Parse("15:04", s.DayStart)
-	if err != nil {
-		start = time.Time{}
-	}
-	shift := time.Duration(start.Hour())*time.Hour + time.Duration(start.Minute())*time.Minute
+	loc, shift := s.dayClock()
 	y, mo, d := time.UnixMilli(ms).In(loc).Add(-shift).Date()
-	next := time.Date(y, mo, d+1, start.Hour(), start.Minute(), 0, 0, loc).UnixMilli()
-	if next <= ms { // clock oddities around DST: never stall
+	next := time.Date(y, mo, d+1, 0, 0, 0, 0, loc).Add(shift).UnixMilli()
+	if next <= ms { // never stall
 		next = ms + 1
 	}
 	return next

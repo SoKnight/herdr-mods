@@ -56,3 +56,15 @@ func TestMarkdownHasNotes(t *testing.T) {
 		}
 	}
 }
+
+func TestCSVTwoDaysKeepsOrder(t *testing.T) {
+	tl := Timeline{Me: []Segment{
+		{Start: mskAt(2026, 11, 17, 10, 0), End: mskAt(2026, 11, 17, 11, 0), Project: "p", Activity: "design"},
+		{Start: mskAt(2026, 11, 16, 12, 0), End: mskAt(2026, 11, 16, 13, 0), Project: "p", Activity: "study"},
+		{Start: mskAt(2026, 11, 16, 10, 0), End: mskAt(2026, 11, 16, 11, 0), Project: "p", Activity: "development"},
+	}}
+	out := ExportCSV(Summarize(tl, tsettings(), []string{"p"}).Projects[0], nil, 1, false, tsettings())
+	want := "date,activity,minutes,rounded_minutes,comment\n" +
+		"2026-11-16,development,60,60,\n2026-11-16,study,60,60,\n2026-11-17,design,60,60,\ntotal,,180,180,\n"
+	assertEq(t, out, want)
+}

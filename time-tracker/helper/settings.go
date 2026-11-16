@@ -75,8 +75,9 @@ func LoadSettings(home string) (Settings, error) {
 	return s, nil
 }
 
-// DayOf returns the YYYY-MM-DD the instant belongs to; the day starts at DayStart.
-func (s Settings) DayOf(ms int64) string {
+// dayClock is the location and the offset of the day start from local midnight; DayOf and the
+// day-boundary splitting both go through it, so labels and split points cannot drift apart.
+func (s Settings) dayClock() (*time.Location, time.Duration) {
 	loc := s.Loc
 	if loc == nil {
 		loc = time.Local
@@ -85,6 +86,11 @@ func (s Settings) DayOf(ms int64) string {
 	if err != nil {
 		start = time.Time{}
 	}
-	shift := time.Duration(start.Hour())*time.Hour + time.Duration(start.Minute())*time.Minute
+	return loc, time.Duration(start.Hour())*time.Hour + time.Duration(start.Minute())*time.Minute
+}
+
+// DayOf returns the YYYY-MM-DD the instant belongs to; the day starts at DayStart.
+func (s Settings) DayOf(ms int64) string {
+	loc, shift := s.dayClock()
 	return time.UnixMilli(ms).In(loc).Add(-shift).Format("2006-01-02")
 }
