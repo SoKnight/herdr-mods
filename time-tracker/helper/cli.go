@@ -219,6 +219,9 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 		}
 		return apiCall{method: "GET", path: "/v1/unassigned?" + q.Encode(), show: showUnassigned}, nil
 	case cmd == "export":
+		if *dry && *out != "" {
+			return apiCall{}, fmt.Errorf("export: --dry-run never writes a file, drop --out")
+		}
 		from, to, err := span()
 		if err != nil {
 			return apiCall{}, err

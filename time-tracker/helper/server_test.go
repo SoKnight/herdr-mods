@@ -443,3 +443,11 @@ func TestDryRunExportMatchesTheRealOneAndClosesNothing(t *testing.T) {
 	// A closed range answers a dry run with the same conflict.
 	assertEq(t, api.do("POST", "/v1/export", body, nil), http.StatusConflict)
 }
+
+func TestDryRunRefusesOut(t *testing.T) {
+	d := testDaemon(t)
+	_, err := buildCall(d.S, "export", []string{"--from", "1", "--to", "2", "--project", "easy", "--dry-run", "--out", "x.md"})
+	if err == nil {
+		t.Fatal("--dry-run with --out was accepted")
+	}
+}

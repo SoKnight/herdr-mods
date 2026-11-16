@@ -86,7 +86,10 @@ export class Report {
 
   // The preview is the collector's own dry run, so it is what the file will say; the periods come with it.
   async loadData(seq = this.seq) {
-    if (!this.project) return;
+    if (!this.project) {
+      this.preview = this.readError = null;
+      return;
+    }
     const r = this.range();
     const args = ["export", "--from", String(r?.from), "--to", String(r?.to), "--project", this.project, "--format", "md", "--round", String(this.round), "--dry-run"];
     if (this.agents) args.push("--agents");
@@ -187,8 +190,8 @@ export class Report {
       root.child(row("").child(field(this.custom.from, "rep-from")).child(div().text_color(t.dim).child("–")).child(field(this.custom.to, "rep-to")).child(Link({ id: "rep-custom-apply", label: "Показать", onClick: (cx) => this.refresh(cx) })));
     }
     root
-      .child(row("Округление").children([1, 5, 15].map((n) => choice(`rep-round-${n}`, `${n} мин`, this.round === n, (cx) => ((this.round = n), cx.notify())))))
-      .child(row("").child(choice("rep-agents", `${this.agents ? "☑" : "☐"} Показать время агентов (для справки)`, this.agents, (cx) => ((this.agents = !this.agents), cx.notify()))))
+      .child(row("Округление").children([1, 5, 15].map((n) => choice(`rep-round-${n}`, `${n} мин`, this.round === n, (cx) => ((this.round = n), this.refresh(cx))))))
+      .child(row("").child(choice("rep-agents", `${this.agents ? "☑" : "☐"} Показать время агентов (для справки)`, this.agents, (cx) => ((this.agents = !this.agents), this.refresh(cx)))))
       .child(row("Папка").child(div().min_w(0).truncate().text_size(TEXT.small).child(this.folder)).child(Link({ id: "rep-folder", label: "Выбрать…", onClick: (cx) => this.chooseFolder(cx) })));
 
     const preview = this.preview;
