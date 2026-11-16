@@ -4,7 +4,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme, props, layout } from "herdr";
 import { call } from "../client.js";
-import { formatDuration, activityLabel, weekRange, monthRange, dayString } from "../format.js";
+import { formatDuration, activityLabel, weekRange, monthRange, dayString, catalog, ACTIVITIES } from "../format.js";
 import { shiftDay } from "../lanes.js";
 import { IconButton, Message, TEXT } from "../ui.js";
 import { Link } from "./menu.js";
@@ -13,7 +13,6 @@ import { panelShown } from "./day.js";
 const REFRESH_MS = 60_000;
 const WEEKDAYS = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
 const MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
-const KINDS = ["development", "architecture", "design", "documentation", "study"];
 
 const label = (day) => `${day.slice(8)}.${day.slice(5, 7)}`;
 
@@ -35,6 +34,7 @@ export class Table {
     this.report = null;
     this.range = null;
     this.projects = [];
+    this.activities = ACTIVITIES;
     this.error = null;
     this.loading = false;
     this.seq = 0;
@@ -66,7 +66,7 @@ export class Table {
         const range = (this.mode === "week" ? weekRange : monthRange)(day, this.dayStart);
         const [rep, projects] = await Promise.all([call(["report", "--from", String(range.from), "--to", String(range.to)]), call(["projects"])]);
         if (seq !== this.seq) return;
-        if (Array.isArray(projects)) this.projects = projects;
+        Object.assign(this, catalog(projects));
         this.error = rep.down ? "Сборщик не запущен" : (rep.error ?? null);
         if (!this.error) Object.assign(this, { report: rep, range });
       } finally {
@@ -108,7 +108,8 @@ export class Table {
     const root = v_flex().id(`table-${this.mode}`).flex_1().min_h(0).overflow_y_scroll().pb(14).child(this.bar(t));
     if (this.error) root.child(Message(this.error, true));
     if (!rep) return root.child(Message(this.loading ? "Загрузка…" : ""));
-    const kinds = [...KINDS, ...new Set(rep.projects.flatMap((p) => Object.keys(p.activities)).filter((a) => !KINDS.includes(a)))].filter((a) =>
+    const listed = this.activities.map((a) => a.id);
+    const kinds = [...listed, ...new Set(rep.projects.flatMap((p) => Object.keys(p.activities)).filter((a) => !listed.includes(a)))].filter((a) =>
       rep.projects.some((p) => p.activities[a] > 0),
     );
     return root.child(this.grid(rep, kinds, t)).child(this.days(rep, t));
@@ -131,7 +132,7 @@ export class Table {
 
   grid(rep, kinds, t) {
     const cell = (text, w, head = false) => div().w(w).flex_none().text_size(TEXT.small).text_color(head ? t.muted : t.foreground).child(text);
-    const head = h_flex().h(26).gap(8).items_center().child(div().flex_1().min_w(0)).children(kinds.map((a) => cell(activityLabel(a), 96, true))).child(cell("Моё", 70, true)).child(cell("Агенты", 70, true));
+    const head = h_flex().h(26).gap(8).items_center().child(div().flex_1().min_w(0)).children(kinds.map((a) => cell(activityLabel(a, this.activities), 96, true))).child(cell("Моё", 70, true)).child(cell("Агенты", 70, true));
     const box = v_flex().px(14).pt(4).child(head);
     for (const p of rep.projects) {
       box.child(

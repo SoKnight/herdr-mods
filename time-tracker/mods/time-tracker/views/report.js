@@ -4,7 +4,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex, InputState, Input, TextView } from "gpui-base";
 import { theme, props, layout, home, pickFolder } from "herdr";
 import { call } from "../client.js";
-import { weekRange, monthRange, exportName, dayString } from "../format.js";
+import { weekRange, monthRange, exportName, dayString, catalog } from "../format.js";
 import { Message, TEXT } from "../ui.js";
 import { Link } from "./menu.js";
 import { panelShown } from "./day.js";
@@ -20,6 +20,7 @@ export class Report {
     this.projects = [];
     this.project = null;
     this.period = "week"; // week | month | custom
+    this.offset = 0; // weeks or months back (-) from the current one
     this.round = 15;
     this.agents = false;
     this.folder = `${home().replace(/\\/g, "/")}/Downloads`;
@@ -47,8 +48,8 @@ export class Report {
   // [from, to) of the chosen period, or null while it can't be told (no today yet, or custom dates that aren't).
   range() {
     if (!this.today) return null;
-    if (this.period === "week") return weekRange(this.today, this.dayStart);
-    if (this.period === "month") return monthRange(this.today, this.dayStart);
+    if (this.period === "week") return weekRange(this.today, this.dayStart, this.offset);
+    if (this.period === "month") return monthRange(this.today, this.dayStart, this.offset);
     const [a, b] = [this.custom.from?.value().trim() ?? "", this.custom.to?.value().trim() ?? ""];
     if (!DATE.test(a) || !DATE.test(b)) return null;
     const from = new Date(`${a}T00:00:00`).getTime() + this.dayStart;
@@ -70,7 +71,7 @@ export class Report {
         }
         this.today = tl.day;
         this.dayStart = tl.from - new Date(`${tl.day}T00:00:00`).getTime();
-        if (Array.isArray(projects)) this.projects = projects;
+        Object.assign(this, catalog(projects));
         if (!this.projects.some((p) => p.id === this.project)) this.project = this.projects[0]?.id ?? null;
         this.error = null;
         await this.loadData(seq);
@@ -115,12 +116,19 @@ export class Report {
 
   pick(period, cx) {
     this.period = period;
+    this.offset = 0;
     if (period === "custom" && !this.custom.from) {
       for (const k of ["from", "to"]) {
         this.custom[k] = InputState.new({ placeholder: "ГГГГ-ММ-ДД" });
         this.custom[k].on("submit", (_e, cx) => this.refresh(cx));
       }
     }
+    this.refresh(cx);
+  }
+
+  // The previous (-1) or next week or month.
+  shift(n, cx) {
+    this.offset += n;
     this.refresh(cx);
   }
 
@@ -185,6 +193,14 @@ export class Report {
     root
       .child(row("Проект").children(this.projects.map((p) => choice(`rep-p-${p.id}`, p.name || p.id, p.id === this.project, (cx) => ((this.project = p.id), this.refresh(cx))))))
       .child(row("Период").children([["week", "Неделя"], ["month", "Месяц"], ["custom", "Свой"]].map(([id, text]) => choice(`rep-per-${id}`, text, this.period === id, (cx) => this.pick(id, cx)))));
+    if (this.period !== "custom" && r) {
+      root.child(
+        row("")
+          .child(Link({ id: "rep-prev", label: "‹", onClick: (cx) => this.shift(-1, cx) }))
+          .child(div().text_size(TEXT.small).child(`${label(r.from - this.dayStart)} – ${label(r.to - 1 - this.dayStart)}`))
+          .when(this.offset < 0, (el) => el.child(Link({ id: "rep-next", label: "›", onClick: (cx) => this.shift(1, cx) }))),
+      );
+    }
     if (this.period === "custom") {
       const field = (state, id) => Input.new(state).id(id).w(120).h(28).px(8).rounded(6).border_1().border_color(t.border).bg(t.input).text_size(TEXT.small);
       root.child(row("").child(field(this.custom.from, "rep-from")).child(div().text_color(t.dim).child("–")).child(field(this.custom.to, "rep-to")).child(Link({ id: "rep-custom-apply", label: "Показать", onClick: (cx) => this.refresh(cx) })));

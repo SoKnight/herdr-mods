@@ -1,7 +1,5 @@
 // The day as lanes of bars, and what a drag over them means. Pure: no imports, tests load it as it is.
 
-const ACTIVITY_IDS = ["development", "architecture", "design", "documentation", "study"];
-
 // Projects take ansi1..ansi6 in config order; no project is dim, an unknown id muted.
 export function projectColor(id, order) {
   if (!id) return "dim";
@@ -30,7 +28,8 @@ function toBars(items, from, to, width, colorOf) {
   return bars.map(({ widest, ...b }) => ({ ...b, w: Math.max(b.w, 1), color: colorOf(b.value) }));
 }
 
-export function lanes(timeline, from, to, width, order = []) {
+// order: project ids in config order; activities: the kinds' ids, coloured the same way.
+export function lanes(timeline, from, to, width, order = [], activities = []) {
   const me = timeline?.me ?? [];
   const apps = [...new Set(me.map((s) => s.app))];
   const lane = (id, list, valueOf, colorOf) =>
@@ -40,7 +39,7 @@ export function lanes(timeline, from, to, width, order = []) {
     lane("me", me, () => "me", () => "accent"),
     lane("app", me, (s) => s.app, (v) => projectColor(v, apps)),
     lane("project", me, (s) => s.project, (v) => projectColor(v, order)),
-    lane("activity", me, (s) => s.activity, (v) => projectColor(v, ACTIVITY_IDS)),
+    lane("activity", me, (s) => s.activity, (v) => projectColor(v, activities)),
     lane("agents", timeline?.agents ?? [], (s) => s.project, (v) => projectColor(v, order)),
   ];
 }

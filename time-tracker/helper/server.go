@@ -428,11 +428,29 @@ func (d *Daemon) postRule(r *http.Request) (int, any, error) {
 	return http.StatusNoContent, nil, d.setConfig(c)
 }
 
-// getProjects lists the projects in config order, for the mod's menus and names.
+type catalog struct {
+	Projects   []catalogItem `json:"projects"`
+	Activities []catalogItem `json:"activities"`
+}
+
+type catalogItem struct {
+	ID    string `json:"id"`
+	Name  string `json:"name,omitempty"`
+	Label string `json:"label,omitempty"`
+}
+
+// getProjects lists the projects and the kinds of activity in config order, for the mod's menus and names.
 func (d *Daemon) getProjects(r *http.Request) (int, any, error) {
-	out := []map[string]string{}
+	out := catalog{Projects: []catalogItem{}, Activities: []catalogItem{}}
 	for _, p := range d.Config.Projects {
-		out = append(out, map[string]string{"id": p.ID, "name": p.Name})
+		out.Projects = append(out.Projects, catalogItem{ID: p.ID, Name: p.Name})
+	}
+	for _, a := range d.Config.Activities {
+		label := activityLabels[a]
+		if label == "" {
+			label = a
+		}
+		out.Activities = append(out.Activities, catalogItem{ID: a, Label: label})
 	}
 	return http.StatusOK, out, nil
 }

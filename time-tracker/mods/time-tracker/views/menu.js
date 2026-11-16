@@ -2,10 +2,9 @@
 import { div } from "gpui-kit";
 import { h_flex, v_flex, Input } from "gpui-base";
 import { theme } from "herdr";
-import { activityLabel } from "../format.js";
+import { hhmm } from "../format.js";
 import { TEXT } from "../ui.js";
 
-const ACTIVITIES = ["development", "architecture", "design", "documentation", "study"];
 const TARGETS = { me: "моё время", agents: "агенты", both: "оба" };
 
 // A word that acts: for confirmations, strips and list rows.
@@ -36,11 +35,6 @@ function Item(id, label, onClick) {
     .child(div().flex_1().min_w(0).truncate().child(label));
 }
 
-const hhmm = (ms) => {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-};
-
 // day: the Day view, which holds the selection (sel), the step and the actions.
 export function SelectionMenu(day) {
   const t = theme();
@@ -54,7 +48,7 @@ export function SelectionMenu(day) {
     ...day.projects.map((p) => Item(`menu-p-${p.id}`, p.name || p.id, (cx) => pick(p.id, cx))),
     Item("menu-p-none", "Без проекта", (cx) => pick("", cx)),
   ];
-  const activities = (pick) => ACTIVITIES.map((a) => Item(`menu-a-${a}`, activityLabel(a), (cx) => pick(a, cx)));
+  const activities = (pick) => day.activities.map((a) => Item(`menu-a-${a.id}`, a.label || a.id, (cx) => pick(a.id, cx)));
   const mine = sel.target !== "agents"; // activity, notes and added time are only ever mine
 
   let items;

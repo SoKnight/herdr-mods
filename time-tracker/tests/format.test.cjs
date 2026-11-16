@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/format.js'), 'utf8');
-const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, exportName };`)();
+const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, exportName, catalog };`)();
 
 test('durations', () => {
   assert.equal(F.formatDuration(18_720_000), '5ч 12м');
@@ -16,6 +16,17 @@ test('activity labels fall back to the id', () => {
   for (const [id, label] of Object.entries(labels)) assert.equal(F.activityLabel(id), label);
   assert.equal(F.activityLabel('custom'), 'custom');
   assert.equal(F.activityLabel(''), 'Без вида');
+  const listed = [{ id: 'review', label: 'Ревью' }];
+  assert.equal(F.activityLabel('review', listed), 'Ревью');
+  assert.equal(F.activityLabel('study', listed), 'Учёба'); // dropped from the list, still named
+});
+
+test('the catalog falls back to the built-in kinds only when the collector lists none', () => {
+  const projects = [{ id: 'easy', name: 'Easy' }];
+  assert.deepEqual(F.catalog({ projects, activities: [{ id: 'review', label: 'Ревью' }] }), { projects, activities: [{ id: 'review', label: 'Ревью' }] });
+  assert.equal(F.catalog({ projects }).activities.length, 5);
+  assert.equal(F.catalog([{ id: 'easy' }]), null);
+  assert.equal(F.catalog({ error: 'down' }), null);
 });
 
 test('down result', () => {
@@ -40,6 +51,13 @@ test('week starts on Monday', () => {
 
 test('month range', () => {
   assert.deepEqual(F.monthRange('2026-11-18'), { from: at('2026-11-01', 4), to: at('2026-12-01', 4) });
+});
+
+test('ranges step back and on by an offset', () => {
+  assert.deepEqual(F.weekRange('2026-11-18', DAY_START, -1), { from: at('2026-11-09', 4), to: at('2026-11-16', 4) });
+  assert.deepEqual(F.weekRange('2026-11-22', DAY_START, 1), { from: at('2026-11-23', 4), to: at('2026-11-30', 4) });
+  assert.deepEqual(F.monthRange('2026-11-18', DAY_START, -1), { from: at('2026-10-01', 4), to: at('2026-11-01', 4) });
+  assert.deepEqual(F.monthRange('2026-01-10', DAY_START, -1), { from: at('2025-12-01', 4), to: at('2026-01-01', 4) }); // across a year
 });
 
 test('export file name follows the collector days', () => {

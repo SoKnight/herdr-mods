@@ -3,7 +3,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex, InputState, Popup } from "gpui-base";
 import { theme, props, layout } from "herdr";
 import { call } from "../client.js";
-import { formatDuration, activityLabel } from "../format.js";
+import { formatDuration, activityLabel, catalog, hhmm, ACTIVITIES } from "../format.js";
 import { lanes, targetFor, rangeFromDrag, correctionIds, stepDay, laneSpan, ruleFor } from "../lanes.js";
 import { IconButton, Message, TEXT } from "../ui.js";
 import { SelectionMenu, Link } from "./menu.js";
@@ -15,7 +15,6 @@ const LABELS = { power: "Питание", me: "Я", app: "Приложение",
 const WEEKDAYS = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
 
 const pad = (n) => String(n).padStart(2, "0");
-const hhmm = (ms) => `${pad(new Date(ms).getHours())}:${pad(new Date(ms).getMinutes())}`;
 const dateLabel = (ms) => {
   const d = new Date(ms);
   return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
@@ -36,6 +35,7 @@ export class Day {
   constructor() {
     this.data = null; // what `timeline` gave
     this.projects = []; // [{id, name}] in config order
+    this.activities = ACTIVITIES; // [{id, label}], as the collector lists them
     this.want = null; // the day asked for; null is today, which only the collector knows
     this.today = null; // from the last answer for today
     this.seq = 0; // the latest load: older answers are dropped
@@ -76,7 +76,7 @@ export class Day {
         const args = ["timeline", ...(want ? ["--day", want] : []), ...(fresh ? ["--fresh"] : [])];
         const [tl, projects] = await Promise.all([call(args), call(["projects"])]);
         if (seq !== this.seq) return;
-        if (Array.isArray(projects)) this.projects = projects;
+        Object.assign(this, catalog(projects));
         this.error = tl.down ? "Сборщик не запущен: go -C helper run ./deploy" : (tl.error ?? null);
         if (!this.error) {
           this.data = tl;
@@ -199,7 +199,7 @@ export class Day {
 
   shownLanes() {
     const d = this.data;
-    const all = d && this.width > 0 ? lanes(d.timeline, d.from, d.to, this.width, this.projects.map((p) => p.id)) : [];
+    const all = d && this.width > 0 ? lanes(d.timeline, d.from, d.to, this.width, this.projects.map((p) => p.id), this.activities.map((a) => a.id)) : [];
     return all.filter((l) => l.id !== "app" || this.appOpen);
   }
 
@@ -318,7 +318,7 @@ export class Day {
     if (id === "power") return `Компьютер включён ${when}`;
     if (id === "agents") return `${when}\nПроект: ${this.name(s.project)}\nПочему: ${s.why}${more}`;
     const what = [s.app, s.title].filter(Boolean).join(" — ");
-    return `${when}\n${what}\nПроект: ${this.name(s.project)}\nВид: ${activityLabel(s.activity) || "—"}${s.note ? `\nЗаметка: ${s.note}` : ""}\nПочему: ${s.why}${more}`;
+    return `${when}\n${what}\nПроект: ${this.name(s.project)}\nВид: ${activityLabel(s.activity, this.activities) || "—"}${s.note ? `\nЗаметка: ${s.note}` : ""}\nПочему: ${s.why}${more}`;
   }
 
   laneRow(lane, i, t) {

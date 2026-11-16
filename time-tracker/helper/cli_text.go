@@ -138,12 +138,16 @@ func showPeriods(w io.Writer, resp []byte) error {
 }
 
 func showProjects(w io.Writer, resp []byte) error {
-	var list []Project
-	if err := json.Unmarshal(resp, &list); err != nil {
+	var c catalog
+	if err := json.Unmarshal(resp, &c); err != nil {
 		return err
 	}
-	for _, p := range list {
+	for _, p := range c.Projects {
 		fmt.Fprintf(w, "%s  %s\n", p.ID, p.Name)
+	}
+	fmt.Fprintln(w, "виды деятельности:")
+	for _, a := range c.Activities {
+		fmt.Fprintf(w, "%s  %s\n", a.ID, a.Label)
 	}
 	return nil
 }

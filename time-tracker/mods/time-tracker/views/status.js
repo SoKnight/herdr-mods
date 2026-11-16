@@ -49,7 +49,7 @@ export class Status {
     if (!s) return "…";
     if (s.down) return "сборщик не запущен";
     if (s.error) return "ошибка";
-    return `${formatDuration(s.today_me_ms)} · ${s.project_name ?? s.project ?? "—"}`;
+    return `${formatDuration(s.today_me_ms)} · ${s.project_name || s.project || "—"}`;
   }
 
   click() {

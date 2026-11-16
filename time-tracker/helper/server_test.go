@@ -315,12 +315,19 @@ func TestTimelineFreshSkipsSnapshots(t *testing.T) {
 func TestProjectsInConfigOrder(t *testing.T) {
 	d := testDaemon(t)
 	api := serve(t, d)
-	var list []map[string]string
+	var list catalog
 	assertEq(t, api.do("GET", "/v1/projects", nil, &list), http.StatusOK)
-	assertEq(t, len(list), 2)
-	assertEq(t, list[0]["id"], "easy")
-	assertEq(t, list[0]["name"], "Easy")
-	assertEq(t, list[1]["id"], "other")
+	assertEq(t, len(list.Projects), 2)
+	assertEq(t, list.Projects[0], catalogItem{ID: "easy", Name: "Easy"})
+	assertEq(t, list.Projects[1].ID, "other")
+	assertEq(t, len(list.Activities), 5)
+	assertEq(t, list.Activities[1], catalogItem{ID: "architecture", Label: "Проектирование"})
+
+	must(t, d.setConfig(Config{Activities: []string{"review"}}))
+	assertEq(t, api.do("GET", "/v1/projects", nil, &list), http.StatusOK)
+	assertEq(t, len(list.Activities), 1)
+	assertEq(t, list.Activities[0], catalogItem{ID: "review", Label: "review"}) // an edited list, its id as the label
+	assertEq(t, len(list.Projects), 0)
 
 	c, err := buildCall(d.S, "projects", nil)
 	must(t, err)

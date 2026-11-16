@@ -34,6 +34,9 @@ test('bars are positioned and coloured by project order', () => {
   assert.equal(bar.value, 'easylauncher');
   assert.equal(bar.color, 'ansi2');
   assert.equal(lane(all, 'activity').bars[0].value, 'development');
+  assert.equal(lane(all, 'activity').bars[0].color, 'muted'); // a kind the list doesn't name
+  const kinds = L.lanes(timeline([seg(6 * H, 12 * H)]), day.from, day.to, 1440, [], ['design', 'development']);
+  assert.equal(lane(kinds, 'activity').bars[0].color, 'ansi2');
   assert.equal(lane(all, 'app').bars[0].value, 'idea64.exe');
 });
 
