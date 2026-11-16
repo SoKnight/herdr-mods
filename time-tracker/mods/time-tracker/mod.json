@@ -1,0 +1,7 @@
+{
+  "$schema": "./mod.schema.json",
+  "version": "1.0.0",
+  "place": "none",
+  "title": "Time",
+  "overlay": { "width": 960, "height": 640 }
+}
