@@ -39,7 +39,7 @@ func (t *Tracker) Feed(s Sample) []Span {
 	}
 	lower := s.At - t.PollMs // lower bound for LastInput on the first sample
 	if t.prev != nil {
-		if s.At-t.prev.At > 3*t.PollMs {
+		if t.slept(s.At) {
 			out = append(out, t.Close(t.prev.At)...)
 		} else {
 			lower = t.prev.At
@@ -85,8 +85,20 @@ func finish(sp Span, end int64) []Span {
 	return []Span{sp}
 }
 
-// Open returns the open spans with End = at, for SaveOpen.
+// slept tells a gap of more than three polls since the last one: sleep or shutdown.
+func (t *Tracker) slept(at int64) bool { return t.prev != nil && at-t.prev.At > 3*t.PollMs }
+
+// lastSeen is at, or the last poll when at lies past a sleep gap: open spans never cover the sleep.
+func (t *Tracker) lastSeen(at int64) int64 {
+	if t.slept(at) {
+		return t.prev.At
+	}
+	return at
+}
+
+// Open returns the open spans with End = at (cut at the last poll after a sleep gap), for SaveOpen.
 func (t *Tracker) Open(at int64) []Span {
+	at = t.lastSeen(at)
 	var out []Span
 	for _, o := range t.open {
 		sp := *o

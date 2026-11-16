@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -182,4 +184,94 @@ func TestLogonTimeIsSane(t *testing.T) {
 	if got > now || got < now-90*24*3600_000 {
 		t.Fatalf("logon %v is not within the last 90 days", time.UnixMilli(got))
 	}
+}
+
+func TestGarbageOpenJSONStillStarts(t *testing.T) {
+	d := testDaemon(t)
+	swap(t, &bootAt, func(int64) int64 { return 0 })
+	swap(t, &logonAt, func() int64 { return 0 })
+	open := filepath.Join(d.Home, "open.json")
+	must(t, os.WriteFile(open+".bad", []byte("older"), 0o644))
+	must(t, os.WriteFile(open, []byte("\x00garbage{"), 0o644))
+	must(t, d.recoverOpen())
+	_, err := os.Stat(open)
+	assertEq(t, os.IsNotExist(err), true)
+	bad, err := os.ReadFile(open + ".bad")
+	must(t, err)
+	assertEq(t, string(bad), "\x00garbage{") // the older .bad gave way
+}
+
+func TestBadProjectsStillCollects(t *testing.T) {
+	home := t.TempDir()
+	file := filepath.Join(home, "projects.json")
+	c := serverConfig()
+	c.Projects[0].Titles = []string{"("}
+	must(t, writeJSON(file, c))
+	d, err := NewDaemon(home)
+	must(t, err)
+	d.S.Loc, d.Store.S.Loc = msk, msk
+	api := serve(t, d)
+
+	now := at(0)
+	swap(t, &nowMs, func() int64 { return now })
+	swap(t, &takeSample, func(ms int64) (Sample, error) { return Sample{At: ms, LastInput: ms, Exe: "idea64.exe"}, nil })
+	d.poll()
+	assertEq(t, find(d.openSpans(now), "window").Exe, "idea64.exe") // collecting all the same
+
+	var e struct {
+		Error   string `json:"error"`
+		Version string `json:"version"`
+	}
+	assertEq(t, api.do("GET", "/v1/status", nil, &e), http.StatusInternalServerError)
+	assertEq(t, strings.HasPrefix(e.Error, "config: project easy: bad regex"), true)
+	assertEq(t, e.Version, version)
+	assertEq(t, api.do("GET", "/v1/projects", nil, nil), http.StatusInternalServerError)
+	assertEq(t, api.do("POST", "/v1/heartbeat", fmt.Sprintf(`{"source":"herdr","time":%d}`, now), nil), http.StatusNoContent)
+
+	c.Projects[0].Titles = nil // fixed: the next reload clears the error
+	must(t, writeJSON(file, c))
+	stamp := time.Now().Add(time.Minute)
+	must(t, os.Chtimes(file, stamp, stamp))
+	d.poll()
+	assertEq(t, api.do("GET", "/v1/status", nil, nil), http.StatusOK)
+}
+
+func TestBadSettingsStillCollects(t *testing.T) {
+	home := t.TempDir()
+	must(t, writeJSON(filepath.Join(home, "projects.json"), serverConfig()))
+	must(t, os.WriteFile(filepath.Join(home, "settings.json"), []byte(`{"poll_seconds":0}`), 0o644))
+	d, err := NewDaemon(home)
+	must(t, err)
+	assertEq(t, d.S.PollSeconds, 5)
+	assertEq(t, d.tracker.PollMs, int64(5000))
+	var e struct {
+		Error string `json:"error"`
+	}
+	assertEq(t, serve(t, d).do("GET", "/v1/timeline", nil, &e), http.StatusInternalServerError)
+	assertEq(t, strings.HasPrefix(e.Error, "config: "), true)
+}
+
+func TestOpenSpansStopAtTheLastPollAfterSleep(t *testing.T) {
+	d := testDaemon(t)
+	now := at(0)
+	swap(t, &nowMs, func() int64 { return now })
+	swap(t, &takeSample, func(ms int64) (Sample, error) { return Sample{At: ms, LastInput: ms, Exe: "idea64.exe"}, nil })
+	d.agentsSeen(working(`C:\Dev\easy`))
+	d.poll()
+	now += 5000
+	d.poll()
+	now += 10_000 // within three polls: still awake
+	for _, sp := range d.openSpans(now) {
+		assertEq(t, sp.End, now)
+	}
+	now = at(30) // asleep since the last poll, nothing polled yet
+	open := d.openSpans(now)
+	assertEq(t, len(open) > 1, true)
+	for _, sp := range open {
+		assertEq(t, sp.End, at(0)+5000)
+	}
+	must(t, d.saveOpen())
+	sp, err := d.Store.RecoverOpen()
+	must(t, err)
+	assertEq(t, sp[0].End, at(0)+5000)
 }

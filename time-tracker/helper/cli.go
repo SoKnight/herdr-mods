@@ -8,11 +8,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -54,8 +56,8 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 	}
 	s, err := LoadSettings(Home())
 	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+		fmt.Fprintln(stderr, err) // the collector runs on the defaults then, so the CLI does too
+		s = DefaultSettings()
 	}
 	switch args[0] {
 	case "run":
@@ -259,16 +261,20 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 func runCollector(s Settings, stdout, stderr io.Writer) int {
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", s.Port))
 	if err != nil {
-		resp, code, err := send(s, "GET", "/v1/status", nil)
+		resp, _, err := send(s, "GET", "/v1/status", nil) // ours answers with its version, even with a config error
 		var st struct {
 			Version string `json:"version"`
 		}
-		if err == nil && code == http.StatusOK && json.Unmarshal(resp, &st) == nil && st.Version != "" {
+		if err == nil && json.Unmarshal(resp, &st) == nil && st.Version != "" {
 			fmt.Fprintln(stdout, "уже запущен")
 			return 0
 		}
 		fmt.Fprintf(stderr, "порт %d занят другим процессом\n", s.Port)
 		return 1
+	}
+	if f := openLog(Home()); f != nil {
+		defer f.Close()
+		defer log.SetOutput(os.Stderr)
 	}
 	d, err := NewDaemon(Home())
 	if err != nil {
@@ -289,6 +295,24 @@ func runCollector(s Settings, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// openLog sends the log to collector.log in home: the collector runs without a console. Over 1 MiB it starts afresh.
+func openLog(home string) *os.File {
+	path := filepath.Join(home, "collector.log")
+	flags := os.O_APPEND | os.O_CREATE | os.O_WRONLY
+	if fi, err := os.Stat(path); err == nil && fi.Size() > 1<<20 {
+		flags |= os.O_TRUNC
+	}
+	if os.MkdirAll(home, 0o755) != nil {
+		return nil
+	}
+	f, err := os.OpenFile(path, flags, 0o644)
+	if err != nil {
+		return nil
+	}
+	log.SetOutput(f)
+	return f
 }
 
 func probe(stdout, stderr io.Writer) int {

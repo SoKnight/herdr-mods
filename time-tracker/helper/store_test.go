@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -74,6 +75,18 @@ func TestLoadSkipsBrokenLine(t *testing.T) {
 	assertEq(t, len(raw.Spans), 1)
 }
 
+func TestLoadSkipsOverlongLineOnly(t *testing.T) {
+	st := tempStore(t)
+	s := mskAt(2026, 11, 16, 10, 0)
+	must(t, st.AppendSpan(Span{Kind: "window", Start: s, End: s + 1000}))
+	must(t, st.AppendBeat(Heartbeat{Source: "x", Time: s, Entity: strings.Repeat("a", 2<<20)}))
+	must(t, st.AppendSpan(Span{Kind: "input", Start: s, End: s + 1000}))
+	raw := mustLoad(t, st, s, s+1000)
+	assertEq(t, len(raw.Beats), 0)
+	assertEq(t, len(raw.Spans), 2) // the line after the long one is still read
+	assertEq(t, raw.Spans[1].Kind, "input")
+}
+
 func TestBeatRoundTrip(t *testing.T) {
 	st := tempStore(t)
 	at := mskAt(2026, 11, 16, 10, 0)
@@ -91,6 +104,10 @@ func TestRecoverOpen(t *testing.T) {
 	must(t, err)
 	assertEq(t, len(sp), 1)
 	assertEq(t, sp[0].End, mskAt(2026, 11, 16, 10, 30))
+	sp, err = st.RecoverOpen() // still there until it is cleared
+	must(t, err)
+	assertEq(t, len(sp), 1)
+	must(t, st.ClearOpen())
 	sp, err = st.RecoverOpen()
 	must(t, err)
 	assertEq(t, len(sp), 0)

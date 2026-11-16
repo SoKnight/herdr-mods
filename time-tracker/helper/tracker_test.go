@@ -105,3 +105,10 @@ func TestTrackerCloseAll(t *testing.T) {
 	assertEq(t, len(tr.Close(5000)) > 0, true)
 	assertEq(t, len(tr.Open(6000)), 0)
 }
+
+func TestTrackerOpenStopsAtTheLastPollAfterSleep(t *testing.T) {
+	tr := &Tracker{PollMs: 5000}
+	feed(tr, smp(0, 0, "a.exe", "A"), smp(5000, 5000, "a.exe", "A"))
+	assertEq(t, find(tr.Open(20_000), "window").End, int64(20_000)) // three polls: still awake
+	assertEq(t, find(tr.Open(3_600_000), "window").End, int64(5000))
+}

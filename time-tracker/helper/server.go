@@ -92,19 +92,29 @@ func guard(next http.Handler) http.Handler {
 
 func newServer(d *Daemon) http.Handler {
 	mux := http.NewServeMux()
-	routes := map[string]func(*http.Request) (int, any, error){
+	type handler = func(*http.Request) (int, any, error)
+	// read answers with the start-up config error while it lasts: numbers from default rules would mislead.
+	read := func(f handler) handler {
+		return func(r *http.Request) (int, any, error) {
+			if err := d.configErr(); err != nil {
+				return 0, nil, err
+			}
+			return f(r)
+		}
+	}
+	routes := map[string]handler{
 		"POST /v1/heartbeat":           d.postHeartbeat,
-		"GET /v1/status":               d.getStatus,
-		"GET /v1/timeline":             d.getTimeline,
-		"GET /v1/report":               d.getReport,
-		"POST /v1/export":              d.postExport,
+		"GET /v1/status":               read(d.getStatus),
+		"GET /v1/timeline":             read(d.getTimeline),
+		"GET /v1/report":               read(d.getReport),
+		"POST /v1/export":              read(d.postExport),
 		"GET /v1/corrections":          d.getCorrections,
 		"POST /v1/corrections":         d.postCorrection,
 		"DELETE /v1/corrections/{id}":  d.deleteCorrection,
-		"GET /v1/unassigned":           d.getUnassigned,
+		"GET /v1/unassigned":           read(d.getUnassigned),
 		"POST /v1/rules":               d.postRule,
 		"GET /v1/periods":              d.getPeriods,
-		"GET /v1/projects":             d.getProjects,
+		"GET /v1/projects":             read(d.getProjects),
 		"POST /v1/periods/{id}/reopen": d.reopenPeriod,
 		"POST /v1/quit":                d.postQuit,
 	}
@@ -116,6 +126,10 @@ func newServer(d *Daemon) http.Handler {
 
 func decode(r *http.Request, v any) error {
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		var big *http.MaxBytesError
+		if errors.As(err, &big) {
+			return fail(http.StatusRequestEntityTooLarge, "body over %d bytes", big.Limit)
+		}
 		return fail(http.StatusBadRequest, "bad JSON: %v", err)
 	}
 	return nil
@@ -152,6 +166,7 @@ func (d *Daemon) checkActivity(a string) error {
 }
 
 func (d *Daemon) postHeartbeat(r *http.Request) (int, any, error) {
+	r.Body = http.MaxBytesReader(nil, r.Body, 64<<10) // every beat lands in the day file
 	var hb Heartbeat
 	if err := decode(r, &hb); err != nil {
 		return 0, nil, err
@@ -271,6 +286,8 @@ func (d *Daemon) postCorrection(r *http.Request) (int, any, error) {
 		return 0, nil, fail(http.StatusBadRequest, "kind: want project, activity, exclude, add or note")
 	case !slices.Contains([]string{"me", "agents", "both"}, c.Target):
 		return 0, nil, fail(http.StatusBadRequest, "target: want me, agents or both")
+	case c.Kind != "project" && c.Kind != "exclude" && c.Target != "me": // activity, notes and added time are only mine
+		return 0, nil, fail(http.StatusBadRequest, "target")
 	case c.Start >= c.End:
 		return 0, nil, fail(http.StatusBadRequest, "start must be before end")
 	case c.Project != "" && d.project(c.Project) == nil:

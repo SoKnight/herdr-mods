@@ -108,6 +108,25 @@ func TestHeartbeatRequiresHeader(t *testing.T) {
 	bad := fmt.Sprintf(`{"source":"herdr","time":%d,"activity":"sleeping"}`, at(0))
 	assertEq(t, api.do("POST", "/v1/heartbeat", bad, nil), http.StatusBadRequest)
 	assertEq(t, api.do("POST", "/v1/heartbeat", `{"time":1}`, nil), http.StatusBadRequest)
+	huge := fmt.Sprintf(`{"source":"herdr","time":%d,"entity":"%s"}`, at(0), strings.Repeat("a", 64<<10))
+	assertEq(t, api.do("POST", "/v1/heartbeat", huge, nil), http.StatusRequestEntityTooLarge)
+	assertEq(t, len(mustLoad(t, d.Store, at(-1), at(1)).Beats), 1)
+}
+
+func TestOnlyMyTimeTakesActivityNoteAndAdd(t *testing.T) {
+	api := serve(t, testDaemon(t))
+	for _, kind := range []string{"activity", "note", "add"} {
+		for _, target := range []string{"agents", "both"} {
+			var e struct {
+				Error string `json:"error"`
+			}
+			c := Correction{Kind: kind, Target: target, Start: at(0), End: at(10), Activity: "design", Note: "n"}
+			assertEq(t, api.do("POST", "/v1/corrections", c, &e), http.StatusBadRequest)
+			assertEq(t, e.Error, "target")
+		}
+	}
+	c := Correction{Kind: "exclude", Target: "agents", Start: at(0), End: at(10)}
+	assertEq(t, api.do("POST", "/v1/corrections", c, nil), http.StatusCreated)
 }
 
 func TestPreflightOnlyForExtensions(t *testing.T) {

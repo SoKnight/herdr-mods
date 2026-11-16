@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -55,7 +57,18 @@ func writeJSON(path string, v any) error {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(b)
+	if err == nil {
+		err = f.Sync() // a crash after the rename must not leave an empty file
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
@@ -116,35 +129,57 @@ func (st *Store) Load(from, to int64) (Raw, error) {
 		if err != nil {
 			return raw, err
 		}
-		sc := bufio.NewScanner(f)
-		sc.Buffer(make([]byte, 1<<20), 1<<20)
-		for sc.Scan() {
+		err = eachLine(f, func(line []byte) {
 			var kind struct {
 				K string `json:"k"`
 			}
-			line := sc.Bytes()
 			if json.Unmarshal(line, &kind) != nil {
-				continue // broken line
+				return // broken line
 			}
 			if kind.K == "beat" {
 				var b Heartbeat
 				if json.Unmarshal(line, &b) == nil && b.Time >= from && b.Time < to {
 					raw.Beats = append(raw.Beats, b)
 				}
-				continue
+				return
 			}
 			var sp Span
 			if json.Unmarshal(line, &sp) != nil {
-				continue
+				return
 			}
 			sp.Start, sp.End = max(sp.Start, from), min(sp.End, to)
 			if sp.Start < sp.End {
 				raw.Spans = append(raw.Spans, sp)
 			}
-		}
+		})
 		f.Close()
+		if err != nil {
+			return raw, err
+		}
 	}
 	return raw, nil
+}
+
+// eachLine calls fn with every line up to 1 MiB; a longer one is skipped, not the rest of the file.
+func eachLine(r io.Reader, fn func(line []byte)) error {
+	br := bufio.NewReaderSize(r, 1<<20)
+	for {
+		line, err := br.ReadSlice('\n')
+		long := false
+		for errors.Is(err, bufio.ErrBufferFull) {
+			long = true
+			_, err = br.ReadSlice('\n')
+		}
+		if !long && len(line) > 0 {
+			fn(line)
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
 }
 
 type openFile struct {
@@ -158,21 +193,35 @@ func (st *Store) SaveOpen(spans []Span, at int64) error {
 	return writeJSON(filepath.Join(st.Dir, "open.json"), openFile{at, spans})
 }
 
+// RecoverOpen reads what the last run left open; ClearOpen drops it once it is stored. A file that
+// does not decode moves to open.json.bad, so it cannot stop every start after it.
 func (st *Store) RecoverOpen() ([]Span, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	path := filepath.Join(st.Dir, "open.json")
 	var o openFile
 	if err := readJSON(path, &o); err != nil {
-		return nil, err
+		var syn *json.SyntaxError
+		var typ *json.UnmarshalTypeError
+		if !errors.As(err, &syn) && !errors.As(err, &typ) {
+			return nil, err
+		}
+		log.Printf("open.json: %v; moved to open.json.bad", err)
+		return nil, os.Rename(path, path+".bad")
 	}
 	for i := range o.Spans {
 		o.Spans[i].End = o.At
 	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
 	return o.Spans, nil
+}
+
+func (st *Store) ClearOpen() error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if err := os.Remove(filepath.Join(st.Dir, "open.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 // addItem appends to a JSON array file, assigning max(id)+1.

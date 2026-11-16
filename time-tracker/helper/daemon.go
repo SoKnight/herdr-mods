@@ -1,10 +1,12 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -39,18 +41,38 @@ type Daemon struct {
 	setMod   time.Time
 	quit     chan struct{}
 	quitOnce sync.Once
+
+	// A bad projects.json or settings.json found at start: collection runs on the defaults and the
+	// read endpoints answer with the error until a reload reads the file.
+	cfgErr, setErr error
 }
 
 func NewDaemon(home string) (*Daemon, error) {
 	d := &Daemon{Home: home, quit: make(chan struct{})}
 	if err := d.loadConfig(); err != nil {
-		return nil, err
+		log.Printf("projects.json: %v; collecting with the default rules", err)
+		if err := d.setConfig(DefaultConfig()); err != nil {
+			return nil, err
+		}
+		d.cfgErr = err
 	}
 	if err := d.loadSettings(); err != nil {
-		return nil, err
+		log.Printf("settings.json: %v; collecting with the default settings", err)
+		d.S = DefaultSettings()
+		d.tracker.PollMs = int64(d.S.PollSeconds) * 1000
+		d.setErr = err
 	}
 	d.Store = &Store{Dir: home, S: d.S}
 	return d, nil
+}
+
+// configErr is the start-up config error, as the read endpoints answer it.
+func (d *Daemon) configErr() error {
+	if err := cmp.Or(d.cfgErr, d.setErr); err != nil {
+		// The version tells a starting copy that this one is ours, not a stranger on the port.
+		return &apiError{http.StatusInternalServerError, map[string]any{"error": "config: " + err.Error(), "version": version}}
+	}
+	return nil
 }
 
 func modTime(path string) time.Time {
@@ -90,7 +112,7 @@ func (d *Daemon) setConfig(c Config) error {
 	if err != nil {
 		return err
 	}
-	d.Config, d.Rules = c, r
+	d.Config, d.Rules, d.cfgErr = c, r, nil
 	d.tracker.CallApps = nil
 	for _, a := range c.Apps {
 		if a.Presence == "call" {
@@ -110,7 +132,7 @@ func (d *Daemon) loadSettings() error {
 	if d.S.Loc != nil {
 		s.Loc = d.S.Loc
 	}
-	d.S = s
+	d.S, d.setErr = s, nil
 	d.tracker.PollMs = int64(s.PollSeconds) * 1000
 	return nil
 }
@@ -154,6 +176,9 @@ func (d *Daemon) recoverOpen() error {
 		if sp.Kind == "power" {
 			lastPower = max(lastPower, sp.End)
 		}
+	}
+	if err := d.Store.ClearOpen(); err != nil { // only once its spans are in the day files
+		return err
 	}
 	now := nowMs()
 	start := max(bootAt(now), logonAt(), lastPower)
@@ -203,12 +228,12 @@ func (d *Daemon) poll() {
 		log.Printf("sample: %v", err) // a partial sample would close the window span
 		return
 	}
-	if p := d.tracker.prev; p != nil && s.At-p.At > 3*d.tracker.PollMs {
+	if p := d.tracker.prev; d.tracker.slept(s.At) {
 		// The tracker closes its spans at the last poll before the sleep; the agents follow it.
 		d.appendSpans(d.agents.Cut(p.At, s.At))
 	}
 	d.appendSpans(d.tracker.Feed(s))
-	if err := d.Store.SaveOpen(d.openSpans(now), now); err != nil {
+	if err := d.Store.SaveOpen(d.openSpans(now), d.tracker.lastSeen(now)); err != nil {
 		log.Printf("open.json: %v", err)
 	}
 }
@@ -218,7 +243,7 @@ func (d *Daemon) poll() {
 func (d *Daemon) saveOpen() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	now := nowMs()
+	now := d.tracker.lastSeen(nowMs())
 	return d.Store.SaveOpen(d.openSpans(now), now)
 }
 
@@ -242,7 +267,9 @@ func (d *Daemon) appendSpans(spans []Span) {
 	}
 }
 
+// openSpans gives the open spans ended at at, or at the last poll when at is past a sleep gap.
 func (d *Daemon) openSpans(at int64) []Span {
+	at = d.tracker.lastSeen(at)
 	return append(d.tracker.Open(at), d.agents.Open(at)...)
 }
 
