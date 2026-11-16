@@ -9,13 +9,14 @@ export function formatDuration(ms) {
 const ACTIVITIES = { development: "Разработка", architecture: "Проектирование", design: "Дизайн", documentation: "Документация", study: "Учёба" };
 export const activityLabel = (id) => ACTIVITIES[id] ?? id ?? "";
 
-// What `herdr-time ... --json` printed: exit code 3 means the collector isn't running.
+// What `herdr-time ... --json` printed: exit code 3 means the collector isn't running. An error keeps
+// its other fields (a closed period's id).
 export function parseResult(r) {
   if (r.code === 3) return { down: true };
   try {
     const out = JSON.parse(r.stdout);
     if (r.code === 0) return out;
-    return { error: out.error ?? `exit ${r.code}` };
+    return { ...out, error: out.error ?? `exit ${r.code}` };
   } catch {
     return { error: (r.stderr || r.stdout || `exit ${r.code}`).trim() };
   }

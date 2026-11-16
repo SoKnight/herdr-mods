@@ -104,6 +104,7 @@ func newServer(d *Daemon) http.Handler {
 		"GET /v1/unassigned":           d.getUnassigned,
 		"POST /v1/rules":               d.postRule,
 		"GET /v1/periods":              d.getPeriods,
+		"GET /v1/projects":             d.getProjects,
 		"POST /v1/periods/{id}/reopen": d.reopenPeriod,
 		"POST /v1/quit":                d.postQuit,
 	}
@@ -205,6 +206,7 @@ func nonNil[T any](s []T) []T {
 	return s
 }
 
+// getTimeline gives the day with closed periods' snapshots in place; ?fresh=1 shows it as the rules give it now.
 func (d *Daemon) getTimeline(r *http.Request) (int, any, error) {
 	day := r.URL.Query().Get("day")
 	if day == "" {
@@ -214,7 +216,13 @@ func (d *Daemon) getTimeline(r *http.Request) (int, any, error) {
 	if err != nil {
 		return 0, nil, fail(http.StatusBadRequest, "day: want YYYY-MM-DD, got %q", day)
 	}
-	tl, div, err := d.timeline(from, to)
+	var tl Timeline
+	var div []Divergence
+	if r.URL.Query().Get("fresh") == "1" {
+		tl, err = d.fresh(from, to)
+	} else {
+		tl, div, err = d.timeline(from, to)
+	}
 	if err != nil {
 		return 0, nil, err
 	}
@@ -401,6 +409,15 @@ func (d *Daemon) postRule(r *http.Request) (int, any, error) {
 	}
 	d.cfgMod = modTime(path)
 	return http.StatusNoContent, nil, d.setConfig(c)
+}
+
+// getProjects lists the projects in config order, for the mod's menus and names.
+func (d *Daemon) getProjects(r *http.Request) (int, any, error) {
+	out := []map[string]string{}
+	for _, p := range d.Config.Projects {
+		out = append(out, map[string]string{"id": p.ID, "name": p.Name})
+	}
+	return http.StatusOK, out, nil
 }
 
 func (d *Daemon) postQuit(r *http.Request) (int, any, error) {

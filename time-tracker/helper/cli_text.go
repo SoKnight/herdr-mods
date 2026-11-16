@@ -136,3 +136,14 @@ func showPeriods(w io.Writer, resp []byte) error {
 	}
 	return nil
 }
+
+func showProjects(w io.Writer, resp []byte) error {
+	var list []Project
+	if err := json.Unmarshal(resp, &list); err != nil {
+		return err
+	}
+	for _, p := range list {
+		fmt.Fprintf(w, "%s  %s\n", p.ID, p.Name)
+	}
+	return nil
+}

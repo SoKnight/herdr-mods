@@ -23,7 +23,8 @@ const usage = `herdr-time <команда> [--json]
   run                        запустить сборщик
   probe                      один опрос Windows, без сборщика
   status
-  timeline [--day YYYY-MM-DD]
+  timeline [--day YYYY-MM-DD] [--fresh]   --fresh: без снимков закрытых периодов
+  projects
   report --from --to [--project id]
   export --from --to --project id [--format md|csv] [--round 1|5|15] [--agents] [--out файл]
   correct add <json> | rm <id> | ls
@@ -167,6 +168,7 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 	round := fs.Int("round", 15, "")
 	agents := fs.Bool("agents", false, "")
 	out := fs.String("out", "", "")
+	fresh := fs.Bool("fresh", false, "")
 	if err := fs.Parse(args); err != nil {
 		return apiCall{}, err
 	}
@@ -196,7 +198,12 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 		if *day != "" {
 			q.Set("day", *day)
 		}
+		if *fresh {
+			q.Set("fresh", "1")
+		}
 		return apiCall{method: "GET", path: "/v1/timeline?" + q.Encode(), show: showTimeline}, nil
+	case cmd == "projects":
+		return apiCall{method: "GET", path: "/v1/projects", show: showProjects}, nil
 	case cmd == "report":
 		if _, _, err := span(); err != nil {
 			return apiCall{}, err

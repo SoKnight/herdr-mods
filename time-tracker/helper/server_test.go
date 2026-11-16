@@ -224,6 +224,54 @@ func TestExportClosesPeriodAndRounds(t *testing.T) {
 	assertEq(t, api.do("POST", "/v1/export", exportBody("other", at(0), at(60), 10), nil), http.StatusBadRequest)
 }
 
+func TestTimelineFreshSkipsSnapshots(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	seed(t, d, power(0, 120), inp(0, 22), win("idea64.exe", "Easy – Main.kt", 0, 22))
+	assertEq(t, api.do("POST", "/v1/export", exportBody("easy", at(0), at(60), 15), nil), http.StatusOK)
+	must(t, d.setConfig(func() Config { // the title rule goes: fresh rules no longer find the project
+		c := serverConfig()
+		c.Projects[0].Titles = nil
+		return c
+	}()))
+
+	type day struct {
+		Timeline    Timeline     `json:"timeline"`
+		Report      Report       `json:"report"`
+		Divergences []Divergence `json:"divergences"`
+	}
+	var closed, fresh day
+	assertEq(t, api.do("GET", "/v1/timeline?day=2026-11-16", nil, &closed), http.StatusOK)
+	assertEq(t, closed.Report.Projects[0].Project, "easy")
+	assertEq(t, closed.Report.Projects[0].Me, int64(22*minMs))
+	assertEq(t, len(closed.Divergences), 1)
+
+	assertEq(t, api.do("GET", "/v1/timeline?day=2026-11-16&fresh=1", nil, &fresh), http.StatusOK)
+	assertEq(t, len(fresh.Report.Projects), 1)
+	assertEq(t, fresh.Report.Projects[0].Project, "")
+	assertEq(t, fresh.Report.Me, int64(22*minMs))
+	assertEq(t, len(fresh.Divergences), 0)
+
+	c, err := buildCall(d.S, "timeline", []string{"--day", "2026-11-16", "--fresh"})
+	must(t, err)
+	assertEq(t, c.path, "/v1/timeline?day=2026-11-16&fresh=1")
+}
+
+func TestProjectsInConfigOrder(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	var list []map[string]string
+	assertEq(t, api.do("GET", "/v1/projects", nil, &list), http.StatusOK)
+	assertEq(t, len(list), 2)
+	assertEq(t, list[0]["id"], "easy")
+	assertEq(t, list[0]["name"], "Easy")
+	assertEq(t, list[1]["id"], "other")
+
+	c, err := buildCall(d.S, "projects", nil)
+	must(t, err)
+	assertEq(t, c.path, "/v1/projects")
+}
+
 func TestRuleAddRewritesUnassigned(t *testing.T) {
 	d := testDaemon(t)
 	api := serve(t, d)
