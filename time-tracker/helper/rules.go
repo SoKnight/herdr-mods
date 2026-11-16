@@ -175,6 +175,19 @@ func (r *Rules) ProjectByURL(url string) (id, why string) {
 	return r.matchRe(func(p cproject) []*regexp.Regexp { return p.urls }, url, "адрес")
 }
 
+// ProjectByName matches a signal's project name against a project's name or id, ignoring case.
+func (r *Rules) ProjectByName(name string) (id, why string) {
+	if name == "" {
+		return "", ""
+	}
+	for _, p := range r.projects {
+		if strings.EqualFold(name, p.Name) || strings.EqualFold(name, p.ID) {
+			return p.ID, "имя проекта " + name + " → " + p.ID
+		}
+	}
+	return "", ""
+}
+
 func (r *Rules) ActivityByFile(name string) string {
 	for i, re := range r.files {
 		if re.MatchString(name) {
