@@ -77,7 +77,7 @@ export function SelectionMenu(day) {
         .gap(6)
         .items_center()
         .child(Input.new(day.note).id("menu-note").flex_1().min_w(0).h(28).px(8).rounded(6).border_1().border_color(t.border).bg(t.input).text_size(TEXT.small))
-        .child(Link({ id: "menu-note-save", label: "Сохранить", onClick: (cx) => day.correct({ kind: "note", note: day.note.value().trim() }, cx) })),
+        .child(Link({ id: "menu-note-save", label: "Сохранить", onClick: (cx) => day.saveNote(cx) })),
     ];
   else
     items = [
@@ -86,7 +86,7 @@ export function SelectionMenu(day) {
       Item("menu-exclude", "Не считать", (cx) => day.correct({ kind: "exclude" }, cx)),
       mine && Item("menu-add", "Добавить время…", go("add-project")),
       mine && Item("menu-note", "Заметка", (cx) => {
-        day.openNote();
+        day.openNote(cx);
         go("note")(cx);
       }),
     ].filter(Boolean);

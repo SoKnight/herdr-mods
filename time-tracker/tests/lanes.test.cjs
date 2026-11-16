@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/lanes.js'), 'utf8');
-const L = new Function(`${code.replace(/^export /gm, '')}\nreturn { lanes, projectColor, targetFor, rangeFromDrag, correctionIds, shiftDay, ruleFor };`)();
+const L = new Function(`${code.replace(/^export /gm, '')}\nreturn { lanes, projectColor, targetFor, rangeFromDrag, correctionIds, shiftDay, ruleFor, stepDay, laneSpan };`)();
 
 const H = 3600_000;
 const day = { from: 0, to: 24 * H };
@@ -72,4 +72,25 @@ test('days shift across months', () => {
 test('rules match a title as written', () => {
   assert.deepEqual(L.ruleFor({ kind: 'path', value: 'C:\\Dev\\new' }, 'easy'), { project: 'easy', kind: 'path', value: 'C:\\Dev\\new' });
   assert.deepEqual(L.ruleFor({ kind: 'title', value: 'a (1).kt' }, 'easy'), { project: 'easy', kind: 'title', value: '^a \\(1\\)\\.kt$' });
+  const odd = '[x] $1 ^a|b \\ c+';
+  const { value } = L.ruleFor({ kind: 'title', value: odd }, 'easy');
+  assert.equal(value, '^\\[x\\] \\$1 \\^a\\|b \\\\ c\\+$');
+  assert.ok(new RegExp(value).test(odd));
+  assert.ok(!new RegExp(value).test(`${odd}!`));
+  assert.deepEqual(L.ruleFor({ kind: 'figma', value: 'Launcher (v2)' }, 'easy'), { project: 'easy', kind: 'figma', value: '^Launcher \\(v2\\)$' });
+});
+
+test('stepping days: today and later ask for today', () => {
+  assert.equal(L.stepDay(null, '2026-11-16', -1), '2026-11-15');
+  assert.equal(L.stepDay('2026-11-15', '2026-11-16', -1), '2026-11-14');
+  assert.equal(L.stepDay('2026-11-15', '2026-11-16', 1), null);
+  assert.equal(L.stepDay(null, '2026-11-16', 1), null);
+  // Today moved on while an older day was shown: stepping still lands on a real day.
+  assert.equal(L.stepDay('2026-11-10', '2026-11-17', 1), '2026-11-11');
+});
+
+test('a drag covers whole lanes, clamped to the lanes', () => {
+  assert.deepEqual(L.laneSpan(30, 5, 5, 22), { top: 0, bottom: 1 });
+  assert.deepEqual(L.laneSpan(50, 200, 5, 22), { top: 2, bottom: 4 });
+  assert.deepEqual(L.laneSpan(-10, 3, 5, 22), { top: 0, bottom: 0 });
 });

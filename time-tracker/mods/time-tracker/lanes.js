@@ -75,6 +75,19 @@ export function shiftDay(day, n) {
   return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
 }
 
+// The day to ask for after moving n days from want (null: today). Today and later are null, so the
+// collector names today itself and a panel left open past the day's start moves on to the new day.
+export function stepDay(want, today, n) {
+  const next = shiftDay(want ?? today, n);
+  return next >= today ? null : next;
+}
+
+// The lanes a drag between y0 and y1 covers, as first and last index; y outside the lanes clamps.
+export function laneSpan(y0, y1, count, row) {
+  const at = (y) => Math.max(0, Math.min(count - 1, Math.floor(y / row)));
+  return { top: at(Math.min(y0, y1)), bottom: at(Math.max(y0, y1)) };
+}
+
 // A rule for one "no project" item: titles and Figma files are regexps, so a title matches as written.
 export function ruleFor(item, project) {
   const exact = (s) => `^${s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`;

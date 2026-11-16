@@ -4,7 +4,7 @@ import { h_flex, v_flex, InputState, Popup } from "gpui-base";
 import { theme, props, layout } from "herdr";
 import { call } from "../client.js";
 import { formatDuration, activityLabel } from "../format.js";
-import { lanes, targetFor, rangeFromDrag, correctionIds, shiftDay, ruleFor } from "../lanes.js";
+import { lanes, targetFor, rangeFromDrag, correctionIds, stepDay, laneSpan, ruleFor } from "../lanes.js";
 import { IconButton, Message, TEXT } from "../ui.js";
 import { SelectionMenu, Link } from "./menu.js";
 import { Totals } from "./totals.js";
@@ -36,8 +36,9 @@ export class Day {
   constructor() {
     this.data = null; // what `timeline` gave
     this.projects = []; // [{id, name}] in config order
-    this.day = null; // null until the first answer: the collector knows which day is today
-    this.today = null;
+    this.want = null; // the day asked for; null is today, which only the collector knows
+    this.today = null; // from the last answer for today
+    this.seq = 0; // the latest load: older answers are dropped
     this.fresh = false; // closed periods shown as the rules give them now
     this.divergences = [];
     this.error = null;
@@ -68,44 +69,48 @@ export class Day {
     this.wasShown = shown;
   }
 
+  // Every load wins over the ones before it: a day switch or a change mid-load is never lost.
   load(cx) {
-    if (this.loading) return;
+    const seq = ++this.seq;
+    const { want, fresh } = this;
     this.loading = true;
     cx.notify();
     cx.spawn(async (cx) => {
-      try {
-        const args = ["timeline", ...(this.day ? ["--day", this.day] : []), ...(this.fresh ? ["--fresh"] : [])];
-        const [tl, projects] = await Promise.all([call(args), call(["projects"])]);
-        if (Array.isArray(projects)) this.projects = projects;
-        this.error = tl.down ? "Сборщик не запущен: go -C helper run ./deploy" : (tl.error ?? null);
-        if (!this.error) {
-          this.data = tl;
-          this.day = tl.day;
-          this.today ??= tl.day;
-          if (!this.fresh) this.divergences = tl.divergences;
-        }
-        if (this.unassignedOpen && this.data) await this.loadUnassigned();
-      } finally {
-        this.loading = false;
-        this.loadedAt = Date.now();
+      const args = ["timeline", ...(want ? ["--day", want] : []), ...(fresh ? ["--fresh"] : [])];
+      const [tl, projects] = await Promise.all([call(args), call(["projects"])]);
+      if (seq !== this.seq) return;
+      if (Array.isArray(projects)) this.projects = projects;
+      this.error = tl.down ? "Сборщик не запущен: go -C helper run ./deploy" : (tl.error ?? null);
+      if (!this.error) {
+        this.data = tl;
+        if (!want) this.today = tl.day;
+        if (!fresh) this.divergences = tl.divergences;
+        if (this.unassignedOpen) await this.loadUnassigned(seq);
       }
+      if (seq !== this.seq) return;
+      this.loading = false;
+      this.loadedAt = Date.now();
       cx.notify();
     });
   }
 
-  async loadUnassigned() {
+  async loadUnassigned(seq = this.seq) {
     const r = await call(["unassigned", "--from", String(this.data.from), "--to", String(this.data.to)]);
-    this.unassigned = Array.isArray(r) ? r : [];
+    if (seq === this.seq) this.unassigned = Array.isArray(r) ? r : [];
   }
 
   go(n, cx) {
-    Object.assign(this, { day: shiftDay(this.day, n), fresh: false, divergences: [], sel: null, message: null, unassigned: null, unassignedOpen: false });
+    if (!this.today) return;
+    this.dropNote();
+    const want = stepDay(this.want, this.today, n);
+    Object.assign(this, { want, fresh: false, divergences: [], sel: null, message: null, pending: null, unassigned: null, unassignedOpen: false });
     this.load(cx);
   }
 
   // Runs one change; a closed period asks first and runs it again once reopened.
   perform(cx, step, done) {
     this.sel = null;
+    this.dropNote();
     cx.spawn(async (cx) => {
       const r = await step();
       if (r.error === "closed" && r.period) {
@@ -152,13 +157,27 @@ export class Day {
     this.perform(cx, () => call(["rule", "add", JSON.stringify(ruleFor(item, project))]), () => ({ text: `Правило добавлено: ${this.name(project)}.` }));
   }
 
-  openNote() {
+  openNote(cx) {
+    this.dropNote();
     this.note = InputState.new({ placeholder: "Заметка" });
+    this.note.on("submit", (_e, cx) => this.saveNote(cx));
+    cx.timer.after(0, () => this.note?.focus()); // once the input is drawn
+  }
+
+  saveNote(cx) {
+    const note = this.note?.value().trim();
+    if (note) this.correct({ kind: "note", note }, cx);
+  }
+
+  dropNote() {
+    this.note?.release();
+    this.note = null;
   }
 
   closeMenu(cx) {
     if (!this.sel) return;
     this.sel = null;
+    this.dropNote();
     cx.notify();
   }
 
@@ -183,8 +202,7 @@ export class Day {
     const g = this.drag;
     this.drag = null;
     if (!g || Math.abs(g.x1 - g.x0) < 3) return cx.notify();
-    const top = Math.max(0, Math.min(ids.length - 1, Math.floor(Math.min(g.y0, g.y1) / ROW)));
-    const bottom = Math.max(0, Math.min(ids.length - 1, Math.floor(Math.max(g.y0, g.y1) / ROW)));
+    const { top, bottom } = laneSpan(g.y0, g.y1, ids.length, ROW);
     const picked = ids.slice(top, bottom + 1);
     const x = Math.max(0, Math.min(g.x0, g.x1));
     const w = Math.min(this.width, Math.max(g.x0, g.x1)) - x;
@@ -208,7 +226,8 @@ export class Day {
   dayBar(t) {
     const d = this.data;
     const r = d?.report;
-    const date = this.day ? new Date(`${this.day}T12:00:00`) : null;
+    const day = d?.day; // the day drawn, not the one being asked for: a failed load keeps both as they were
+    const date = day ? new Date(`${day}T12:00:00`) : null;
     const label = date ? `${WEEKDAYS[date.getDay()]} ${dateLabel(date.getTime())}` : "…";
     return h_flex()
       .h(40)
@@ -216,9 +235,9 @@ export class Day {
       .px(14)
       .gap(10)
       .items_center()
-      .child(Link({ id: "day-prev", label: "‹", onClick: (cx) => this.day && this.go(-1, cx) }))
-      .child(div().text_size(TEXT.body).child(this.day === this.today ? `Сегодня, ${label}` : label))
-      .when(this.day !== this.today, (el) => el.child(Link({ id: "day-next", label: "›", onClick: (cx) => this.go(1, cx) })))
+      .child(Link({ id: "day-prev", label: "‹", onClick: (cx) => this.go(-1, cx) }))
+      .child(div().text_size(TEXT.body).child(day && day === this.today ? `Сегодня, ${label}` : label))
+      .when(Boolean(day) && day !== this.today, (el) => el.child(Link({ id: "day-next", label: "›", onClick: (cx) => this.go(1, cx) })))
       .child(div().flex_1())
       .when(Boolean(r), (el) =>
         el.child(div().text_size(TEXT.small).text_color(t.muted).child(`Аптайм ${formatDuration(r.uptime)} · Моё ${formatDuration(r.me)} · Агенты ${formatDuration(r.agents)}`)),
@@ -349,6 +368,7 @@ export class Day {
       })
       .on_mouse_down("left", (e, cx) => {
         const p = this.point(e);
+        if (p.y >= ids.length * ROW) return; // the hours under the lanes
         this.sel = null;
         this.drag = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
         cx.notify();
@@ -365,9 +385,8 @@ export class Day {
       .child(this.axis(d, t));
 
     if (g) {
-      const top = Math.floor(Math.max(0, Math.min(g.y0, g.y1)) / ROW) * ROW;
-      const bottom = Math.min(ids.length * ROW, (Math.floor(Math.max(g.y0, g.y1) / ROW) + 1) * ROW);
-      tracks.child(div().absolute().left(Math.min(g.x0, g.x1)).top(top).w(Math.abs(g.x1 - g.x0)).h(bottom - top).bg(t.selection));
+      const { top, bottom } = laneSpan(g.y0, g.y1, ids.length, ROW);
+      tracks.child(div().absolute().left(Math.min(g.x0, g.x1)).top(top * ROW).w(Math.abs(g.x1 - g.x0)).h((bottom - top + 1) * ROW).bg(t.selection));
     } else if (this.sel) {
       const s = this.sel;
       tracks.child(
