@@ -89,6 +89,20 @@ func (a *AgentTracker) Lost(at int64) []Span {
 	return out
 }
 
+// Cut ends every open span at at and reopens it at resume: the computer slept in between.
+func (a *AgentTracker) Cut(at, resume int64) []Span {
+	var out []Span
+	for _, o := range a.open {
+		out = append(out, finish(*o, at)...)
+		o.Start = resume
+	}
+	if a.unknown != nil {
+		out = append(out, finish(*a.unknown, at)...)
+		a.unknown.Start = resume
+	}
+	return out
+}
+
 // Open returns the open spans with End = at, for SaveOpen.
 func (a *AgentTracker) Open(at int64) []Span {
 	var out []Span

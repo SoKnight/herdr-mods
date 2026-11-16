@@ -29,6 +29,7 @@ func (d *Daemon) postExport(r *http.Request) (int, any, error) {
 		return 0, nil, err
 	}
 	proj := d.project(req.Project)
+	req.To = min(req.To, nowMs()) // time that has not happened yet must stay open
 	switch {
 	case proj == nil:
 		return 0, nil, fail(http.StatusBadRequest, "unknown project %q", req.Project)

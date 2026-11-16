@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -33,27 +34,31 @@ func kindIntervals(raw Raw, kind string) []Interval {
 func TestDaemonRestartBackfillsFromBoot(t *testing.T) {
 	swap(t, &nowMs, func() int64 { return at(30) })
 	for _, tc := range []struct {
-		name       string
-		boot       int
-		power, gap Interval
+		name        string
+		boot, logon int
+		gap         Interval
 	}{
-		{"killed", -120, m(-60, 30), m(0, 30)}, // booted before the last poll: the gap starts at the last poll
-		{"rebooted", 10, m(-60, 0), m(10, 30)}, // booted after it: the gap starts at boot
+		{"killed", -120, -110, m(0, 30)},      // booted and logged on before the last poll: the gap starts there
+		{"rebooted", 10, 12, m(12, 30)},       // after a reboot the gap starts at logon
+		{"fast startup", -600, 10, m(10, 30)}, // the tick count survived the "shutdown", the logon did not
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := testDaemon(t)
 			must(t, d.Store.SaveOpen([]Span{{Kind: "power", Start: at(-60)}, {Kind: "window", Start: at(-10), Exe: "idea64.exe"}}, at(0)))
 			swap(t, &bootAt, func(int64) int64 { return at(tc.boot) })
+			swap(t, &logonAt, func() int64 { return at(tc.logon) })
 			must(t, d.recoverOpen())
-			raw := mustLoad(t, d.Store, at(-180), at(60))
-			assertEq(t, len(kindIntervals(raw, "nodata")), 1)
-			assertEq(t, kindIntervals(raw, "nodata")[0], tc.gap)
-			assertEq(t, kindIntervals(raw, "power")[0].Start, at(-60))
-			assertEq(t, kindIntervals(raw, "power")[len(kindIntervals(raw, "power"))-1].End, at(30))
-			assertEq(t, kindIntervals(raw, "window")[0], m(-10, 0))
-			if tc.name == "rebooted" {
-				assertEq(t, kindIntervals(raw, "power")[0], tc.power)
+			raw := mustLoad(t, d.Store, at(-700), at(60))
+			nodata, pw := kindIntervals(raw, "nodata"), kindIntervals(raw, "power")
+			assertEq(t, len(nodata), 1)
+			assertEq(t, nodata[0], tc.gap)
+			assertEq(t, pw[0].Start, at(-60))
+			last := tc.gap // power is on through the gap; it joins the recovered power when it starts there
+			if last.Start == at(0) {
+				last.Start = at(-60)
 			}
+			assertEq(t, pw[len(pw)-1], last)
+			assertEq(t, kindIntervals(raw, "window")[0], m(-10, 0))
 		})
 	}
 }
@@ -78,13 +83,15 @@ func TestStatusCountsOpenSpans(t *testing.T) {
 		Me       int64  `json:"today_me_ms"`
 		Agents   int64  `json:"today_agents_ms"`
 		Project  string `json:"project"`
+		Name     string `json:"project_name"`
 		Activity string `json:"activity"`
 	}
 	assertEq(t, api.do("GET", "/v1/status", nil, &st), http.StatusOK)
 	assertEq(t, st.Version, version)
 	assertEq(t, st.Me, int64(minMs))
 	assertEq(t, st.Agents, int64(minMs))
-	assertEq(t, st.Project, "Easy")
+	assertEq(t, st.Project, "easy")
+	assertEq(t, st.Name, "Easy")
 	assertEq(t, st.Activity, "development")
 }
 
@@ -92,6 +99,7 @@ func TestQuitStopsRun(t *testing.T) {
 	d := testDaemon(t)
 	api := serve(t, d)
 	swap(t, &bootAt, func(int64) int64 { return 0 })
+	swap(t, &logonAt, func() int64 { return 0 })
 	swap(t, &followAgents, func(context.Context, func(map[string]AgentState), func()) {})
 	swap(t, &takeSample, func(ms int64) (Sample, error) { return Sample{At: ms, LastInput: ms, Exe: "idea64.exe"}, nil })
 	done := make(chan error)
@@ -105,4 +113,73 @@ func TestQuitStopsRun(t *testing.T) {
 	}
 	_, err := os.Stat(filepath.Join(d.Home, "open.json"))
 	must(t, err) // the next start recovers from it, as after a crash
+}
+
+func TestPollGapCutsAgents(t *testing.T) {
+	d := testDaemon(t)
+	now := at(0)
+	swap(t, &nowMs, func() int64 { return now })
+	swap(t, &takeSample, func(ms int64) (Sample, error) { return Sample{At: ms, LastInput: ms, Exe: "idea64.exe"}, nil })
+	d.agentsSeen(working(`C:\Dev\easy`))
+	d.poll()
+	now += 5000
+	d.poll()
+	now = at(10) // slept for ten minutes
+	d.poll()
+	now += 5000
+	var agents []Span
+	for _, sp := range append(mustLoad(t, d.Store, at(-1), at(20)).Spans, d.openSpans(now)...) {
+		if sp.Kind == "agent" {
+			agents = append(agents, sp)
+			if sp.Start < at(5) && at(5) < sp.End {
+				t.Errorf("agent span %v covers the sleep", sp)
+			}
+		}
+	}
+	assertEq(t, len(agents), 2)
+	assertEq(t, agents[0].End, at(0)+5000)
+	assertEq(t, agents[1].Start, at(10))
+}
+
+func TestReloadConfigByMtime(t *testing.T) {
+	d := testDaemon(t)
+	file := filepath.Join(d.Home, "projects.json")
+	stamp := time.Now()
+	write := func(data []byte) {
+		t.Helper()
+		must(t, os.WriteFile(file, data, 0o644))
+		stamp = stamp.Add(time.Minute)
+		must(t, os.Chtimes(file, stamp, stamp))
+	}
+	byTitle := func() string { id, _ := d.Rules.ProjectByTitle("x", "Other window"); return id }
+	assertEq(t, byTitle(), "")
+
+	c := serverConfig()
+	c.Projects[1].Titles = []string{"Other"}
+	data, err := json.Marshal(c)
+	must(t, err)
+	write(data)
+	d.reload()
+	assertEq(t, byTitle(), "other")
+
+	write([]byte("{"))
+	d.reload()
+	assertEq(t, byTitle(), "other") // broken file: previous rules kept
+
+	must(t, os.Remove(file))
+	d.reload()
+	assertEq(t, byTitle(), "other") // missing file: kept, and not recreated
+	_, err = os.Stat(file)
+	assertEq(t, os.IsNotExist(err), true)
+}
+
+func TestLogonTimeIsSane(t *testing.T) {
+	now := time.Now().UnixMilli()
+	got := logonTime()
+	if got == 0 {
+		t.Skip("no session logon time here (not Windows, or no interactive session)")
+	}
+	if got > now || got < now-90*24*3600_000 {
+		t.Fatalf("logon %v is not within the last 90 days", time.UnixMilli(got))
+	}
 }

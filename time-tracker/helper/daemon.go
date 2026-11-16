@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -16,6 +18,7 @@ var (
 	nowMs        = func() int64 { return time.Now().UnixMilli() }
 	takeSample   = sample
 	bootAt       = bootTime
+	logonAt      = logonTime
 	followAgents = streamAgents
 )
 
@@ -58,7 +61,7 @@ func modTime(path string) time.Time {
 	return fi.ModTime()
 }
 
-// loadConfig reads projects.json; on error the current config stays.
+// loadConfig reads projects.json at startup, writing the default one if it is missing.
 func (d *Daemon) loadConfig() error {
 	c, err := LoadConfig(d.Home)
 	d.cfgMod = modTime(filepath.Join(d.Home, "projects.json")) // after LoadConfig: it may create the file
@@ -66,6 +69,20 @@ func (d *Daemon) loadConfig() error {
 		return err
 	}
 	return d.setConfig(c)
+}
+
+// readConfig reads projects.json as it is now; unlike LoadConfig it never creates it.
+func readConfig(home string) (Config, error) {
+	path := filepath.Join(home, "projects.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Config{}, err
+	}
+	var c Config
+	if err := json.Unmarshal(data, &c); err != nil {
+		return Config{}, fmt.Errorf("%s: %w", path, err)
+	}
+	return c, nil
 }
 
 func (d *Daemon) setConfig(c Config) error {
@@ -99,9 +116,15 @@ func (d *Daemon) loadSettings() error {
 }
 
 // reload picks up edited projects.json and settings.json. A port change needs a restart.
+// A missing projects.json (an editor saving by delete and rename) keeps the rules until it is back.
 func (d *Daemon) reload() {
-	if modTime(filepath.Join(d.Home, "projects.json")) != d.cfgMod {
-		if err := d.loadConfig(); err != nil {
+	if mod := modTime(filepath.Join(d.Home, "projects.json")); !mod.IsZero() && mod != d.cfgMod {
+		d.cfgMod = mod
+		c, err := readConfig(d.Home)
+		if err == nil {
+			err = d.setConfig(c)
+		}
+		if err != nil {
 			log.Printf("projects.json: %v; keeping the previous rules", err)
 		}
 	}
@@ -112,8 +135,9 @@ func (d *Daemon) reload() {
 	}
 }
 
-// recoverOpen stores what the last run left open, then marks the time from the later of boot and the last
-// known power-on until now as on without data: the collector did not watch it.
+// recoverOpen stores what the last run left open, then marks the time from the latest of boot, logon
+// and the last known power-on until now as on without data: the collector did not watch it. Logon
+// counts because a Fast Startup "shutdown" does not reset the boot time.
 func (d *Daemon) recoverOpen() error {
 	spans, err := d.Store.RecoverOpen()
 	if err != nil {
@@ -132,7 +156,7 @@ func (d *Daemon) recoverOpen() error {
 		}
 	}
 	now := nowMs()
-	start := max(bootAt(now), lastPower)
+	start := max(bootAt(now), logonAt(), lastPower)
 	if start <= 0 || start >= now {
 		return nil
 	}
@@ -178,6 +202,10 @@ func (d *Daemon) poll() {
 	if err != nil {
 		log.Printf("sample: %v", err) // a partial sample would close the window span
 		return
+	}
+	if p := d.tracker.prev; p != nil && s.At-p.At > 3*d.tracker.PollMs {
+		// The tracker closes its spans at the last poll before the sleep; the agents follow it.
+		d.appendSpans(d.agents.Cut(p.At, s.At))
 	}
 	d.appendSpans(d.tracker.Feed(s))
 	if err := d.Store.SaveOpen(d.openSpans(now), now); err != nil {

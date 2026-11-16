@@ -20,6 +20,7 @@ var (
 	pGetUserObjectInfo = user32.NewProc("GetUserObjectInformationW")
 	pGetWindowText     = user32.NewProc("GetWindowTextW")
 	pGetTickCount64    = kernel32.NewProc("GetTickCount64")
+	pWTSQuerySession   = windows.NewLazySystemDLL("wtsapi32.dll").NewProc("WTSQuerySessionInformationW")
 	micKey             = `Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone\NonPackaged`
 	desktopReadObjects = uintptr(0x1)
 	uoiName            = uintptr(2)
@@ -32,6 +33,34 @@ func tickCount() int64 {
 
 // bootTime returns the Unix ms of the last boot.
 func bootTime(now int64) int64 { return now - tickCount() }
+
+// wtsInfo is WTSINFOW.
+type wtsInfo struct {
+	State, SessionID, InBytes, OutBytes, InFrames, OutFrames, InCompressed, OutCompressed uint32
+	WinStation                                                                            [32]uint16
+	Domain                                                                                [17]uint16
+	User                                                                                  [21]uint16
+	Connect, Disconnect, LastInput, Logon, Current                                        int64 // FILETIME
+}
+
+// logonTime returns the Unix ms of the current session's logon, or 0. Unlike the tick count it is
+// reset by a Fast Startup "shutdown", which only hibernates the kernel.
+func logonTime() int64 {
+	const currentSession, wtsSessionInfo = 0xFFFFFFFF, 24
+	var info *wtsInfo
+	var n uint32
+	if r, _, _ := pWTSQuerySession.Call(0, currentSession, wtsSessionInfo, uintptr(unsafe.Pointer(&info)), uintptr(unsafe.Pointer(&n))); r == 0 || info == nil {
+		return 0
+	}
+	defer windows.WTSFreeMemory(uintptr(unsafe.Pointer(info)))
+	if uintptr(n) < unsafe.Sizeof(*info) {
+		return 0
+	}
+	if info.Logon <= 0 {
+		return 0
+	}
+	return (info.Logon - 116444736000000000) / 10000 // 100 ns since 1601 → ms since 1970
+}
 
 func sample(now int64) (Sample, error) {
 	s := Sample{At: now, Locked: locked(), CallExes: micUsers()}

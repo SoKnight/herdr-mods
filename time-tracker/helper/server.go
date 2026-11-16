@@ -175,17 +175,17 @@ func (d *Daemon) getStatus(r *http.Request) (int, any, error) {
 		return 0, nil, err
 	}
 	rep := Summarize(tl, d.S, d.order())
-	var project, activity string
+	var project, name, activity string
 	// I am still on the last segment unless I have been away for the idle threshold.
 	if n := len(tl.Me); n > 0 && tl.Me[n-1].End >= now-int64(d.S.IdleMinutes)*60_000 {
 		last := tl.Me[n-1]
-		activity, project = last.Activity, last.Project
+		activity, project, name = last.Activity, last.Project, last.Project
 		if p := d.project(project); p != nil && p.Name != "" {
-			project = p.Name
+			name = p.Name
 		}
 	}
 	return http.StatusOK, map[string]any{"version": version, "today_me_ms": rep.Me, "today_agents_ms": rep.Agents,
-		"project": project, "activity": activity}, nil
+		"project": project, "project_name": name, "activity": activity}, nil
 }
 
 // listed gives empty lists as [] instead of null, so the mod can iterate them as is.
@@ -362,15 +362,18 @@ func (d *Daemon) postRule(r *http.Request) (int, any, error) {
 	if err := decode(r, &req); err != nil {
 		return 0, nil, err
 	}
-	i := slices.IndexFunc(d.Config.Projects, func(p Project) bool { return p.ID == req.Project })
+	// Build on the file as it is now, not on what was loaded: it may have been edited since.
+	c, err := readConfig(d.Home)
+	if err != nil {
+		return 0, nil, fail(http.StatusConflict, "projects.json не читается: %v", err)
+	}
+	i := slices.IndexFunc(c.Projects, func(p Project) bool { return p.ID == req.Project })
 	if i < 0 {
 		return 0, nil, fail(http.StatusBadRequest, "unknown project %q", req.Project)
 	}
 	if req.Value == "" {
 		return 0, nil, fail(http.StatusBadRequest, "value is required")
 	}
-	c := d.Config
-	c.Projects = slices.Clone(c.Projects)
 	p := &c.Projects[i]
 	var list *[]string
 	switch req.Kind {

@@ -65,3 +65,18 @@ func TestAgentVanishedAndConcurrent(t *testing.T) {
 	assertEq(t, len(got), 1)
 	assertEq(t, got[0].Term, "t2")
 }
+
+func TestAgentCutAcrossSleep(t *testing.T) {
+	var a AgentTracker
+	a.Feed(working(`C:\Dev`), 0)
+	got := a.Cut(10_000, 600_000)
+	assertEq(t, len(got), 1)
+	assertEq(t, got[0], Span{Kind: "agent", Start: 0, End: 10_000, Term: "t1", Cwd: `C:\Dev`})
+	assertEq(t, a.Open(700_000)[0].Start, int64(600_000))
+
+	var lost AgentTracker
+	lost.Lost(0)
+	got = lost.Cut(10_000, 600_000)
+	assertEq(t, got[0], Span{Kind: "agents_unknown", Start: 0, End: 10_000})
+	assertEq(t, lost.Open(700_000)[0].Start, int64(600_000))
+}

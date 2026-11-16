@@ -338,3 +338,40 @@ func TestCLITalksToServer(t *testing.T) {
 	assertEq(t, runCLI(append(args, "--json"), &out, &errOut), 1)
 	assertEq(t, strings.Contains(out.String(), `"error":"closed"`), true)
 }
+
+func TestRuleAddReadsFileFresh(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	file := filepath.Join(d.Home, "projects.json")
+	c := serverConfig()
+	c.Projects[1].Titles = []string{"UserEdit"} // edited after the last reload
+	must(t, writeJSON(file, c))
+	rule := map[string]string{"project": "easy", "kind": "path", "value": `C:\Dev\new`}
+	assertEq(t, api.do("POST", "/v1/rules", rule, nil), http.StatusNoContent)
+	got, err := readConfig(d.Home)
+	must(t, err)
+	assertEq(t, got.Projects[1].Titles[0], "UserEdit")
+	assertEq(t, got.Projects[0].Paths[1], `C:\Dev\new`)
+
+	must(t, os.WriteFile(file, []byte("{"), 0o644))
+	var e struct {
+		Error string `json:"error"`
+	}
+	assertEq(t, api.do("POST", "/v1/rules", rule, &e), http.StatusConflict)
+	assertEq(t, strings.HasPrefix(e.Error, "projects.json не читается"), true)
+	data, err := os.ReadFile(file)
+	must(t, err)
+	assertEq(t, string(data), "{")
+}
+
+func TestExportNeverClosesTheFuture(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return at(30) })
+	var ex exportResult
+	assertEq(t, api.do("POST", "/v1/export", exportBody("easy", at(0), at(24*60), 15), &ex), http.StatusOK)
+	ps, err := d.Store.Periods()
+	must(t, err)
+	assertEq(t, ps[0].To, at(30))
+	assertEq(t, api.do("POST", "/v1/export", exportBody("other", at(40), at(100), 15), nil), http.StatusBadRequest)
+}
