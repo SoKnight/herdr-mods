@@ -11,6 +11,7 @@ export class Status {
     this.status = null;
     this.last = null;
     this.sending = false;
+    this.polling = false;
     this.poll(cx);
     cx.timer.every(5000, (cx) => this.signal(cx));
     cx.timer.every(30000, (cx) => this.poll(cx));
@@ -20,8 +21,11 @@ export class Status {
     if (this.polling) return;
     this.polling = true;
     cx.spawn(async (cx) => {
-      this.status = await call(["status"]);
-      this.polling = false;
+      try {
+        this.status = await call(["status"]);
+      } finally {
+        this.polling = false;
+      }
       cx.notify();
     });
   }
@@ -31,9 +35,12 @@ export class Status {
     if (!beat || this.sending || !shouldSend(this.last, beat, beat.time)) return;
     this.sending = true;
     cx.spawn(async (cx) => {
-      const r = await call(["beat", JSON.stringify(beat)]);
-      if (!r.down && !r.error) this.last = { beat, at: beat.time };
-      this.sending = false;
+      try {
+        const r = await call(["beat", JSON.stringify(beat)]);
+        if (!r.down && !r.error) this.last = { beat, at: beat.time };
+      } finally {
+        this.sending = false;
+      }
     });
   }
 
