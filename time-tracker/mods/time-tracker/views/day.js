@@ -39,6 +39,7 @@ export class Day {
     this.want = null; // the day asked for; null is today, which only the collector knows
     this.today = null; // from the last answer for today
     this.seq = 0; // the latest load: older answers are dropped
+    this.visit = 0; // counts day switches: a change that finishes after one shows no message
     this.fresh = false; // closed periods shown as the rules give them now
     this.divergences = [];
     this.error = null;
@@ -76,21 +77,26 @@ export class Day {
     this.loading = true;
     cx.notify();
     cx.spawn(async (cx) => {
-      const args = ["timeline", ...(want ? ["--day", want] : []), ...(fresh ? ["--fresh"] : [])];
-      const [tl, projects] = await Promise.all([call(args), call(["projects"])]);
-      if (seq !== this.seq) return;
-      if (Array.isArray(projects)) this.projects = projects;
-      this.error = tl.down ? "Сборщик не запущен: go -C helper run ./deploy" : (tl.error ?? null);
-      if (!this.error) {
-        this.data = tl;
-        if (!want) this.today = tl.day;
-        if (!fresh) this.divergences = tl.divergences;
-        if (this.unassignedOpen) await this.loadUnassigned(seq);
+      try {
+        const args = ["timeline", ...(want ? ["--day", want] : []), ...(fresh ? ["--fresh"] : [])];
+        const [tl, projects] = await Promise.all([call(args), call(["projects"])]);
+        if (seq !== this.seq) return;
+        if (Array.isArray(projects)) this.projects = projects;
+        this.error = tl.down ? "Сборщик не запущен: go -C helper run ./deploy" : (tl.error ?? null);
+        if (!this.error) {
+          this.data = tl;
+          if (!want) this.today = tl.day;
+          if (!fresh) this.divergences = tl.divergences;
+          if (this.unassignedOpen) await this.loadUnassigned(seq);
+        }
+      } finally {
+        // Even after a throw: no spinner left on, and the tick waits its minute before trying again.
+        if (seq === this.seq) {
+          this.loading = false;
+          this.loadedAt = Date.now();
+        }
+        cx.notify();
       }
-      if (seq !== this.seq) return;
-      this.loading = false;
-      this.loadedAt = Date.now();
-      cx.notify();
     });
   }
 
@@ -103,7 +109,7 @@ export class Day {
     if (!this.today) return;
     this.dropNote();
     const want = stepDay(this.want, this.today, n);
-    Object.assign(this, { want, fresh: false, divergences: [], sel: null, message: null, pending: null, unassigned: null, unassignedOpen: false });
+    Object.assign(this, { visit: this.visit + 1, want, fresh: false, divergences: [], sel: null, message: null, pending: null, unassigned: null, unassignedOpen: false });
     this.load(cx);
   }
 
@@ -111,10 +117,17 @@ export class Day {
   perform(cx, step, done) {
     this.sel = null;
     this.dropNote();
+    const visit = this.visit;
     cx.spawn(async (cx) => {
       const r = await step();
+      if (visit !== this.visit) {
+        // Another day is shown now: its own load is under way, and this result is about the old one.
+        if (!r.down && !r.error) this.load(cx);
+        return;
+      }
       if (r.error === "closed" && r.period) {
         const periods = await call(["periods"]);
+        if (visit !== this.visit) return;
         const p = Array.isArray(periods) ? periods.find((x) => x.id === r.period) : null;
         this.pending = { period: r.period, date: p ? dateLabel(p.exported_at) : null, retry: step, done };
       } else if (r.down || r.error) {
