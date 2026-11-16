@@ -1,0 +1,241 @@
+// The Report tab: one project over a period, rounded, previewed as Markdown and saved as a file.
+// Saving closes the period for that project, so it asks first; closed periods are listed below.
+import { div } from "gpui-kit";
+import { h_flex, v_flex, InputState, Input } from "gpui-base";
+import { theme, props, layout, home, pickFolder } from "herdr";
+import { call } from "../client.js";
+import { weekRange, monthRange, exportName, previewMarkdown, dayString } from "../format.js";
+import { Message, TEXT } from "../ui.js";
+import { Link } from "./menu.js";
+import { panelShown } from "./day.js";
+
+const REFRESH_MS = 60_000;
+const DAY = 24 * 3600_000;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const label = (ms) => dayString(ms).split("-").reverse().join(".");
+const minutes = (ms) => `${ms > 0 ? "+" : ""}${Math.round(ms / 60_000)} мин`;
+
+export class Report {
+  constructor() {
+    this.projects = [];
+    this.project = null;
+    this.period = "week"; // week | month | custom
+    this.round = 15;
+    this.agents = false;
+    this.folder = `${home().replace(/\\/g, "/")}/Downloads`;
+    this.confirm = null; // "md" | "csv": waiting for the closing warning to be accepted
+    this.custom = { from: null, to: null }; // InputStates, made when "custom" is first picked
+    this.today = null;
+    this.dayStart = 4 * 3600_000;
+    this.total = null; // the project's total for the period
+    this.periods = [];
+    this.error = null;
+    this.message = null; // { text, error? }
+    this.loading = false;
+    this.seq = 0;
+    this.loadedAt = 0;
+    this.wasShown = false;
+  }
+
+  tick(cx) {
+    const shown = Boolean(props()?.overlay) || panelShown(layout());
+    if (shown && (!this.wasShown || Date.now() - this.loadedAt >= REFRESH_MS)) this.load(cx);
+    this.wasShown = shown;
+  }
+
+  // [from, to) of the chosen period, or null while it can't be told (no today yet, or custom dates that aren't).
+  range() {
+    if (!this.today) return null;
+    if (this.period === "week") return weekRange(this.today, this.dayStart);
+    if (this.period === "month") return monthRange(this.today, this.dayStart);
+    const [a, b] = [this.custom.from?.value().trim() ?? "", this.custom.to?.value().trim() ?? ""];
+    if (!DATE.test(a) || !DATE.test(b)) return null;
+    const from = new Date(`${a}T00:00:00`).getTime() + this.dayStart;
+    const to = new Date(`${b}T00:00:00`).getTime() + this.dayStart + DAY; // the last day is inside
+    return from < to ? { from, to } : null;
+  }
+
+  load(cx) {
+    const seq = ++this.seq;
+    this.loading = true;
+    cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        const [tl, projects] = await Promise.all([call(["timeline"]), call(["projects"])]);
+        if (seq !== this.seq) return;
+        if (tl.down || tl.error) {
+          this.error = tl.down ? "Сборщик не запущен: go -C helper run ./deploy" : tl.error;
+          return;
+        }
+        this.today = tl.day;
+        this.dayStart = tl.from - new Date(`${tl.day}T00:00:00`).getTime();
+        if (Array.isArray(projects)) this.projects = projects;
+        if (!this.projects.some((p) => p.id === this.project)) this.project = this.projects[0]?.id ?? null;
+        this.error = null;
+        await this.loadData(seq);
+      } finally {
+        if (seq === this.seq) {
+          this.loading = false;
+          this.loadedAt = Date.now();
+        }
+        cx.notify();
+      }
+    });
+  }
+
+  async loadData(seq = this.seq) {
+    if (!this.project) return;
+    const r = this.range();
+    const [rep, periods] = await Promise.all([
+      r ? call(["report", "--from", String(r.from), "--to", String(r.to), "--project", this.project]) : null,
+      call(["periods", "--project", this.project]),
+    ]);
+    if (seq !== this.seq) return;
+    const ok = rep && !rep.error && !rep.down;
+    this.total = ok ? (rep.projects.find((p) => p.project === this.project) ?? { days: {}, activities: {}, me: 0, agents: 0 }) : null;
+    if (Array.isArray(periods)) this.periods = periods;
+  }
+
+  // A choice changed: read the numbers again, nothing else.
+  refresh(cx) {
+    this.confirm = null;
+    this.message = null;
+    const seq = ++this.seq;
+    cx.spawn(async (cx) => {
+      await this.loadData(seq);
+      cx.notify();
+    });
+    cx.notify();
+  }
+
+  pick(period, cx) {
+    this.period = period;
+    if (period === "custom" && !this.custom.from) {
+      for (const k of ["from", "to"]) {
+        this.custom[k] = InputState.new({ placeholder: "ГГГГ-ММ-ДД" });
+        this.custom[k].on("submit", (_e, cx) => this.refresh(cx));
+      }
+    }
+    this.refresh(cx);
+  }
+
+  async chooseFolder(cx) {
+    const dir = await pickFolder({ prompt: "Выбрать" });
+    if (dir) this.folder = dir.replace(/\\/g, "/");
+    cx.notify();
+  }
+
+  save(format, cx) {
+    const r = this.range();
+    this.confirm = null;
+    if (!r || !this.project) return;
+    const path = `${this.folder}/${exportName(this.project, r.from, r.to, format)}`;
+    const args = ["export", "--from", String(r.from), "--to", String(r.to), "--project", this.project, "--format", format, "--round", String(this.round), "--out", path];
+    if (this.agents) args.push("--agents");
+    cx.spawn(async (cx) => {
+      const x = await call(args);
+      if (x.down) this.message = { text: "Сборщик не запущен", error: true };
+      else if (x.error === "closed") this.message = { text: "Период уже закрыт выгрузкой: переоткройте его в списке ниже.", error: true };
+      else if (x.error) this.message = { text: x.error, error: true };
+      else {
+        this.message = { text: `Сохранено: ${path}` };
+        await this.loadData();
+      }
+      cx.notify();
+    });
+    cx.notify();
+  }
+
+  reopen(id, cx) {
+    cx.spawn(async (cx) => {
+      const x = await call(["reopen", String(id)]);
+      this.message = x.down || x.error ? { text: x.error ?? "Сборщик не запущен", error: true } : { text: "Период переоткрыт." };
+      if (!x.down && !x.error) await this.loadData();
+      cx.notify();
+    });
+  }
+
+  name(id) {
+    return this.projects.find((p) => p.id === id)?.name || id;
+  }
+
+  render() {
+    const t = theme();
+    const root = v_flex().id("report").flex_1().min_h(0).overflow_y_scroll().pb(14);
+    if (this.error) return root.child(Message(this.error, true));
+    if (!this.projects.length) return root.child(Message(this.loading ? "Загрузка…" : "Нет проектов в projects.json."));
+    const choice = (id, text, on, onClick) => Link({ id, label: text, color: on ? t.foreground : t.muted, onClick });
+    const row = (title) => h_flex().px(14).py(4).gap(12).items_center().flex_wrap().child(div().w(90).flex_none().text_size(TEXT.small).text_color(t.dim).child(title));
+    const r = this.range();
+    root
+      .child(row("Проект").children(this.projects.map((p) => choice(`rep-p-${p.id}`, p.name || p.id, p.id === this.project, (cx) => ((this.project = p.id), this.refresh(cx))))))
+      .child(row("Период").children([["week", "Неделя"], ["month", "Месяц"], ["custom", "Свой"]].map(([id, text]) => choice(`rep-per-${id}`, text, this.period === id, (cx) => this.pick(id, cx)))));
+    if (this.period === "custom") {
+      const field = (state, id) => Input.new(state).id(id).w(120).h(28).px(8).rounded(6).border_1().border_color(t.border).bg(t.input).text_size(TEXT.small);
+      root.child(row("").child(field(this.custom.from, "rep-from")).child(div().text_color(t.dim).child("–")).child(field(this.custom.to, "rep-to")).child(Link({ id: "rep-custom-apply", label: "Показать", onClick: (cx) => this.refresh(cx) })));
+    }
+    root
+      .child(row("Округление").children([1, 5, 15].map((n) => choice(`rep-round-${n}`, `${n} мин`, this.round === n, (cx) => ((this.round = n), cx.notify())))))
+      .child(row("").child(choice("rep-agents", `${this.agents ? "☑" : "☐"} Показать время агентов (для справки)`, this.agents, (cx) => ((this.agents = !this.agents), cx.notify()))))
+      .child(row("Папка").child(div().min_w(0).truncate().text_size(TEXT.small).child(this.folder)).child(Link({ id: "rep-folder", label: "Выбрать…", onClick: (cx) => this.chooseFolder(cx) })));
+
+    const preview = r && this.total ? previewMarkdown(this.name(this.project), r.from, r.to, this.total, this.round, this.agents) : null;
+    root.child(
+      div()
+        .id("rep-preview")
+        .mx(14)
+        .my(6)
+        .p(10)
+        .rounded(8)
+        .border_1()
+        .border_color(t.border)
+        .bg(t.raised)
+        .text_size(TEXT.small)
+        .whitespace_normal()
+        .child(preview ?? (r ? "Загрузка…" : "Введите даты в виде ГГГГ-ММ-ДД, начало не позже конца.")),
+    );
+
+    if (this.confirm) {
+      root.child(
+        h_flex()
+          .px(14)
+          .pb(8)
+          .gap(12)
+          .items_center()
+          .text_size(TEXT.small)
+          .child(div().flex_1().min_w(0).whitespace_normal().child("Период по проекту закроется: правила и правки потом не изменят выгрузку, пока его не переоткроют."))
+          .child(Link({ id: "rep-confirm-no", label: "Отмена", color: t.muted, onClick: (cx) => ((this.confirm = null), cx.notify()) }))
+          .child(Link({ id: "rep-confirm-yes", label: "Сохранить", onClick: (cx) => this.save(this.confirm, cx) })),
+      );
+    } else if (preview) {
+      root.child(
+        h_flex()
+          .px(14)
+          .pb(8)
+          .gap(16)
+          .child(Link({ id: "rep-save-csv", label: "Сохранить CSV", onClick: (cx) => ((this.confirm = "csv"), cx.notify()) }))
+          .child(Link({ id: "rep-save-md", label: "Сохранить Markdown", onClick: (cx) => ((this.confirm = "md"), cx.notify()) })),
+      );
+    }
+    if (this.message) root.child(div().px(14).pb(8).text_size(TEXT.small).text_color(this.message.error ? t.ansi1 : t.muted).whitespace_normal().child(this.message.text));
+    return root.child(this.closed(t));
+  }
+
+  closed(t) {
+    const box = v_flex().px(14).pt(10).gap(2).child(div().h(22).text_size(TEXT.small).text_color(t.muted).child("Закрытые периоды"));
+    if (!this.periods.length) return box.child(div().text_size(TEXT.small).text_color(t.dim).child("Выгрузок пока не было."));
+    for (const p of this.periods) {
+      box.child(
+        h_flex()
+          .h(24)
+          .gap(12)
+          .items_center()
+          .text_size(TEXT.small)
+          .child(div().w(150).flex_none().child(`${label(p.from)} – ${label(p.to - DAY)}`))
+          .child(div().flex_1().min_w(0).text_color(p.delta_ms ? t.ansi3 : t.dim).child(p.delta_ms ? `правила изменили бы ${minutes(p.delta_ms)}` : "без расхождений"))
+          .child(Link({ id: `rep-reopen-${p.id}`, label: "Переоткрыть", onClick: (cx) => this.reopen(p.id, cx) })),
+      );
+    }
+    return box;
+  }
+}

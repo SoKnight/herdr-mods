@@ -24,7 +24,7 @@ const minutes = (ms) => `${ms > 0 ? "+" : ""}${Math.round(ms / 60_000)} мин`;
 
 // Whether a panel copy is on screen: in a window of its own, or a shown block of the layout (the
 // status chip doesn't count). As in Branch PR: every parent shown, and the chosen child of a stack.
-function panelShown(node) {
+export function panelShown(node) {
   if (!node || node.hidden) return false;
   if (node.content?.mod === "time-tracker" && node.content.props?.view !== "status") return true;
   const children = node.children ?? [];
@@ -56,11 +56,6 @@ export class Day {
     this.unassigned = null;
     this.unassignedOpen = false;
     this.assigning = null;
-  }
-
-  init(_given, cx) {
-    this.tick(cx);
-    cx.timer.every(5000, (cx) => this.tick(cx));
   }
 
   // Read again on showing, then once a minute while shown; a hidden panel reads nothing.
@@ -106,9 +101,12 @@ export class Day {
   }
 
   go(n, cx) {
-    if (!this.today) return;
+    if (this.today) this.show(stepDay(this.want, this.today, n), cx);
+  }
+
+  // Shows a day: null is today.
+  show(want, cx) {
     this.dropNote();
-    const want = stepDay(this.want, this.today, n);
     Object.assign(this, { visit: this.visit + 1, want, fresh: false, divergences: [], sel: null, message: null, pending: null, unassigned: null, unassignedOpen: false });
     this.load(cx);
   }

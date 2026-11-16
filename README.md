@@ -53,6 +53,10 @@ Your PR and your Linear issue, next to the branch.
 
 - [Claude Threads](claude-threads/README.md) (`claude-threads`): past Claude Code sessions for the repo you're in or every folder, searchable by any prompt; click to resume one in a new tab, shift-click to fork it, and an open one is focused instead.
 
+### Time Tracker
+
+- [Time Tracker](time-tracker/README.md) (`time-tracker`): where your Windows working day went, per project: a day as lanes you correct by selecting time, week and month tables, and Markdown or CSV reports for clients. Needs Windows and Go 1.23+.
+
 ## Estro: all of them in one layout
 
 [Estro](estro/RECIPE.md) puts every mod in one window for directing agents: spaces and agents on the left, the session in the middle, and Files, Changes, PRs, Issues and Threads in a panel on the right. One prompt installs the layout and all nine mods, Usage Limits from its own repo among them:
