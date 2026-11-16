@@ -46,7 +46,7 @@ const (
 
 func DefaultConfig() Config {
 	return Config{
-		Activities: []string{"development", "design-work", "design", "documentation", "study"},
+		Activities: []string{"development", "architecture", "design", "documentation", "study"},
 		Projects: []Project{
 			{ID: "universe", Name: "Universe", Client: "StarMC", Paths: []string{devRoot + "starmc"}, Titles: []string{"(?i)universe"}},
 			{ID: "easylauncher", Name: "EasyLauncher", Paths: []string{devRoot + "easyx"}, Figma: []string{"(?i)easylauncher"}},

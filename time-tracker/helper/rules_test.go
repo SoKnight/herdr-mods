@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,13 +96,60 @@ func TestLoadSettingsOverlaysDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertEq(t, s.IdleMinutes, 5)
-	os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"idleMinutes": 10}`), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"idle_minutes": 10}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	s, err = LoadSettings(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertEq(t, s.IdleMinutes, 10)
 	assertEq(t, s.CarryMinutes, 15)
+}
+
+func TestDefaultSettings(t *testing.T) {
+	s := DefaultSettings()
+	assertEq(t, s.IdleMinutes, 5)
+	assertEq(t, s.CarryMinutes, 15)
+	assertEq(t, s.Port, 47613)
+	assertEq(t, s.PollSeconds, 5)
+	assertEq(t, s.DayStart, "04:00")
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEq(t, string(data), `{"idle_minutes":5,"carry_minutes":15,"port":47613,"poll_seconds":5,"day_start":"04:00"}`)
+	var back Settings
+	if err := json.Unmarshal(data, &back); err != nil {
+		t.Fatal(err)
+	}
+	back.Loc = s.Loc
+	assertEq(t, back, s)
+}
+
+func TestDefaultActivities(t *testing.T) {
+	assertEq(t, strings.Join(DefaultConfig().Activities, ","), "development,architecture,design,documentation,study")
+}
+
+func TestLoadSettingsRejectsBadValues(t *testing.T) {
+	for _, body := range []string{
+		`{"idle_minutes": 0}`, `{"port": 0}`, `{"poll_seconds": 0}`, `{"carry_minutes": -1}`, `{"day_start": "9"}`,
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadSettings(dir); err == nil {
+			t.Errorf("%s: want error", body)
+		}
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"carry_minutes": 0}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadSettings(dir); err != nil {
+		t.Errorf("carry_minutes 0 should be allowed: %v", err)
+	}
 }
 
 func TestCompileRejectsBadRegex(t *testing.T) {
