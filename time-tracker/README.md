@@ -5,7 +5,8 @@ Where your working day went, per project, for [Herdr Desktop](https://herdr.dev/
 <!-- preview.png: added once the panel is checked on a live day -->
 
 - **Session** (Сессия): the current working session. It starts after 45 minutes without activity and ends after 45 minutes without it (`session_idle_minutes`), or by "Завершить" / "Начать сессию". Stretches split at breaks over 15 minutes (`pause_minutes`); it shows the switches between projects and the longest focus.
-- **Day** (День): 06:00 to 06:00, as one strip (the computer on, my time coloured by project, a line at now) with a thin agents strip under it, then the sessions with their stretches and the breaks between them. Drag over a range up to now for its menu: assign a project (or "Без проекта"), set the kind of work, leave it out ("Исключить — не работа"), add a note, or make a rule from the window with the most time in it. A saved correction says "Правка #n сохранена." with "Отменить", which undoes that last one. "разобрать «Другое» →" opens my time without a project into what a rule could match, and picking a project writes the rule.
+- **Day** (День): 06:00 to 06:00, as one strip (the computer on, my time coloured by project, a line at now) with a thin agents strip under it, then the sessions with their stretches and the breaks between them. Drag over a range up to now for its menu: assign a project (or "Без проекта"), set the kind of work, leave it out ("Исключить — не работа"), add a note, or make a rule from the window with the most time in it (the rule item opens the rule editor). "+ Новый проект…" at the end of the project list makes a project from here. A saved correction says "Правка #n сохранена." with "Отменить", which undoes that last one. "разобрать «Другое» →" opens my time without a project into what a rule could match, and picking a project writes the rule.
+- **Projects** (Проекты): the projects in a sidebar, each with its own colour (one of six) and an archive; with Досуг, Не работа and Другое below them. One ordered list of rules holds everything the collector matches: a folder, an app (with an optional title), a title, a Figma file or a Minecraft server. The first rule that matches a window wins, whatever its kind. The rule editor shows the matches of the last 7 days and, when an earlier rule keeps some of them, which one ("Поднять выше" moves the rule above it). A change applies "с сегодня" or "и к прошлым дням с 1-го числа"; days before that keep what they were. Не работа and Досуг take time out of mine. "+" makes a project and offers hints from Другое.
 - **Week and Month** (Неделя, Месяц): projects by kind of activity, with my time and the agents' beside them and every day below; click a day to open it.
 - **Report** (Отчёт): a project, a period (week, month or your own dates; ‹ › step to the previous week or month), rounding to 1, 5 or 15 minutes (15 by default), a switch "Показать время агентов (для справки)" (off), and a Markdown preview. "Сохранить CSV" / "Сохранить Markdown" writes the file to a folder you pick (`~/Downloads` by default) and **closes the period** for that project.
 - **Closed periods:** listed under the report with how far today's rules would move them. "Переоткрыть" lifts the lock.
@@ -13,10 +14,10 @@ Where your working day went, per project, for [Herdr Desktop](https://herdr.dev/
 
 ## What it counts
 
-- **My time** is time with input in the last 5 minutes (`idle_minutes`), or a call, and not while the screen is locked. Which project it belongs to comes from the foreground window: its folder, title, URL, Figma file or app, matched by the rules in `projects.json`. Time after the last project carries on for up to 15 minutes (`carry_minutes`).
+- **My time** is time with input in the last 5 minutes (`idle_minutes`), or a call, and not while the screen is locked. Which project it belongs to comes from the foreground window: its folder, title, Figma file, Minecraft server or app, matched by the one list of rules in `projects.json` (first match wins; a signal's project name counts only when no rule matches). Time after the last project carries on for up to 15 minutes (`carry_minutes`). Не работа and Досуг are not my time: they are not in sessions and the carry doesn't continue across them.
 - **Agents' time** is the time Herdr agents work, from `hc events`, per project. It is only ever a side figure: it is never added to my time, and in a file it is its own line, outside the total.
 - **A day** starts at 06:00 (`day_start`), so a night session stays with the day it began.
-- **A call wins:** while Telemost holds the microphone, the time counts as the call's project and activity even if you type in another app. Fix such a stretch with a correction.
+- **A call wins:** while Telemost holds the microphone, the time counts as the call's project and activity even if you type in another app, except in a window a Досуг rule matches. Fix such a stretch with a correction.
 
 ### How Telemost is detected
 
@@ -40,7 +41,7 @@ It builds `herdr-time.exe`, copies the mod into Herdr, writes the autostart entr
 herdr-app check ~/.config/herdr-app/mods/time-tracker
 ```
 
-The `herdr-time` command line prints to the console it was started from, but PowerShell and cmd don't wait for it (it is built as a windowless program), so its output can land after the prompt. Pipe it for clean output, `herdr-time status | Out-String`, or use Git Bash. Besides `status`, `session [start|end]` starts or ends a session and `restart` starts the collector again, detached.
+The `herdr-time` command line prints to the console it was started from, but PowerShell and cmd don't wait for it (it is built as a windowless program), so its output can land after the prompt. Pipe it for clean output, `herdr-time status | Out-String`, or use Git Bash. Besides `status`, `session [start|end]` starts or ends a session and `restart` starts the collector again, detached. `rules` lists the rules with their 7-day times, `rule add|set|rm|preview` changes them, `project add|set` makes or edits a project and `hints` suggests rules for Другое.
 
 The mod opens as a 920×580 popup (`mod.json` has `place: none`):
 
@@ -52,12 +53,13 @@ Where to put the chip and the panel in a layout of your own is in [RECIPE.md](RE
 
 ## Where the data is
 
-`%LOCALAPPDATA%\herdr-time\`: the raw samples (`raw\`), corrections, closed periods, `sessions.json`, `projects.json` (your projects and rules; a starter is written on first run) and an optional `settings.json` (`idle_minutes`, `carry_minutes`, `session_idle_minutes` (45), `pause_minutes` (15), `port`, `poll_seconds`, `day_start`). Nothing leaves the computer: the collector answers only on `127.0.0.1:47613`.
+`%LOCALAPPDATA%\herdr-time\`: the raw samples (`raw\`), corrections, closed periods, `sessions.json`, `projects.json` (`projects` and `rules`; a starter is written on first run; a file from before rules is converted once and kept as `projects.v1.json`) and an optional `settings.json` (`idle_minutes`, `carry_minutes`, `session_idle_minutes` (45), `pause_minutes` (15), `port`, `poll_seconds`, `day_start`, `minecraft_logs`: default `%APPDATA%\.minecraft\logs\latest.log`, the newest of the listed files is read). Nothing leaves the computer: the collector answers only on `127.0.0.1:47613`.
 
 ## Limits
 
 - Windows only, and only Herdr's agents.
-- IDEA and Firefox are told apart by the window title for now, so a project rule for their folder or URL is a title match.
+- IDEA and Firefox are told apart by the window title for now, so a rule for their folder is a title match.
+- Minecraft's server comes from the game log; another launcher's game folder goes into `minecraft_logs`.
 - A report's end is cut at the present moment: time that hasn't happened yet stays open.
 - A closed period keeps its snapshot after a rule change, so a day's totals can differ from the sum of the exports until the period is reopened.
 - Minutes already exported for one project can't be exported for another: the export answers 409 `closed` with the first project's period until that one is reopened.
