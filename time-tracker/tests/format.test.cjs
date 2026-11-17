@@ -3,7 +3,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/format.js'), 'utf8');
-const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, exportName, sessionNote, catalog, plural, dayTitle, shareText };`)();
+const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, exportName, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries };`)();
+const rcode = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/rules.js'), 'utf8');
+const R = new Function(`${rcode.replace(/^export /gm, '')}
+return { ruleText, targetName };`)();
 
 test('durations', () => {
   assert.equal(F.formatDuration(18_720_000), '5ч 12м');
@@ -95,4 +98,37 @@ test('export file name', () => {
 test('session note', () => {
   assert.equal(F.sessionNote(false, 45), 'началась сама после простоя · закончится после 45 мин без активности');
   assert.equal(F.sessionNote(true, 30), 'начата вручную · закончится после 30 мин без активности');
+});
+
+test('history entries', () => {
+  const t = (d, h, m) => new Date(2026, 10, d, h, m).getTime();
+  const H6 = 6 * 3600_000;
+  const names = { tricky: 'Tricky Network', u: 'Universe' };
+  const opts = { name: (id) => R.targetName(id, Object.entries(names).map(([id, name]) => ({ id, name }))), activity: (id) => F.activityLabel(id), ruleText: R.ruleText, dayStartMs: H6 };
+  const data = {
+    corrections: [
+      { id: 12, kind: 'project', project: 'tricky', start: t(16, 23, 39), end: t(17, 0, 16), made: t(17, 0, 40), was: [{ project: '', me: 7 * 60_000 }] },
+      { id: 13, kind: 'add', project: 'u', start: t(16, 14, 0), end: t(16, 15, 30), made: t(16, 16, 5), note: 'созвон с заказчиком по ТЗ, офлайн' },
+      { id: 2, kind: 'exclude', project: '', start: t(10, 12, 0), end: t(10, 12, 5) },
+    ],
+    changes: [
+      { id: 3, kind: 'rule-add', at: t(17, 1, 2), from: t(1, 6, 0), ms: 4 * 60_000, source: 'inbox', rule: { kind: 'process', value: 'Telegram.exe', project: 'exclude' } },
+      { id: 1, kind: 'rule-add', at: t(15, 21, 30), from: t(1, 6, 0), ms: 362 * 60_000, rule: { kind: 'process', value: 'idea64.exe', title: 'universe-', project: 'u' } },
+    ],
+  };
+  const e = F.historyEntries(data, opts);
+  assert.deepEqual(e.map((x) => [x.kind, x.title, x.sub]), [
+    ['rule', 'Telegram.exe → Не работа', 'правило из разбора · применено к 1–16 ноя · 4м'],
+    ['assign', '23:39–00:16 → Tricky Network', 'вручную · было: Другое 7м'],
+    ['manual', '+ 14:00–15:30 · Universe', 'вручную · созвон с заказчиком по ТЗ, офлайн'],
+    ['rule', 'Правило Universe: idea64.exe · «universe-»', 'новое · применено к 1–15 ноя · +6ч 2м'],
+    ['excl', '12:00–12:05 → Не работа', 'вручную'],
+  ]);
+  assert.deepEqual(e[1].undo, ['correct', 'rm', '12']);
+  assert.deepEqual(e[0].undo, ['history', 'undo', '3']);
+  assert.equal(F.stamp(t(17, 0, 40)), '17 ноя, 00:40');
+  assert.equal(F.appliedRange(new Date(2026, 9, 28, 6, 0).getTime(), t(3, 12, 0), H6), '28 окт – 3 ноя');
+  assert.equal(F.appliedRange(t(16, 6, 0), t(17, 1, 0), H6), '16 ноя'); // 01:00 is still the 16th's day
+  const del = F.historyEntries({ changes: [{ id: 4, kind: 'rule-delete', at: t(17, 2, 0), from: t(1, 6, 0), ms: 0, rule: null, prev: { kind: 'title', value: 'Jira', project: 'u' } }] }, opts);
+  assert.deepEqual([del[0].key, del[0].title, del[0].sub], ['h:4', 'Правило Universe: «Jira»', 'удалено']);
 });

@@ -67,7 +67,7 @@ export const dayString = (ms) => {
 };
 
 // The local midnight of a "YYYY-MM-DD" day (calendar steps, so a DST change doesn't shift it).
-const midnight = (day, plusDays = 0) => {
+export const midnight = (day, plusDays = 0) => {
   const [y, m, d] = day.split("-").map(Number);
   return new Date(y, m - 1, d + plusDays).getTime();
 };
@@ -91,3 +91,51 @@ export function exportName(project, from, to, format, dayStartMs = 0, now = Date
 
 // The line under a session's title: how it began and when it ends.
 export const sessionNote = (manual, minutes) => `${manual ? "начата вручную" : "началась сама после простоя"} · закончится после ${minutes} мин без активности`;
+
+const SHORT_MONTHS = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+const dayMonth = (ms) => [new Date(ms).getDate(), SHORT_MONTHS[new Date(ms).getMonth()]];
+
+// "17 ноя, 00:40".
+export const stamp = (ms) => `${dayMonth(ms).join(" ")}, ${hhmm(ms)}`;
+
+// The days a rule change covered, from its start to when it was made, days starting dayStartMs after
+// midnight: "16 ноя", "1–15 ноя", "28 окт – 3 ноя".
+export function appliedRange(from, at, dayStartMs) {
+  const [d1, m1] = dayMonth(from - dayStartMs), [d2, m2] = dayMonth(at - dayStartMs);
+  if (m1 !== m2) return `${d1} ${m1} – ${d2} ${m2}`;
+  return d1 === d2 ? `${d1} ${m1}` : `${d1}–${d2} ${m1}`;
+}
+
+const ENTRY_KIND = { project: "assign", exclude: "excl", activity: "activity", note: "note", add: "manual" };
+
+// История правок: corrections and rule changes as rows, newest first. opts: name(project id),
+// activity(id), ruleText(rule), dayStartMs.
+export function historyEntries({ corrections = [], changes = [] }, { name, activity, ruleText, dayStartMs }) {
+  const span = (c) => `${hhmm(c.start)}–${hhmm(c.end)}`;
+  const manual = (note) => (note ? `вручную · ${note}` : "вручную");
+  const fromCorrection = (c) => {
+    const was = (c.was ?? []).filter((s) => s.me >= 60000).map((s) => `${s.project ? name(s.project) : "Другое"} ${formatDuration(s.me)}`);
+    const sub = was.length ? `вручную · было: ${was.join(", ")}` : "вручную";
+    const title = {
+      project: () => `${span(c)} → ${c.project ? name(c.project) : "Без проекта"}`,
+      exclude: () => `${span(c)} → Не работа`,
+      activity: () => `${span(c)} → ${activity(c.activity)}`,
+      note: () => `${span(c)} · заметка`,
+      add: () => `+ ${span(c)} · ${name(c.project)}`,
+    }[c.kind]?.() ?? span(c);
+    const custom = c.kind === "note" || c.kind === "add";
+    return { key: `c:${c.id}`, kind: ENTRY_KIND[c.kind] ?? "note", title, sub: custom ? manual(c.note) : sub, at: c.made || c.start, undo: ["correct", "rm", String(c.id)] };
+  };
+  const fromChange = (h) => {
+    const range = `применено к ${appliedRange(h.from, h.at, dayStartMs)}`;
+    const ms = (plus) => (h.ms >= 60000 ? ` · ${plus}${formatDuration(h.ms)}` : "");
+    const rule = h.rule ?? h.prev;
+    const target = name(rule.project);
+    let title = `Правило ${target}: ${ruleText(rule)}`, sub;
+    if (h.kind === "rule-delete") sub = "удалено";
+    else if (h.source === "inbox") (title = `${ruleText(rule)} → ${target}`), (sub = `правило из разбора · ${range}${ms("")}`);
+    else sub = `${h.kind === "rule-edit" ? "изменено" : "новое"} · ${range}${ms("+")}`;
+    return { key: `h:${h.id}`, kind: "rule", title, sub, at: h.at, undo: ["history", "undo", String(h.id)] };
+  };
+  return [...corrections.map(fromCorrection), ...changes.map(fromChange)].sort((a, b) => b.at - a.at);
+}

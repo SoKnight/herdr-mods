@@ -9,6 +9,7 @@ import { Table } from "./views/table.js";
 import { Report } from "./views/report.js";
 import { Projects } from "./views/projects.js";
 import { Inbox } from "./views/inbox.js";
+import { History } from "./views/history.js";
 import { theme } from "herdr";
 import { Panel, PanelHeader, HeaderTab, Icon, Placeholder } from "./ui.js";
 
@@ -33,7 +34,7 @@ export default class TimeTracker extends View {
     const open = (tab, cx, arg) => this.open(tab, cx, arg);
     const showDialog = (d, cx) => this.showDialog(d, cx);
     this.dialog = null; // drawn over the whole panel while set
-    this.parts = { session: new SessionView(open, showDialog), projects: new Projects(open, showDialog), settings: placeholder(SETTINGS), day: new Day(open, showDialog), week: new Table("week", openDay), month: new Table("month", openDay), report: new Report(), inbox: new Inbox(open) };
+    this.parts = { session: new SessionView(open, showDialog), projects: new Projects(open, showDialog), settings: placeholder(SETTINGS), day: new Day(open, showDialog), week: new Table("week", openDay), month: new Table("month", openDay), report: new Report(), inbox: new Inbox(open), history: new History(open) };
     if (checking()) return;
     this.tick(cx);
     cx.timer.every(5000, (cx) => this.tick(cx));
@@ -87,7 +88,7 @@ export default class TimeTracker extends View {
       .relative()
       .child(
         PanelHeader()
-          .children(TABS.map(([id, label]) => HeaderTab({ id: `time-tab-${id}`, label, active: id === this.tab, dot: id === "session" ? t.ansi2 : undefined, onClick: (cx) => this.open(id, cx) })))
+          .children(TABS.map(([id, label]) => HeaderTab({ id: `time-tab-${id}`, label, active: id === (this.tab === "history" ? "day" : this.tab), dot: id === "session" ? t.ansi2 : undefined, onClick: (cx) => this.open(id, cx) })))
           .child(div().flex_1())
           .child(button("projects", "Проекты").px(10).py(6).gap(6).text_size(13).child(Icon("settings-2", 15)).child("Проекты"))
           .child(button("settings", "Настройки").w(32).h(30).justify_center().child(Icon("settings", 15)).tooltip("Настройки")),

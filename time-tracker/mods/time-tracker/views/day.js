@@ -4,10 +4,10 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex, InputState, ScrollHandle } from "gpui-base";
 import { theme, props, layout } from "herdr";
 import { call } from "../client.js";
-import { formatDuration, activityLabel, catalog, hhmm, dayTitle, plural, ACTIVITIES } from "../format.js";
+import { formatDuration, activityLabel, catalog, hhmm, dayTitle, plural, midnight, ACTIVITIES } from "../format.js";
 import { rangeFromDrag, stepDay } from "../lanes.js";
 import { silence } from "../chip.js";
-import { Button, Icon, Message, TEXT } from "../ui.js";
+import { Button, Icon, IconButton, Message, TEXT } from "../ui.js";
 import { Link } from "./menu.js";
 import { Strip, AgentsStrip, HourLabels, Legend, DragArea } from "./strip.js";
 import { StretchList, SessionHeader } from "./stretches.js";
@@ -351,7 +351,11 @@ export class Day {
       .when(today, (el) => el.child(title("Сегодня")).child(div().text_color(t.dim).child(dayTitle(day))))
       .when(Boolean(day) && !today, (el) => el.child(title(dayTitle(day))).child(chevron("day-next", "Следующий день", "›", 1)))
       .child(div().flex_1())
-      .when(Boolean(d), (el) => el.child(div().text_size(TEXT.small).text_color(t.dim).child(`сутки ${hhmm(d.from)} → ${hhmm(d.from)}`)));
+      .when(Boolean(d), (el) =>
+        el
+          .child(div().text_size(TEXT.small).text_color(t.dim).child(`сутки ${hhmm(d.from)} → ${hhmm(d.from)}`))
+          .child(IconButton({ id: "day-history", icon: "history", label: "История правок", onClick: (cx) => this.open("history", cx, { day: d.day, dayStartMs: d.from - midnight(d.day) }) }).w(28)),
+      );
   }
 
   // Above the strip: an error, a reopen to confirm, closed exports the rules would change, the last message.
