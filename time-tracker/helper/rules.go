@@ -24,6 +24,7 @@ type Project struct {
 	Color    string   `json:"color,omitempty"`
 	Archived bool     `json:"archived,omitempty"`
 	Goals    []Goal   `json:"goals,omitempty"` // versions sorted by From
+	Pay      []Pay    `json:"pay,omitempty"`   // versions sorted by From
 	Paths    []string `json:"paths,omitempty"`
 	Titles   []string `json:"titles,omitempty"`
 	URLs     []string `json:"urls,omitempty"`

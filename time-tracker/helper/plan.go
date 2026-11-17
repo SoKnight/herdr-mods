@@ -53,35 +53,48 @@ type goalSum struct {
 	DaysLeft   int   `json:"days_left"`    // planned days after today
 }
 
-// goalOn is the version in force on day, the latest From up to it in any order; nil when none or Off.
-func goalOn(goals []Goal, day string) *Goal {
-	var g *Goal
-	for i := range goals {
-		if goals[i].From <= day && (g == nil || goals[i].From >= g.From) {
-			g = &goals[i]
-		}
-	}
-	if g == nil || g.Off {
-		return nil
-	}
-	return g
+// dated is one version of a project's goal or pay: it applies from start() on; an ended() one
+// means nothing from then.
+type dated interface {
+	start() string
+	ended() bool
 }
 
-// setGoal replaces every version from g.From on with g; an Off with nothing before it is dropped too.
-func setGoal(goals []Goal, g Goal) []Goal {
-	out := []Goal{}
-	for _, v := range goals {
-		if v.From < g.From {
-			out = append(out, v)
+func (g Goal) start() string { return g.From }
+func (g Goal) ended() bool   { return g.Off }
+
+// versionOn is the version in force at at, the latest start up to it in any order; nil when none or ended.
+func versionOn[T dated](vs []T, at string) *T {
+	var v *T
+	for i := range vs {
+		if vs[i].start() <= at && (v == nil || vs[i].start() >= (*v).start()) {
+			v = &vs[i]
 		}
 	}
-	if g.Off && len(out) == 0 {
+	if v == nil || (*v).ended() {
+		return nil
+	}
+	return v
+}
+
+// setVersion replaces every version from v's start on with v; an ended one with nothing before it is dropped too.
+func setVersion[T dated](vs []T, v T) []T {
+	out := []T{}
+	for _, x := range vs {
+		if x.start() < v.start() {
+			out = append(out, x)
+		}
+	}
+	if v.ended() && len(out) == 0 {
 		return out
 	}
-	out = append(out, g)
-	slices.SortStableFunc(out, func(a, b Goal) int { return strings.Compare(a.From, b.From) })
+	out = append(out, v)
+	slices.SortStableFunc(out, func(a, b T) int { return strings.Compare(a.start(), b.start()) })
 	return out
 }
+
+func goalOn(goals []Goal, day string) *Goal { return versionOn(goals, day) }
+func setGoal(goals []Goal, g Goal) []Goal   { return setVersion(goals, g) }
 
 // dayPlan is g's planned minutes on day: day goals on their planned days, week and month goals spread
 // over every calendar day.

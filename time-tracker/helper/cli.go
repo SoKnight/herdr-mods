@@ -40,6 +40,8 @@ const usage = `herdr-time <команда> [--json]
   history --from --to | undo <id>
   project add <json> | set <id> <json>
   goal set <project> <json>
+  pay set <project> <json>
+  bonus add <json> | rm <id>
   dayoff add <json> | rm <id>
   plan --from YYYY-MM-DD --to YYYY-MM-DD   дни, не Unix ms
   goals [--day YYYY-MM-DD]
@@ -316,13 +318,19 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 		}
 		body, err := arg(2, "<json>")
 		return apiCall{method: "PATCH", path: "/v1/projects/" + url.PathEscape(id), body: []byte(body)}, err
-	case cmd == "goal" && sub == "set":
+	case (cmd == "goal" || cmd == "pay") && sub == "set":
 		id, err := arg(1, "<project>")
 		if err != nil {
 			return apiCall{}, err
 		}
 		body, err := arg(2, "<json>")
-		return apiCall{method: "PUT", path: "/v1/projects/" + url.PathEscape(id) + "/goal", body: []byte(body)}, err
+		return apiCall{method: "PUT", path: "/v1/projects/" + url.PathEscape(id) + "/" + cmd, body: []byte(body)}, err
+	case cmd == "bonus" && sub == "add":
+		body, err := arg(1, "<json>")
+		return apiCall{method: "POST", path: "/v1/bonuses", body: []byte(body)}, err
+	case cmd == "bonus" && sub == "rm":
+		id, err := arg(1, "<id>")
+		return apiCall{method: "DELETE", path: "/v1/bonuses/" + url.PathEscape(id)}, err
 	case cmd == "dayoff" && sub == "add":
 		body, err := arg(1, "<json>")
 		return apiCall{method: "POST", path: "/v1/daysoff", body: []byte(body)}, err

@@ -273,7 +273,7 @@ func showHistory(w io.Writer, resp []byte) error {
 		lines = append(lines, line{cmp.Or(c.Made, c.Start), "correct " + c.Kind, "correct rm", c.ID})
 	}
 	for _, c := range h.Changes {
-		lines = append(lines, line{c.At, c.Kind, "history undo", c.ID})
+		lines = append(lines, line{c.At, strings.TrimSpace(c.Kind + " " + c.Project), "history undo", c.ID}) // goal-set easy
 	}
 	for _, o := range h.DaysOff {
 		lines = append(lines, line{o.Made, fmt.Sprintf("dayoff %s %s–%s", o.Kind, o.From, o.To), "dayoff rm", o.ID})

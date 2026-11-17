@@ -309,6 +309,12 @@ func (st *Store) AddDayOff(o DayOff) (DayOff, error) {
 }
 func (st *Store) RemoveDayOff(id int64) error { return removeItem(st, "daysoff.json", id, dayOffID) }
 
+func bonusID(b *Bonus) *int64 { return &b.ID }
+
+func (st *Store) Bonuses() ([]Bonus, error)       { return listItems[Bonus](st, "bonuses.json") }
+func (st *Store) AddBonus(b Bonus) (Bonus, error) { return addItem(st, "bonuses.json", b, bonusID) }
+func (st *Store) RemoveBonus(id int64) error      { return removeItem(st, "bonuses.json", id, bonusID) }
+
 func (st *Store) SessionMarks() ([]SessionMark, error) {
 	return listItems[SessionMark](st, "sessions.json")
 }
