@@ -188,6 +188,51 @@ func TestPlanRoute(t *testing.T) {
 	assertEq(t, api.do("GET", "/v1/plan?from=2026-10-01&to=2026-12-31", nil, nil), http.StatusBadRequest)
 }
 
+// A goal removed or changed inside the range keeps its plan for the days it applied; the goal shown is the
+// latest one in force up to today.
+func TestPlanRouteKeepsChangedGoals(t *testing.T) {
+	d := testDaemon(t)
+	d.S.CarryMinutes = 0
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 25, 12, 0) })
+	put := func(id string, g map[string]any) { assertEq(t, api.do("PUT", "/v1/projects/"+id+"/goal", g, nil), http.StatusOK) }
+	put("easy", map[string]any{"from": "2026-11-01", "dir": "min", "minutes": 390, "period": "day", "weekdays": []int{1, 2, 3, 4, 5}, "calendar": true, "weekends": true})
+	put("easy", map[string]any{"from": "2026-11-20", "off": true})
+	put("other", map[string]any{"from": "2026-11-01", "dir": "min", "minutes": 480, "period": "day", "weekdays": []int{1, 2, 3, 4, 5}})
+	put("other", map[string]any{"from": "2026-11-16", "dir": "min", "minutes": 700, "period": "week"})
+	seedWindow(t, d, mskAt(2026, 11, 16, 12, 0), "notepad.exe", "Easy notes", 60)
+	seedWindow(t, d, mskAt(2026, 11, 23, 12, 0), "notepad.exe", "Easy notes", 30) // after Убрать цель: not counted
+	var p planAnswer
+	assertEq(t, api.do("GET", "/v1/plan?from=2026-11-01&to=2026-11-30", nil, &p), http.StatusOK)
+	// 13 working days of 1–19 November (the 4th a holiday) × 390
+	assertEq(t, p.Sums["easy"], goalSum{Plan: 5070, PlanToDate: 5070, Fact: 60, Me: 90, Balance: -5010, Forecast: 60, Days: 13})
+	assertEq(t, fmt.Sprintf("%v %v", p.Goals["easy"].Period, p.Goals["easy"].Minutes), "day 390")
+	// 10 weekdays of 1–13 November × 480, then 15 days × 700 / 7 (10 of them up to the 25th)
+	s := p.Sums["other"]
+	assertEq(t, fmt.Sprint(s.Plan, s.PlanToDate, s.Days, s.DaysLeft), "6300 5800 25 5")
+	assertEq(t, fmt.Sprintf("%v %v", p.Goals["other"].Period, p.Goals["other"].Minutes), "week 700")
+	assertEq(t, api.do("GET", "/v1/plan?from=2026-11-01&to=2026-11-10", nil, &p), http.StatusOK)
+	assertEq(t, fmt.Sprintf("%v %v", p.Goals["other"].Period, p.Sums["other"].Plan), "day 3360") // 7 weekdays × 480
+}
+
+// A weekend day moved to a working one is planned for a calendar day goal and its time counts.
+func TestPlanDaysMovedWorkday(t *testing.T) {
+	g := universeGoal
+	g.Weekends = false
+	cal := Calendar{"2026": {Workdays: []string{"2026-11-28"}}}
+	rep := Report{Projects: []ProjectTotal{{Project: "u", Days: map[string]DayTotal{nov(28): {Me: 45 * minMs}, nov(29): {Me: 20 * minMs}}}}}
+	days := planDays([]string{nov(28), nov(29)}, cal, []Project{{ID: "u", Goals: []Goal{g}}}, nil, rep)
+	assertEq(t, fmt.Sprint(days[0].Work, days[0].Plan["u"], days[0].Fact["u"], days[1].Work, days[1].Plan["u"], days[1].Fact["u"]), "true 390 45 false 0 0")
+	s := sumGoal(days, "u", nov(29))
+	assertEq(t, fmt.Sprint(s.Plan, s.Fact, s.Me), "390 45 65")
+}
+
+func TestGoalWeekdaysDeduped(t *testing.T) {
+	g, err := checkGoal(Goal{From: "2026-11-01", Dir: "min", Minutes: 60, Period: "day", Weekdays: []int{3, 1, 1, 1}})
+	must(t, err)
+	assertEq(t, fmt.Sprint(g.Weekdays), "[1 3]")
+}
+
 func TestGoalsAtNight(t *testing.T) {
 	d := testDaemon(t)
 	d.S.CarryMinutes = 0

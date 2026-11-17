@@ -258,6 +258,7 @@ func checkGoal(g Goal) (Goal, error) {
 	if len(g.Weekdays) == 0 || slices.ContainsFunc(g.Weekdays, func(w int) bool { return w < 1 || w > 7 }) {
 		return g, fail(http.StatusBadRequest, "weekdays: want days 1..7")
 	}
+	g.Weekdays = slices.Compact(slices.Sorted(slices.Values(g.Weekdays)))
 	return g, nil
 }
 
@@ -321,8 +322,8 @@ func (d *Daemon) deleteDayOff(r *http.Request) (int, any, error) {
 	return http.StatusNoContent, nil, d.Store.RemoveDayOff(id)
 }
 
-// getPlan gives the days from ?from= to ?to= and, for each project with a goal on the last day (or today
-// when that is earlier), the goal and its sums over the range.
+// getPlan gives the days from ?from= to ?to=, the sums over the range of each project planned on any of
+// them, and its goal: the latest version in force on a day of the range up to today.
 func (d *Daemon) getPlan(r *http.Request) (int, any, error) {
 	first, last := r.URL.Query().Get("from"), r.URL.Query().Get("to")
 	days, err := d.planRange(first, last)
@@ -332,8 +333,16 @@ func (d *Daemon) getPlan(r *http.Request) (int, any, error) {
 	today := d.S.DayOf(nowMs())
 	goals, sums := map[string]Goal{}, map[string]goalSum{}
 	for _, p := range d.Config.Projects {
-		if g := goalOn(p.Goals, min(last, today)); g != nil {
-			goals[p.ID], sums[p.ID] = *g, sumGoal(days, p.ID, today)
+		planned := false
+		for _, pd := range days {
+			_, ok := pd.Plan[p.ID]
+			planned = planned || ok
+			if g := goalOn(p.Goals, pd.Day); g != nil && pd.Day <= today {
+				goals[p.ID] = *g
+			}
+		}
+		if planned {
+			sums[p.ID] = sumGoal(days, p.ID, today)
 		}
 	}
 	var names []string
