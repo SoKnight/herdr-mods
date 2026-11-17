@@ -93,7 +93,9 @@ func legacyPeriod(t *testing.T, d *Daemon, project string, from, to int64) Perio
 	t.Helper()
 	tl, err := d.fresh(from, to)
 	must(t, err)
-	p, err := d.Store.AddPeriod(Snapshot(tl, project, from, to))
+	snap := Snapshot(tl, project, from, to)
+	snap.ExportedAt = nowMs()
+	p, err := d.Store.AddPeriod(snap)
 	must(t, err)
 	return p
 }

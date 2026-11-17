@@ -46,6 +46,8 @@ func TestExportTextGoalAgentsAndPastMonth(t *testing.T) {
 	m.Pay = monthPay(&Pay{Kind: "hourly", Amount: 2000}, 2451, 7800, []Bonus{{Amount: 15_000}, {Amount: 5_000}})
 	assertEq(t, payLine(m.Pay), "Оплата: 81 700 ₽ (40ч 51м × 2 000 ₽/ч) + премии 20 000 ₽ = 101 700 ₽")
 	assertEq(t, payLine(monthPay(&Pay{Kind: "fixed", Amount: 100_000}, 0, 0, nil)), "Оплата: 100 000 ₽")
+	m.Rows[3].Notes = []string{"две\nстроки", "три\r\nстроки"}
+	assertEq(t, strings.Contains(exportText("Universe", m, exportOpts{Notes: true}), "\n  — две строки\n  — три строки\n"), true)
 }
 
 func TestExportCSV(t *testing.T) {

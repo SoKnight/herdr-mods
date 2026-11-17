@@ -69,6 +69,10 @@ func TestMonthReportRoute(t *testing.T) {
 	shape, _ = json.Marshal(buildMonth("u", "2026-12", "week", nov(16), nil, nil, tsettings())) // nothing before today
 	assertEq(t, strings.Contains(string(shape), `"rows":[]`), true)
 
+	// A planned week without time keeps its deficit in the text only with the goal.
+	assertEq(t, strings.Contains(exportText("Easy", m, exportOpts{Goal: true}), "\n9–15 ноя · 0м · цель 32ч 30м · −32ч 30м\n"), true)
+	assertEq(t, strings.Contains(exportText("Easy", m, exportOpts{}), "9–15 ноя"), false)
+
 	resp, _ := json.Marshal(m)
 	var out bytes.Buffer
 	must(t, showMonth(&out, resp))

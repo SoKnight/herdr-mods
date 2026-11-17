@@ -72,7 +72,10 @@ func monthOf(m monthReport) time.Time {
 	return t
 }
 
-// exportText is the month as the client reads it; rows without time or notes are left out.
+// oneLine keeps a note on its line in the text export.
+var oneLine = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ")
+
+// exportText is the month as the client reads it; rows without time, notes or (with the goal) plan are left out.
 func exportText(name string, m monthReport, o exportOpts) string {
 	first := monthOf(m)
 	on := ""
@@ -89,7 +92,8 @@ func exportText(name string, m monthReport, o exportOpts) string {
 	}
 	b.WriteString("\n")
 	for _, r := range m.Rows {
-		if r.Me == 0 && (!o.Notes || len(r.Notes) == 0) {
+		// a planned row without time keeps its deficit, so the rows add up to the header's разница
+		if r.Me == 0 && !(goal && r.Plan > 0) && (!o.Notes || len(r.Notes) == 0) {
 			continue
 		}
 		b.WriteString(r.Text + " · " + ruMin(r.Me))
@@ -102,7 +106,7 @@ func exportText(name string, m monthReport, o exportOpts) string {
 		b.WriteString("\n")
 		if o.Notes {
 			for _, n := range r.Notes {
-				b.WriteString("  — " + n + "\n")
+				b.WriteString("  — " + oneLine.Replace(n) + "\n")
 			}
 		}
 	}
