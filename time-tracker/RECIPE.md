@@ -9,7 +9,8 @@ Say all of this before installing:
 - The collector polls Windows every 5 seconds (`poll_seconds`): time since the last input, the foreground window (exe and title; the folder comes only from the signals Herdr and the IDE send), whether the screen is locked, and which desktop apps hold the microphone (`HKCU\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone\NonPackaged`, read only).
 - It runs `hc events` (Herdr's command line: `hc` on `PATH` first, then `%LOCALAPPDATA%\Programs\herdr-core\hc.exe`) to follow agents.
 - It serves HTTP on `127.0.0.1:47613` only. The mod and the `herdr-time` command talk to it; nothing listens on another address and nothing is sent anywhere. It also answers CORS preflights from any `moz-extension://` origin (for a future Firefox extension), so any Firefox extension you install could read the collector's data.
-- It writes `%LOCALAPPDATA%\herdr-time\`: raw samples, corrections, closed periods, `projects.json`, optional `settings.json`, the spans still open (`open.json`; one that can't be read is moved to `open.json.bad`) and its log, `collector.log` (started afresh once over 1 MiB). With a broken `projects.json` or `settings.json` at start it keeps collecting on the defaults, and the panel shows the error until the file is fixed.
+- It writes `%LOCALAPPDATA%\herdr-time\`: raw samples, corrections, closed periods, sessions (`sessions.json`), `projects.json`, optional `settings.json`, the spans still open (`open.json`; one that can't be read is moved to `open.json.bad`) and its log, `collector.log` (started afresh once over 1 MiB). With a broken `projects.json` or `settings.json` at start it keeps collecting on the defaults, and the panel shows the error until the file is fixed.
+- "Перезапустить" in the panel and `herdr-time restart` start the collector again, detached from the caller.
 - The installer adds a `herdr-time` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` so the collector starts with Windows, and starts it.
 - The mod runs `herdr-time.exe` with `--json` for every read and change, and opens the system folder picker for the export. A saved report is a file in the folder you pick.
 
@@ -40,7 +41,9 @@ Keep the chip shown all the time: it is what passes Herdr's signals to the colle
 
 ## Using it
 
-- День: lanes for power, me, app, project, activity and agents. Drag over a range for a menu: project, activity, leave out, add time, note. A saved correction says "Правка #n сохранена." with "Отменить".
+- Сессия: the current session, its stretches, switches and longest focus; "Завершить" / "Начать сессию" end or start it (`herdr-time session [start|end]`).
+- День (06:00 to 06:00): sessions with their stretches, and lanes for power, me, app, project, activity and agents. Drag over a range for "Правка отрезка": project, activity, leave out, add time, note. A saved correction says "Правка #n сохранена." with "Отменить".
+- Chip: session time and project, отошёл, сессии нет, нет данных. With no data, "Перезапустить" (or `herdr-time restart`) starts the collector detached.
 - Неделя, Месяц: projects by activity with "Моё" and "Агенты", and days below; a day opens in День.
 - Отчёт: project, period, rounding (15 by default), "Показать время агентов (для справки)" (off), preview. "Сохранить CSV" / "Сохранить Markdown" first warns "Период по проекту закроется". Closed periods are listed with "Переоткрыть".
 
