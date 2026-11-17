@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -106,6 +107,8 @@ func newServer(d *Daemon) http.Handler {
 		"POST /v1/heartbeat":           d.postHeartbeat,
 		"GET /v1/status":               read(d.getStatus),
 		"GET /v1/timeline":             read(d.getTimeline),
+		"GET /v1/session":              read(d.getSession),
+		"POST /v1/session":             d.postSession,
 		"GET /v1/report":               read(d.getReport),
 		"POST /v1/export":              read(d.postExport),
 		"GET /v1/corrections":          d.getCorrections,
@@ -245,6 +248,82 @@ func (d *Daemon) getTimeline(r *http.Request) (int, any, error) {
 	rep.Projects = nonNil(rep.Projects)
 	return http.StatusOK, map[string]any{"day": day, "from": from, "to": to, "timeline": listed(tl),
 		"report": rep, "divergences": nonNil(div)}, nil
+}
+
+// sessions are the sessions in me (sorted by start), each described. Callers hold mu.
+func (d *Daemon) sessions(me []Segment, now int64) ([]Session, error) {
+	marks, err := d.Store.SessionMarks()
+	if err != nil {
+		return nil, err
+	}
+	slices.SortStableFunc(marks, func(a, b SessionMark) int {
+		if a.At != b.At {
+			return cmp.Compare(a.At, b.At)
+		}
+		return cmp.Compare(a.ID, b.ID)
+	})
+	out := Sessions(me, marks, int64(d.S.SessionIdleMinutes)*60_000, now)
+	for i := range out {
+		out[i] = describe(out[i], me, d.S, now)
+	}
+	return out, nil
+}
+
+// getSession gives the latest session of the last 24 hours with its report.
+// ponytail: the look-back is 24 hours, so a longer session is cut at it; widen it if one ever runs that long.
+func (d *Daemon) getSession(r *http.Request) (int, any, error) {
+	now := nowMs()
+	tl, _, err := d.timeline(now-24*60*60_000, now)
+	if err != nil {
+		return 0, nil, err
+	}
+	ss, err := d.sessions(tl.Me, now)
+	if err != nil {
+		return 0, nil, err
+	}
+	var cur *Session
+	rep := Report{Projects: []ProjectTotal{}}
+	if n := len(ss); n > 0 {
+		cur = &ss[n-1]
+		to := cur.End
+		if cur.Open {
+			to = now
+		}
+		rep = Summarize(clipTimeline(tl, cur.Start, to), d.S, d.order())
+		rep.Projects = nonNil(rep.Projects)
+	}
+	return http.StatusOK, map[string]any{"session": cur, "timeline": listed(tl), "report": rep,
+		"last_sample": int64(0), "session_idle_minutes": d.S.SessionIdleMinutes}, nil
+}
+
+func (d *Daemon) postSession(r *http.Request) (int, any, error) {
+	var req struct {
+		Action string `json:"action"`
+	}
+	if err := decode(r, &req); err != nil {
+		return 0, nil, err
+	}
+	if req.Action != "start" && req.Action != "end" {
+		return 0, nil, fail(http.StatusBadRequest, "action: want start or end")
+	}
+	now := nowMs()
+	tl, _, err := d.timeline(now-24*60*60_000, now)
+	if err != nil {
+		return 0, nil, err
+	}
+	ss, err := d.sessions(tl.Me, now)
+	if err != nil {
+		return 0, nil, err
+	}
+	open := len(ss) > 0 && ss[len(ss)-1].Open
+	if open && req.Action == "start" {
+		return 0, nil, fail(http.StatusConflict, "session already open")
+	}
+	if !open && req.Action == "end" {
+		return 0, nil, fail(http.StatusConflict, "no open session")
+	}
+	m, err := d.Store.AddSessionMark(SessionMark{Kind: req.Action, At: now})
+	return http.StatusCreated, m, err
 }
 
 func (d *Daemon) getReport(r *http.Request) (int, any, error) {

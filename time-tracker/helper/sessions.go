@@ -295,6 +295,29 @@ func clipMe(me []Segment, from, to int64) []Segment {
 	return out
 }
 
+// clipTimeline cuts every list of tl to [from, to).
+func clipTimeline(tl Timeline, from, to int64) Timeline {
+	iv := func(x *Interval) (*int64, *int64) { return &x.Start, &x.End }
+	tl.Power = clipList(tl.Power, from, to, iv)
+	tl.NoData = clipList(tl.NoData, from, to, iv)
+	tl.AgentsUnknown = clipList(tl.AgentsUnknown, from, to, iv)
+	tl.Me = clipList(tl.Me, from, to, func(x *Segment) (*int64, *int64) { return &x.Start, &x.End })
+	tl.Agents = clipList(tl.Agents, from, to, func(x *AgentSeg) (*int64, *int64) { return &x.Start, &x.End })
+	return tl
+}
+
+func clipList[T any](xs []T, from, to int64, ends func(*T) (*int64, *int64)) []T {
+	var out []T
+	for _, x := range xs {
+		s, e := ends(&x)
+		*s, *e = max(*s, from), min(*e, to)
+		if *e > *s {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
 func describe(ss Session, me []Segment, s Settings, now int64) Session {
 	to := ss.End
 	if ss.Open {

@@ -33,6 +33,7 @@ const usage = `herdr-time <команда> [--json]
   beat <json>
   unassigned --from --to
   rule add <json>
+  session [start|end]
   periods [--project id]
   reopen <id>
 --from и --to: Unix ms или YYYY-MM-DD (день в --to входит в диапазон).`
@@ -208,6 +209,11 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 			q.Set("fresh", "1")
 		}
 		return apiCall{method: "GET", path: "/v1/timeline?" + q.Encode(), show: showTimeline}, nil
+	case cmd == "session" && sub == "":
+		return apiCall{method: "GET", path: "/v1/session", show: showSession}, nil
+	case cmd == "session" && (sub == "start" || sub == "end"):
+		body, _ := json.Marshal(map[string]string{"action": sub})
+		return apiCall{method: "POST", path: "/v1/session", body: body}, nil
 	case cmd == "projects":
 		return apiCall{method: "GET", path: "/v1/projects", show: showProjects}, nil
 	case cmd == "report":

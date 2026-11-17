@@ -266,8 +266,16 @@ func listItems[T any](st *Store, file string) ([]T, error) {
 	return all, err
 }
 
-func corrID(c *Correction) *int64 { return &c.ID }
-func perID(p *Period) *int64      { return &p.ID }
+func corrID(c *Correction) *int64  { return &c.ID }
+func perID(p *Period) *int64       { return &p.ID }
+func markID(m *SessionMark) *int64 { return &m.ID }
+
+func (st *Store) SessionMarks() ([]SessionMark, error) {
+	return listItems[SessionMark](st, "sessions.json")
+}
+func (st *Store) AddSessionMark(m SessionMark) (SessionMark, error) {
+	return addItem(st, "sessions.json", m, markID)
+}
 
 func (st *Store) Corrections() ([]Correction, error) {
 	return listItems[Correction](st, "corrections.json")

@@ -145,3 +145,17 @@ func TestPeriodsAddRemove(t *testing.T) {
 	must(t, err)
 	assertEq(t, len(ps), 0)
 }
+
+func TestSessionMarksIds(t *testing.T) {
+	st := tempStore(t)
+	a, err := st.AddSessionMark(SessionMark{Kind: "end", At: 5})
+	must(t, err)
+	b, err := st.AddSessionMark(SessionMark{Kind: "start", At: 6})
+	must(t, err)
+	assertEq(t, a.ID, int64(1))
+	assertEq(t, b.ID, int64(2))
+	all, err := st.SessionMarks()
+	must(t, err)
+	assertEq(t, len(all), 2)
+	fileExists(t, st.Dir, "sessions.json")
+}

@@ -36,6 +36,22 @@ func showStatus(w io.Writer, resp []byte) error {
 	return err
 }
 
+func showSession(w io.Writer, resp []byte) error {
+	var v struct {
+		Session *Session `json:"session"`
+	}
+	if err := json.Unmarshal(resp, &v); err != nil {
+		return err
+	}
+	if v.Session == nil || !v.Session.Open {
+		_, err := fmt.Fprintln(w, "сессии нет")
+		return err
+	}
+	_, err := fmt.Fprintf(w, "сессия с %s · моё %s · перерывы %s\n", time.UnixMilli(v.Session.Start).Format("15:04"),
+		dur(v.Session.Me), dur(v.Session.Breaks))
+	return err
+}
+
 func printReport(w io.Writer, r Report) {
 	fmt.Fprintf(w, "аптайм %s · моё %s · агенты %s\n", dur(r.Uptime), dur(r.Me), dur(r.Agents))
 	for _, p := range r.Projects {

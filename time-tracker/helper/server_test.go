@@ -528,3 +528,67 @@ func TestCLIReopensWhenOutFails(t *testing.T) {
 	must(t, err)
 	assertEq(t, len(ps), 0) // no file, so nothing stays closed
 }
+
+type sessionAnswer struct {
+	Session *Session `json:"session"`
+	Report  Report   `json:"report"`
+	Idle    int      `json:"session_idle_minutes"`
+}
+
+func TestSessionStartAndEnd(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return at(0) })
+	seed(t, d, power(-60, 0), inp(-30, 0), win("idea64.exe", "Easy – Main.kt", -30, 0))
+	var got sessionAnswer
+	assertEq(t, api.do("GET", "/v1/session", nil, &got), http.StatusOK)
+	assertEq(t, got.Session.Start, at(-30))
+	assertEq(t, got.Session.Open, true)
+	assertEq(t, got.Report.Me, int64(30*minMs))
+	assertEq(t, got.Idle, 45)
+	act := func(a string) int { return api.do("POST", "/v1/session", map[string]string{"action": a}, nil) }
+	assertEq(t, act("end"), http.StatusCreated)
+	assertEq(t, act("end"), http.StatusConflict)
+	got = sessionAnswer{}
+	api.do("GET", "/v1/session", nil, &got)
+	assertEq(t, got.Session.Open, false)
+	assertEq(t, got.Session.End, at(0))
+	assertEq(t, act("start"), http.StatusCreated)
+	assertEq(t, act("start"), http.StatusConflict)
+	assertEq(t, act("pause"), http.StatusBadRequest)
+	got = sessionAnswer{}
+	api.do("GET", "/v1/session", nil, &got)
+	assertEq(t, got.Session.Open, true)
+	assertEq(t, got.Session.Manual, true)
+	assertEq(t, got.Session.Start, at(0))
+}
+
+func TestSessionEmpty(t *testing.T) {
+	api := serve(t, testDaemon(t))
+	var raw map[string]json.RawMessage
+	assertEq(t, api.do("GET", "/v1/session", nil, &raw), http.StatusOK)
+	assertEq(t, string(raw["session"]), "null")
+}
+
+func TestSessionKeepsItsStartAcrossDayStart(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	start, end := mskAt(2026, 11, 16, 5, 30), mskAt(2026, 11, 16, 6, 30)
+	swap(t, &nowMs, func() int64 { return end + minMs })
+	seed(t, d, Span{Kind: "power", Start: start, End: end}, Span{Kind: "input", Start: start, End: end},
+		Span{Kind: "window", Start: start, End: end, Exe: "idea64.exe", Title: "Easy – Main.kt"})
+	var got sessionAnswer
+	api.do("GET", "/v1/session", nil, &got)
+	assertEq(t, got.Session.Start, start)
+}
+
+func TestCLISession(t *testing.T) {
+	d := testDaemon(t)
+	cliHome(t, portOf(t, serve(t, d).url))
+	var out, errOut bytes.Buffer
+	assertEq(t, runCLI([]string{"session", "start", "--json"}, &out, &errOut), 0)
+	out.Reset()
+	assertEq(t, runCLI([]string{"session", "--json"}, &out, &errOut), 0)
+	assertEq(t, strings.Contains(out.String(), `"manual":true`), true)
+	assertEq(t, runCLI([]string{"session", "stop"}, &out, &errOut), 2)
+}
