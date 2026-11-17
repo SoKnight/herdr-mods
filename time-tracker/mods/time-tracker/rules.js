@@ -52,6 +52,12 @@ export function guessName(hint) {
   return hint.value;
 }
 
+// Whether deleting the rule moves time it decided this month (from the day "2026-11-16"), so it asks first.
+export function deleteAsks(rule, day) {
+  const [y, m] = day.split("-").map(Number);
+  return rule.ms > 0 || !rule.from || rule.from < new Date(y, m - 1, 1).getTime();
+}
+
 // "2026-11-16" → "1 ноября".
 export function monthStartTitle(day) {
   return `1 ${MONTHS[Number(day.split("-")[1]) - 1]}`;

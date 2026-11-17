@@ -6,7 +6,7 @@ import { theme } from "herdr";
 import { call } from "../client.js";
 import { formatDuration, plural, dayString } from "../format.js";
 import { projectColor } from "../lanes.js";
-import { RULE_KINDS, ruleText, targetName, monthStartTitle } from "../rules.js";
+import { RULE_KINDS, ruleText, targetName, monthStartTitle, deleteAsks } from "../rules.js";
 import { Dialog, Segmented, Check, Button, Icon, Message, TEXT } from "../ui.js";
 
 const PREVIEW_MS = 400;
@@ -20,6 +20,34 @@ const FIELDS = {
   figma: { label: "Файл Figma", contains: true },
   minecraft: { label: "Сервер", placeholder: "localhost:25565" },
 };
+
+// Asks before deleting a rule that decided time this month: that time goes to other rules.
+export function DeleteRuleDialog({ onCancel, onDelete }) {
+  return Dialog({
+    id: "rule-delete-confirm",
+    width: 420,
+    title: "Удалить правило?",
+    onClose: onCancel,
+    body: div()
+      .p(18)
+      .text_size(13)
+      .whitespace_normal()
+      .child(`Время с ${monthStartTitle(dayString(Date.now()))} по этому правилу перейдёт другим правилам или в «Другое».`),
+    footer: [
+      div().flex_1(),
+      Button({ id: "rule-delete-cancel", label: "Отмена", onClick: onCancel }).px(14).py(6).text_size(TEXT.body),
+      Button({ id: "rule-delete-ok", label: "Удалить", primary: true, onClick: onDelete }).px(14).py(6).text_size(TEXT.body),
+    ],
+  });
+}
+
+// Runs remove(cx) at once, or after DeleteRuleDialog when the rule decided time this month;
+// show(dialog | null, cx) puts the question up and takes it down.
+export function confirmDelete(rule, show, remove, cx) {
+  if (!deleteAsks(rule, dayString(Date.now()))) return remove(cx);
+  const onCancel = (cx) => show(null, cx);
+  show({ render: () => DeleteRuleDialog({ onCancel, onDelete: (cx) => (onCancel(cx), remove(cx)) }) }, cx);
+}
 
 export class RuleEdit {
   // Shows an editor with showDialog(d | null, cx), which main.js gives the views, and previews at once.
@@ -45,6 +73,8 @@ export class RuleEdit {
     this.error = null;
     this.seq = 0; // the latest change: older previews are dropped
     this.busy = false;
+    this.closed = false; // close() ran: a save still on its way must not close again
+    this.asking = null; // the delete question drawn in place of the editor
   }
 
   input(placeholder, value) {
@@ -100,18 +130,25 @@ export class RuleEdit {
     this.finish(cx, this.rule.id ? ["rule", "set", String(this.rule.id), body] : ["rule", "add", body], "Правило сохранено.");
   }
 
+  // The question, when there is one, is drawn in place of the editor.
   remove(cx) {
-    this.finish(cx, ["rule", "rm", String(this.rule.id)], "Правило удалено.");
+    const ask = (d, cx) => ((this.asking = d), cx.notify());
+    confirmDelete(this.rule, ask, (cx) => this.finish(cx, ["rule", "rm", String(this.rule.id)], "Правило удалено."), cx);
   }
 
-  // Writes; a refusal stays open with its reason.
+  // Writes; a refusal stays open with its reason. Closed meanwhile, it only lets the panel read again.
   finish(cx, args, text) {
     if (this.busy) return;
     this.busy = true;
     cx.spawn(async (cx) => {
       const r = await call(args);
       this.busy = false;
-      if (r.down || r.error) {
+      const ok = !r.down && !r.error;
+      if (this.closed) {
+        if (ok) this.onSaved(text, cx);
+        return;
+      }
+      if (!ok) {
         this.error = r.down ? "Сборщик не запущен" : r.error;
         return cx.notify();
       }
@@ -121,6 +158,8 @@ export class RuleEdit {
   }
 
   close(cx) {
+    if (this.closed) return;
+    this.closed = true;
     this.seq++; // a preview still on its way lands nowhere
     this.value.release();
     this.title.release();
@@ -128,6 +167,7 @@ export class RuleEdit {
   }
 
   render() {
+    if (this.asking) return this.asking.render();
     const t = theme();
     const { project, id } = this.rule;
     const dot = !["exclude", "leisure"].includes(project) && (t[projectColor(project, this.projects)] ?? t.muted);

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/rules.js'), 'utf8');
-const R = new Function(`${code.replace(/^export /gm, '')}\nreturn { RULE_KINDS, COLORS, ruleText, freeColor, targetName, guessName, monthStartTitle };`)();
+const R = new Function(`${code.replace(/^export /gm, '')}\nreturn { RULE_KINDS, COLORS, ruleText, freeColor, targetName, guessName, monthStartTitle, deleteAsks };`)();
 
 test('rule text', () => {
   assert.equal(R.ruleText({ kind: 'folder', value: 'D:\\Work\\Universe' }), 'D:\\Work\\Universe\\**');
@@ -37,4 +37,12 @@ test('targets, names and dates', () => {
   assert.equal(R.guessName({ kind: 'figma', value: 'EasyLauncher — UI' }), 'EasyLauncher — UI');
   assert.equal(R.monthStartTitle('2026-11-16'), '1 ноября');
   assert.deepEqual(R.RULE_KINDS.map((k) => k.label), ['Папка', 'Процесс', 'Заголовок', 'Figma', 'Minecraft']);
+});
+
+test('delete asks when it moves this month', () => {
+  const nov1 = new Date(2026, 10, 1, 6).getTime();
+  assert.equal(R.deleteAsks({ ms: 0, from: nov1 }, '2026-11-17'), false);
+  assert.equal(R.deleteAsks({ ms: 60000, from: nov1 }, '2026-11-17'), true);
+  assert.equal(R.deleteAsks({ ms: 0 }, '2026-11-17'), true);
+  assert.equal(R.deleteAsks({ ms: 0, from: new Date(2026, 9, 20, 6).getTime() }, '2026-11-17'), true);
 });

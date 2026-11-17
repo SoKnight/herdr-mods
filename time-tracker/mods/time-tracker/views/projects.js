@@ -10,7 +10,7 @@ import { RULE_KINDS, COLORS, ruleText, targetName } from "../rules.js";
 import { Button, Icon, Message, TEXT } from "../ui.js";
 import { Item, MenuPanel } from "./menu.js";
 import { panelShown } from "./day.js";
-import { RuleEdit } from "./ruleedit.js";
+import { RuleEdit, confirmDelete } from "./ruleedit.js";
 import { NewProject } from "./newproject.js";
 
 const NONE = "#00000000";
@@ -177,9 +177,12 @@ export class Projects {
     NewProject.open(this.showDialog, { projects: this.projects, hint, onCreated, onSaved: (_text, cx) => this.load(cx) }, cx);
   }
 
-  deleteRule(id, cx) {
-    this.rules = this.rules.filter((r) => r.id !== id);
-    this.change(["rule", "rm", String(id)], cx, "Правило удалено.");
+  deleteRule(rule, cx) {
+    this.menu = null;
+    confirmDelete(rule, this.showDialog, (cx) => {
+      this.rules = this.rules.filter((r) => r.id !== rule.id);
+      this.change(["rule", "rm", String(rule.id)], cx, "Правило удалено.");
+    }, cx);
   }
 
   render() {
@@ -466,7 +469,7 @@ export class Projects {
         el.content(
           MenuPanel(`projects-rule-menu-${r.id}`, 160)
             .child(Item(`projects-rule-edit-${r.id}`, (cx) => this.editRule(r, cx)).child("Изменить"))
-            .child(Item(`projects-rule-delete-${r.id}`, (cx) => this.deleteRule(r.id, cx)).child("Удалить")),
+            .child(Item(`projects-rule-delete-${r.id}`, (cx) => this.deleteRule(r, cx)).child("Удалить")),
         ),
       );
   }
