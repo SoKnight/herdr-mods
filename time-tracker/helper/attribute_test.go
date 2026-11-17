@@ -473,3 +473,59 @@ func TestPowerAndNoData(t *testing.T) {
 		t.Errorf("AgentsUnknown = %v", tl.AgentsUnknown)
 	}
 }
+
+func targetRules(t *testing.T) *Rules {
+	return mustCompile(t, Config{
+		Projects: []Project{{ID: "tricky"}, {ID: "study"}},
+		Rules: []Rule{
+			{ID: 1, Kind: "process", Value: "Telegram.exe", Project: excludeID},
+			{ID: 2, Kind: "title", Value: "Minecraft", Project: leisureID},
+			{ID: 3, Kind: "title", Value: "Tricky", Project: "tricky"},
+			{ID: 4, Kind: "process", Value: "telemost.exe", Project: "study"},
+			{ID: 5, Kind: "folder", Value: `C:\Games`, Project: leisureID},
+		},
+		Apps: []AppRule{{Exe: "telemost.exe", Presence: "call"}},
+	})
+}
+
+func attrTargets(t *testing.T, raw Raw, corr ...Correction) Timeline {
+	t.Helper()
+	raw.Spans = append(raw.Spans, power(-60, 240))
+	s := DefaultSettings()
+	s.Loc = msk
+	return Attribute(raw, targetRules(t), corr, s, at(-60), at(240))
+}
+
+func TestNotWorkAndLeisureAreNotMyTime(t *testing.T) {
+	tl := attrTargets(t, spans(win("Telegram.exe", "chat", 0, 10), win("javaw.exe", "Minecraft 26.3", 10, 30), inp(0, 30)))
+	assertEq(t, len(tl.Me), 0)
+	assertEq(t, len(tl.Leisure), 1)
+	assertEq(t, tl.Leisure[0].Start, at(10))
+	assertEq(t, tl.Leisure[0].End, at(30))
+	rep := Summarize(tl, tsettings(), nil)
+	assertEq(t, rep.Me, int64(0))
+	assertEq(t, rep.Leisure, int64(20*minMs))
+}
+
+func TestNotWorkAndLeisureDoNotCarry(t *testing.T) {
+	tl := attrTargets(t, spans(win("idea64.exe", "Tricky", 0, 10), win("Telegram.exe", "chat", 10, 12), win("javaw.exe", "Minecraft", 12, 14), win("notepad.exe", "x", 14, 20), inp(0, 20)))
+	assertMeIntervals(t, tl, []Interval{m(0, 10), m(14, 20)})
+	assertEq(t, segAt(t, tl, 15, 0).Project, "tricky") // carried from 10, across both
+}
+
+func TestCallDuringLeisureStaysLeisure(t *testing.T) {
+	tl := attrTargets(t, spans(win("javaw.exe", "Minecraft", 0, 10), call(0, 10), inp(0, 10)))
+	assertEq(t, len(tl.Me), 0)
+	assertEq(t, len(tl.Leisure), 1)
+	tl = attrTargets(t, spans(win("notepad.exe", "x", 0, 10), call(0, 10), inp(0, 10)))
+	assertEq(t, segAt(t, tl, 5, 0).Project, "study") // elsewhere the call still wins
+}
+
+func TestCorrectionBeatsNotWorkRule(t *testing.T) {
+	tl := attrTargets(t, spans(win("Telegram.exe", "client chat", 0, 10), inp(0, 10)), fix(1, "project", "me", 0, 10, "tricky"))
+	assertEq(t, segAt(t, tl, 5, 0).Project, "tricky")
+}
+
+func TestAgentsInLeisureFoldersAreDropped(t *testing.T) {
+	assertEq(t, len(attrTargets(t, spans(agent("t1", `C:\Games\mc`, 0, 10))).Agents), 0)
+}

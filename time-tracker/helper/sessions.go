@@ -302,6 +302,7 @@ func clipTimeline(tl Timeline, from, to int64) Timeline {
 	tl.NoData = clipList(tl.NoData, from, to, iv)
 	tl.AgentsUnknown = clipList(tl.AgentsUnknown, from, to, iv)
 	tl.Me = clipList(tl.Me, from, to, func(x *Segment) (*int64, *int64) { return &x.Start, &x.End })
+	tl.Leisure = clipList(tl.Leisure, from, to, func(x *Segment) (*int64, *int64) { return &x.Start, &x.End })
 	tl.Agents = clipList(tl.Agents, from, to, func(x *AgentSeg) (*int64, *int64) { return &x.Start, &x.End })
 	return tl
 }

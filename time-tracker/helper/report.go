@@ -22,6 +22,7 @@ type ProjectTotal struct {
 type Report struct {
 	Uptime   int64          `json:"uptime"`
 	Me       int64          `json:"me"`
+	Leisure  int64          `json:"leisure"` // Досуг, apart from my time
 	Agents   int64          `json:"agents"`
 	Projects []ProjectTotal `json:"projects"`
 }
@@ -97,6 +98,10 @@ func Summarize(t Timeline, s Settings, order []string) Report {
 			p.Activities[seg.Activity] += ms
 			r.Me += ms
 		})
+	}
+
+	for _, seg := range t.Leisure {
+		r.Leisure += seg.End - seg.Start
 	}
 
 	// A project's agent time counts once while any of its agents works; same across projects.

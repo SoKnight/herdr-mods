@@ -19,6 +19,7 @@ type Timeline struct {
 	NoData        []Interval `json:"nodata"`
 	AgentsUnknown []Interval `json:"agents_unknown"`
 	Me            []Segment  `json:"me"`
+	Leisure       []Segment  `json:"leisure"` // Досуг: matched by a leisure rule, not my time
 	Agents        []AgentSeg `json:"agents"`
 }
 
@@ -70,6 +71,17 @@ func (b *beatState) advance(t int64) {
 		b.last[b.all[b.i].Source] = b.all[b.i]
 		b.i++
 	}
+}
+
+// look gives what a window shows at t: its app rule, that app's fresh signal and the window to match.
+func (b *beatState) look(rules *Rules, exe, title string, t int64) (*AppRule, *Heartbeat, window) {
+	app := rules.App(exe)
+	hb := b.fresh(app, t)
+	w := window{exe: exe, title: title, at: t}
+	if hb != nil {
+		w.path = hb.ProjectPath
+	}
+	return app, hb, w
 }
 
 // fresh returns the live signal of the app's source, or nil.
@@ -132,21 +144,22 @@ func Attribute(raw Raw, rules *Rules, corr []Correction, s Settings, from, to in
 			if w := windows.at(t); w != nil {
 				seg.App, seg.Title = w.Exe, w.Title
 			}
+			app, hb, w := beats.look(rules, seg.App, seg.Title, t)
 			var callWhy string
 			if inCall && !strings.EqualFold(seg.App, call.Exe) {
-				// A call in the background still is the call: attribute it, not the focused window.
-				seg.App, seg.Title = call.Exe, call.Title
-				callWhy = "звонок " + call.Exe + " в фоне; "
+				// A call in the background still is the call: attribute it, not the focused window,
+				// unless that window is Досуг.
+				if r, ok := rules.Match(w); !ok || r.Project != leisureID {
+					seg.App, seg.Title = call.Exe, call.Title
+					callWhy = "звонок " + call.Exe + " в фоне; "
+					app, hb, w = beats.look(rules, seg.App, seg.Title, t)
+				}
 			}
-			app := rules.App(seg.App)
-			hb := beats.fresh(app, t)
 
-			w := window{exe: seg.App, title: seg.Title, at: t}
-			if hb != nil {
-				w.path = hb.ProjectPath
-			}
 			project, why, rule := projectOf(rules, w, hb)
 			switch {
+			case project == excludeID || project == leisureID:
+				seg.Rule = rule // not my time, and nothing to carry on from
 			case project != "":
 				lastProject, lastWhy, lastEnd = project, why, end
 				seg.Rule = rule
@@ -182,6 +195,18 @@ func Attribute(raw Raw, rules *Rules, corr []Correction, s Settings, from, to in
 		tl.Me = correctMe(tl.Me, c, from, to)
 		agents = correctAgents(agents, c)
 	}
+	// Не работа and Досуг kept their target through the corrections, so a correction can still claim them.
+	var me []Segment
+	for _, seg := range tl.Me {
+		switch seg.Project {
+		case excludeID:
+		case leisureID:
+			tl.Leisure = append(tl.Leisure, seg)
+		default:
+			me = append(me, seg)
+		}
+	}
+	tl.Me = me
 	tl.Agents = unionAgents(agents)
 	return tl
 }
@@ -272,6 +297,9 @@ func agentPieces(rules *Rules, spans []Span, from, to int64) []AgentSeg {
 			continue
 		}
 		id, why := rules.FolderProject(sp.Cwd, sp.Start)
+		if id == excludeID || id == leisureID {
+			continue
+		}
 		if id == "" {
 			why = "папка " + sp.Cwd + " → без проекта"
 		}

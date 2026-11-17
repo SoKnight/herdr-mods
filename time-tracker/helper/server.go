@@ -231,6 +231,7 @@ func listed(tl Timeline) Timeline {
 	tl.NoData = nonNil(tl.NoData)
 	tl.AgentsUnknown = nonNil(tl.AgentsUnknown)
 	tl.Me = nonNil(tl.Me)
+	tl.Leisure = nonNil(tl.Leisure)
 	tl.Agents = nonNil(tl.Agents)
 	return tl
 }
