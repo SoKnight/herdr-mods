@@ -108,3 +108,18 @@ func TestAgentTimeCrossingDayBoundarySplits(t *testing.T) {
 	assertEq(t, p.Days["2026-11-16"].Agents, int64(60*minMs))
 	assertEq(t, p.Agents, int64(120*minMs))
 }
+
+func TestClosedPeriodHidesLeisureInside(t *testing.T) {
+	snap := Snapshot(Timeline{Me: []Segment{{Start: at(0), End: at(60), Project: "easylauncher"}}}, "easylauncher", at(0), at(60))
+	fresh := Timeline{Leisure: []Segment{{Start: at(30), End: at(90), Project: leisureID}}} // a later rule made it Досуг
+	got, _ := ApplyPeriods(fresh, []Period{snap})
+	rep := Summarize(got, tsettings(), nil)
+	assertEq(t, rep.Me, int64(60*minMs))      // the snapshot
+	assertEq(t, rep.Leisure, int64(30*minMs)) // only the part after the period
+}
+
+func TestSummarizeCountsNotWorkNowhere(t *testing.T) {
+	rep := Summarize(attrTargets(t, spans(win("Telegram.exe", "chat", 0, 10), inp(0, 10))), tsettings(), nil)
+	assertEq(t, rep.Me, int64(0))
+	assertEq(t, rep.Leisure, int64(0))
+}

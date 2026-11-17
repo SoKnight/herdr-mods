@@ -529,3 +529,9 @@ func TestCorrectionBeatsNotWorkRule(t *testing.T) {
 func TestAgentsInLeisureFoldersAreDropped(t *testing.T) {
 	assertEq(t, len(attrTargets(t, spans(agent("t1", `C:\Games\mc`, 0, 10))).Agents), 0)
 }
+
+func TestCorrectionMovesLeisureToProject(t *testing.T) {
+	tl := attrTargets(t, spans(win("javaw.exe", "Minecraft", 0, 10), inp(0, 10)), fix(1, "project", "me", 0, 10, "tricky"))
+	assertEq(t, len(tl.Leisure), 0)
+	assertEq(t, segAt(t, tl, 5, 0).Project, "tricky")
+}

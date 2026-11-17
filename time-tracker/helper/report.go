@@ -230,6 +230,18 @@ func ApplyPeriods(t Timeline, periods []Period) (Timeline, []Divergence) {
 				snap += e - s
 			}
 		}
+		// The period is frozen as my time and its snapshot keeps no Досуг, so none shows inside it.
+		var leisure []Segment
+		for _, l := range out.Leisure {
+			splitBy(l.Start, l.End, p.From, p.To, func(s, e int64, inside bool) {
+				if !inside {
+					c := l
+					c.Start, c.End = s, e
+					leisure = append(leisure, c)
+				}
+			})
+		}
+		out.Leisure = leisure
 		sort.SliceStable(me, func(a, b int) bool { return me[a].Start < me[b].Start })
 		sort.SliceStable(ag, func(a, b int) bool { return ag[a].Start < ag[b].Start })
 		out.Me, out.Agents = me, ag

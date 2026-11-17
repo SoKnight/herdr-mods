@@ -109,3 +109,10 @@ func TestDayStatsSumsBreaks(t *testing.T) {
 	st := dayStats(me, []Session{{Breaks: 20 * minMs}, {Breaks: 5 * minMs}}, pause15)
 	assertEq(t, st, DayStats{Switches: 1, Focus: 20 * minMs, Breaks: 25 * minMs})
 }
+
+func TestClipTimelineClipsLeisure(t *testing.T) {
+	tl := clipTimeline(Timeline{Leisure: []Segment{{Start: at(0), End: at(30)}, {Start: at(40), End: at(50)}}}, at(10), at(35))
+	assertEq(t, len(tl.Leisure), 1)
+	assertEq(t, tl.Leisure[0].Start, at(10))
+	assertEq(t, tl.Leisure[0].End, at(30))
+}
