@@ -12,7 +12,7 @@ import { Link } from "./menu.js";
 import { SideFrame } from "./side.js";
 import { GoalEdit } from "./goal.js";
 import { BonusAdd } from "./bonus.js";
-import { saveCSV } from "./export.js";
+import { saveCSV, ExportText } from "./export.js";
 import { panelShown } from "./day.js";
 
 const REFRESH_MS = 60_000;
@@ -156,6 +156,12 @@ export class Report {
 
   removeBonus(id, cx) {
     cx.spawn((cx) => this.write(["bonus", "rm", String(id)], null, cx));
+  }
+
+  exportText(cx) {
+    const rep = this.rep;
+    const onDone = (text, cx) => ((this.message = { text }), cx.notify());
+    ExportText.open(this.showDialog, { project: rep.project, name: this.name(rep.project), month: rep.month, rows: this.rows, onDone }, cx);
   }
 
   saveCSV(cx) {
@@ -335,6 +341,7 @@ export class Report {
       h_flex()
         .flex_none()
         .gap(8)
+        .child(Button({ id: "report-text", label: "Скопировать текстом", icon: "copy", primary: true, onClick: (cx) => this.exportText(cx) }))
         .child(Button({ id: "report-csv", label: "CSV", icon: "download", onClick: (cx) => this.saveCSV(cx) })),
     );
   }
