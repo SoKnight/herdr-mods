@@ -31,6 +31,7 @@ type Daemon struct {
 	Rules  *Rules
 	Config Config
 	S      Settings
+	Cal    Calendar
 
 	// mu guards everything above and the trackers. The poll loop, the agent stream and every HTTP
 	// handler hold it, and closed spans reach the store before it is released, so a timeline never
@@ -40,12 +41,13 @@ type Daemon struct {
 	agents   AgentTracker
 	cfgMod   time.Time
 	setMod   time.Time
+	calMod   time.Time
 	quit     chan struct{}
 	quitOnce sync.Once
 
 	// A bad projects.json or settings.json found at start: collection runs on the defaults and the
 	// read endpoints answer with the error until a reload reads the file.
-	cfgErr, setErr error
+	cfgErr, setErr, calErr error
 }
 
 func NewDaemon(home string) (*Daemon, error) {
@@ -63,13 +65,23 @@ func NewDaemon(home string) (*Daemon, error) {
 		d.tracker.PollMs = int64(d.S.PollSeconds) * 1000
 		d.setErr = err
 	}
+	cal, err := loadCalendar(home)
+	d.calMod = modTime(filepath.Join(home, "calendar.json")) // after loadCalendar: it may create the file
+	if err != nil {
+		log.Printf("%v; collecting with the shipped calendar", err)
+		d.calErr = err
+		if cal, err = parseCalendar(shippedCalendar); err != nil {
+			return nil, err
+		}
+	}
+	d.Cal = cal
 	d.Store = &Store{Dir: home, S: d.S}
 	return d, nil
 }
 
 // configErr is the start-up config error, as the read endpoints answer it.
 func (d *Daemon) configErr() error {
-	if err := cmp.Or(d.cfgErr, d.setErr); err != nil {
+	if err := cmp.Or(d.cfgErr, d.setErr, d.calErr); err != nil {
 		// The version tells a starting copy that this one is ours, not a stranger on the port.
 		return &apiError{http.StatusInternalServerError, map[string]any{"error": "config: " + err.Error(), "version": version}}
 	}
@@ -160,7 +172,7 @@ func (d *Daemon) loadSettings() error {
 	return nil
 }
 
-// reload picks up edited projects.json and settings.json. A port change needs a restart.
+// reload picks up edited projects.json, settings.json and calendar.json. A port change needs a restart.
 // A missing projects.json (an editor saving by delete and rename) keeps the rules until it is back.
 func (d *Daemon) reload() {
 	if mod := modTime(filepath.Join(d.Home, "projects.json")); !mod.IsZero() && mod != d.cfgMod {
@@ -176,6 +188,14 @@ func (d *Daemon) reload() {
 	if modTime(filepath.Join(d.Home, "settings.json")) != d.setMod {
 		if err := d.loadSettings(); err != nil {
 			log.Printf("settings.json: %v; keeping the previous settings", err)
+		}
+	}
+	if mod := modTime(filepath.Join(d.Home, "calendar.json")); !mod.IsZero() && mod != d.calMod {
+		d.calMod = mod
+		if c, err := loadCalendar(d.Home); err != nil {
+			log.Printf("%v; keeping the previous calendar", err)
+		} else {
+			d.Cal, d.calErr = c, nil
 		}
 	}
 }
