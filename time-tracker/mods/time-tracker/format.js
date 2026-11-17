@@ -193,11 +193,30 @@ export function appliedRange(from, at, dayStartMs) {
   return d1 === d2 ? `${d1} ${m1}` : `${d1}–${d2} ${m1}`;
 }
 
+// Days from..to (YYYY-MM-DD) with month names: "23–27 ноя" (dash between days of one month), "30 ноя – 2 дек", "23 ноя".
+function daySpan(from, to, names, dash) {
+  const dm = (day) => [Number(day.slice(8)), names[Number(day.slice(5, 7)) - 1]];
+  const [d1, m1] = dm(from), [d2, m2] = dm(to);
+  if (m1 !== m2) return `${d1} ${m1} – ${d2} ${m2}`;
+  return d1 === d2 ? `${d1} ${m1}` : `${d1}${dash}${d2} ${m2}`;
+}
+
+export const OFF_KINDS = [{ id: "otgul", label: "отгул" }, { id: "vacation", label: "отпуск" }, { id: "sick", label: "больничный" }];
+export const offLabel = (kind) => OFF_KINDS.find((k) => k.id === kind)?.label ?? kind;
+
+// "23 – 27 ноября", "23 ноября", "30 ноября – 2 декабря".
+export const offTitle = (from, to) => daySpan(from, to, MONTHS, " – ");
+
+export const workdaysText = (n) => plural(n, "раб. день", "раб. дня", "раб. дней");
+
+// How much plan marking these `plan` days off takes from a project, whole minutes.
+export const offReduce = (days, project) => Math.round(days.reduce((n, d) => n + (d.plan?.[project] ?? 0), 0));
+
 const ENTRY_KIND = { project: "assign", exclude: "excl", activity: "activity", note: "note", add: "manual" };
 
-// История правок: corrections and rule changes as rows, newest first. opts: name(project id),
+// История правок: corrections, rule changes and days off as rows, newest first. opts: name(project id),
 // activity(id), ruleText(rule), dayStartMs.
-export function historyEntries({ corrections = [], changes = [] }, { name, activity, ruleText, dayStartMs }) {
+export function historyEntries({ corrections = [], changes = [], days_off = [] }, { name, activity, ruleText, dayStartMs }) {
   const span = (c) => `${hhmm(c.start)}–${hhmm(c.end)}`;
   const manual = (note) => (note ? `вручную · ${note}` : "вручную");
   const fromCorrection = (c) => {
@@ -225,7 +244,15 @@ export function historyEntries({ corrections = [], changes = [] }, { name, activ
     else sub = `${h.kind === "rule-edit" ? "изменено" : "новое"} · ${range}${ms("+")}`;
     return { key: `h:${h.id}`, kind: "rule", title, sub, at: h.at, undo: ["history", "undo", String(h.id)] };
   };
-  return [...corrections.map(fromCorrection), ...changes.map(fromChange)].sort((a, b) => b.at - a.at);
+  const fromDayOff = (o) => ({
+    key: `o:${o.id}`,
+    kind: "dayoff",
+    title: `${daySpan(o.from, o.to, SHORT_MONTHS, "–")} · ${offLabel(o.kind)}`,
+    sub: o.projects?.length ? `план снижен: ${o.projects.map(name).join(", ")}` : "план не менялся",
+    at: o.made,
+    undo: ["dayoff", "rm", String(o.id)],
+  });
+  return [...corrections.map(fromCorrection), ...changes.map(fromChange), ...days_off.map(fromDayOff)].sort((a, b) => b.at - a.at);
 }
 
 // The seven days, Monday to Sunday, of the week around a day.
@@ -258,7 +285,7 @@ export function dayDiff(day, project, today) {
   return { text: fact > 0 ? signed(fact) : "—" };
 }
 
-const sumOf = (m) => Object.values(m ?? {}).reduce((n, v) => n + v, 0);
+export const sumOf = (m) => Object.values(m ?? {}).reduce((n, v) => n + v, 0);
 
 // The Week's rows from `plan`: each day's minutes as the collector rounded them, and the totals up to today.
 export function weekRows(plan, main) {
@@ -280,4 +307,27 @@ export function weekRows(plan, main) {
     diff: main ? signed(plan.sums?.[main]?.balance ?? 0) : "",
   };
   return { rows, totals };
+}
+
+// The 42 cells of a month's calendar, Monday first: the month's days, null around them.
+export function monthGrid(day) {
+  const first = `${day.slice(0, 8)}01`;
+  const lead = (new Date(midnight(first)).getDay() + 6) % 7;
+  const month = first.slice(0, 7);
+  return Array.from({ length: 42 }, (_, i) => {
+    const d = dayString(midnight(first, i - lead));
+    return d.startsWith(month) ? d : null;
+  });
+}
+
+// A Month cell's bar on the 8 h scale: my minutes per project (order, then ids it lacks, then Другое), the
+// main project's day goal as a tick and, on days to come, its forecast pace.
+export function cellBars(day, order, main, sum, today) {
+  const me = day.me ?? {};
+  const ids = [...order, ...Object.keys(me).filter((id) => id && !order.includes(id)), ""];
+  const parts = ids.filter((id) => me[id] > 0).map((project) => ({ project, pct: (me[project] / 480) * 100 }));
+  const plan = (main && day.plan?.[main]) || 0;
+  const tick = plan > 0 ? (plan / 480) * 100 : null;
+  const forecast = day.day > today && plan > 0 && sum?.plan_to_date > 0 ? ((plan * sum.fact) / sum.plan_to_date / 480) * 100 : null;
+  return { parts, tick, forecast };
 }

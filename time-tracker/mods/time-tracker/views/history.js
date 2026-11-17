@@ -1,4 +1,4 @@
-// История правок: corrections and rule changes of a month or a day, each with Отменить.
+// История правок: corrections, rule changes and days off of a month or a day, each with Отменить.
 import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme } from "herdr";
@@ -7,7 +7,7 @@ import { monthRange, midnight, dayTitle, activityLabel, catalog, stamp, historyE
 import { ruleText, targetName } from "../rules.js";
 import { Button, Icon, Message, Segmented, TEXT } from "../ui.js";
 
-const ICONS = { assign: "arrow-right", excl: "ban", activity: "tag", note: "sticky-note", manual: "plus", rule: "funnel" };
+const ICONS = { assign: "arrow-right", excl: "ban", activity: "tag", note: "sticky-note", manual: "plus", rule: "funnel", dayoff: "calendar" };
 
 export class History {
   // open(tab, cx): shows another tab of the panel.

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/format.js'), 'utf8');
-const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, exportName, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs, fmtMin, signed, roundRows, parseHours, hoursText, goalOn, goalShort, goalLine, goalVersion, weeklyTotal, progressText, goalBlock, forecastLine, weekDays, weekTitle, weekRelative, mainGoal, dayDiff, weekRows };`)();
+const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, exportName, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs, fmtMin, signed, roundRows, parseHours, hoursText, goalOn, goalShort, goalLine, goalVersion, weeklyTotal, progressText, goalBlock, forecastLine, weekDays, weekTitle, weekRelative, mainGoal, dayDiff, weekRows, monthGrid, cellBars, offTitle, workdaysText, offReduce };`)();
 const rcode = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/rules.js'), 'utf8');
 const R = new Function(`${rcode.replace(/^export /gm, '')}
 return { ruleText, targetName };`)();
@@ -210,4 +210,28 @@ test('week rows', () => {
   ]);
   assert.deepEqual(w.totals, { me: 1477, agents: 310, diff: '−38м' });
   assert.equal(w.totals.me, w.rows.reduce((s, r) => s + r.me, 0));
+});
+
+test('month cells', () => {
+  const g = F.monthGrid('2026-11-16');
+  assert.equal(g.length, 42);
+  assert.deepEqual([g[5], g[6], g[35], g[36]], [null, '2026-11-01', '2026-11-30', null]);
+  const day = { day: '2026-11-16', me: { universe: 181, tricky: 36, study: 3, easylauncher: 2, '': 13 }, plan: { universe: 390 } };
+  const b = F.cellBars(day, ['universe', 'easylauncher', 'tricky', 'study'], 'universe', { fact: 2451, plan_to_date: 3900 }, '2026-11-16');
+  assert.deepEqual(b.parts.map((p) => p.project), ['universe', 'easylauncher', 'tricky', 'study', '']);
+  assert.equal(b.parts[0].pct, (181 / 480) * 100);
+  assert.equal(b.tick, 81.25);
+  assert.equal(b.forecast, null); // today is not after today
+  const future = F.cellBars({ day: '2026-11-17', me: {}, plan: { universe: 390 } }, ['universe'], 'universe', { fact: 2451, plan_to_date: 3900 }, '2026-11-16');
+  assert.equal(future.forecast, ((390 * 2451) / 3900 / 480) * 100);
+});
+
+test('days off', () => {
+  assert.equal(F.offTitle('2026-11-23', '2026-11-27'), '23 – 27 ноября');
+  assert.equal(F.offTitle('2026-11-30', '2026-12-02'), '30 ноября – 2 декабря');
+  assert.deepEqual([1, 2, 5].map(F.workdaysText), ['1 раб. день', '2 раб. дня', '5 раб. дней']);
+  const week = ['23', '24', '25', '26', '27'].map((d) => ({ day: `2026-11-${d}`, plan: { u: 390, t: 480 / 7, s: 300 / 7 } }));
+  assert.deepEqual(['u', 't', 's'].map((p) => F.fmtMin(F.offReduce(week, p))), ['32ч 30м', '5ч 43м', '3ч 34м']);
+  const e = F.historyEntries({ days_off: [{ id: 4, from: '2026-11-23', to: '2026-11-27', kind: 'otgul', projects: ['u', 't'], made: new Date(2026, 10, 17, 1, 0).getTime() }] }, { name: (id) => ({ u: 'Universe', t: 'Tricky Network' })[id], activity: () => '', ruleText: () => '', dayStartMs: 6 * 3600_000 });
+  assert.deepEqual([e[0].kind, e[0].title, e[0].sub, e[0].undo], ['dayoff', '23–27 ноя · отгул', 'план снижен: Universe, Tricky Network', ['dayoff', 'rm', '4']]);
 });
