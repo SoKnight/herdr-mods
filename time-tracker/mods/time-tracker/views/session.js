@@ -16,7 +16,7 @@ export class SessionView extends Day {
     return ["session"];
   }
 
-  // Today's goals: a session has none of its own.
+  // Today's goals, for the line under each project: a session has none of its own.
   goalArgs() {
     return ["goals"];
   }
@@ -96,6 +96,7 @@ export class SessionView extends Day {
     const s = this.data.session;
     return Side(this, t, {
       caption: "Моё время в сессии",
+      session: true,
       lines: [
         `агенты ${formatDuration(report.agents)} · перерывы ${formatDuration(s.breaks)}`,
         `${plural(s.switches, "переключение", "переключения", "переключений")} · фокус до ${formatDuration(s.focus)}`,

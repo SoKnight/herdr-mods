@@ -715,3 +715,21 @@ func TestRestartReportsWhenNothingStarts(t *testing.T) {
 	assertEq(t, runCLI([]string{"restart", "--json"}, &out, &errOut), 1)
 	assertEq(t, strings.TrimSpace(out.String()), `{"error":"сборщик не запустился"}`)
 }
+
+func TestStatusSumsRoundedProjectMinutes(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return at(60) })
+	sec := int64(1000)
+	for _, c := range []Correction{
+		{Kind: "add", Target: "me", Project: "easy", Start: at(0), End: at(10) + 30*sec},
+		{Kind: "add", Target: "me", Project: "other", Start: at(20), End: at(25) + 29*sec},
+	} {
+		assertEq(t, api.do("POST", "/v1/corrections", c, nil), http.StatusCreated)
+	}
+	var st struct {
+		Me int64 `json:"today_me_ms"`
+	}
+	assertEq(t, api.do("GET", "/v1/status", nil, &st), http.StatusOK)
+	assertEq(t, st.Me, int64(16*minMs)) // 11м + 5м, as День and Неделя count them
+}

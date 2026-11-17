@@ -235,7 +235,11 @@ func (d *Daemon) getStatus(r *http.Request) (int, any, error) {
 			name = p.Name
 		}
 	}
-	return http.StatusOK, map[string]any{"version": version, "today_me_ms": rep.Me, "today_agents_ms": rep.Agents,
+	var me int64 // each project's minutes rounded half up, then summed: the total День and Неделя show
+	for _, p := range rep.Projects {
+		me += RoundMinutes(p.Me, 1) * 60_000
+	}
+	return http.StatusOK, map[string]any{"version": version, "today_me_ms": me, "today_agents_ms": rep.Agents,
 		"project": project, "project_name": name, "activity": activity, "state": state,
 		"session_start": sessionStart, "last_active": lastActive, "last_sample": d.lastSample()}, nil
 }

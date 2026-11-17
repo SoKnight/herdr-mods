@@ -7,18 +7,27 @@ import { TEXT } from "../ui.js";
 import { Link } from "./menu.js";
 
 // lines: strings. The total is the rows' sum, each rounded half up to the minute as Неделя counts them.
-// A project with a goal in view.goals shows it; the rest a share of the longest.
-export function Side(view, t, { caption, lines }) {
+// On День a project with a goal in view.goals is drawn against it, and goal projects without time follow
+// the rows; the rest show a share of the longest. On a session (session: true) every row keeps its
+// session time and share, and today's goal only adds the line under it.
+export function Side(view, t, { caption, lines, session = false }) {
   const { rows, total } = roundRows(view.data.report.projects);
   const projects = rows.filter((p) => p.me >= 60_000); // rounds to nothing: "—"
   const max = Math.max(...projects.map((p) => p.me));
-  const block = (p) => {
-    const base = { name: view.name(p.project), color: t[projectColor(p.project, view.projects)] ?? t.muted, value: formatDuration(p.me), fill: (p.me / max) * 100, other: !p.project };
-    const info = p.project && view.goals?.find((g) => g.project === p.project);
-    if (!info) return ProjectBlock(t, base);
+  const goals = view.goals ?? [];
+  const base = (id) => ({ name: view.name(id), color: t[projectColor(id, view.projects)] ?? t.muted, other: !id });
+  const against = (info, fill = 0) => {
     const b = goalBlock(info);
-    return ProjectBlock(t, { ...base, value: b.value, goal: b.goal, fill: b.fill ?? base.fill, sub: b.sub });
+    return ProjectBlock(t, { ...base(info.project), value: b.value, goal: b.goal, fill: b.fill ?? fill, sub: b.sub });
   };
+  const block = (p) => {
+    const fill = (p.me / max) * 100;
+    const info = p.project && goals.find((g) => g.project === p.project);
+    if (info && !session) return against(info, fill);
+    const sub = info && goalBlock(info).sub;
+    return ProjectBlock(t, { ...base(p.project), value: formatDuration(p.me), fill, sub: sub && info.goal.period === "day" ? `сегодня ${sub}` : sub });
+  };
+  const idle = session ? [] : goals.filter((g) => !projects.some((p) => p.project === g.project));
   return SideFrame(t, "day-side")
     .pb(18)
     .child(
@@ -33,6 +42,7 @@ export function Side(view, t, { caption, lines }) {
       v_flex()
         .gap(12)
         .children(projects.map(block))
+        .children(idle.map((g) => against(g)))
         .when(projects.some((p) => !p.project), (el) =>
           el.child(Link({ id: "day-inbox", label: "разобрать «Другое» →", color: t.muted, onClick: (cx) => view.open("inbox", cx, view.want ?? null) }).text_size(TEXT.small)),
         ),
