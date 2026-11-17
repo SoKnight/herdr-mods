@@ -244,7 +244,7 @@ export class Projects {
           .gap(2)
           .child(this.row(t, { id: "leisure", lead: icon("coffee"), label: "Досуг", end: count("leisure") }))
           .child(this.row(t, { id: "exclude", lead: icon("ban"), label: "Не работа", end: count("exclude") }))
-          .child(this.row(t, { id: "other", lead: icon("inbox"), label: "Другое", end: other, onClick: (cx) => this.open("day", cx) })),
+          .child(this.row(t, { id: "other", lead: icon("inbox"), label: "Другое", end: other, onClick: (cx) => this.open("inbox", cx, null) })),
       );
   }
 

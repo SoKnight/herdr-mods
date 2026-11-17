@@ -62,3 +62,15 @@ export function deleteAsks(rule, day) {
 export function monthStartTitle(day) {
   return `1 ${MONTHS[Number(day.split("-")[1]) - 1]}`;
 }
+
+// "00:03–00:06" in local time; one time when it spans under two minutes.
+export function timeRange(start, end) {
+  const hm = (ms) => new Date(ms).toTimeString().slice(0, 5);
+  return end - start < 120_000 ? hm(start) : `${hm(start)}–${hm(end)}`;
+}
+
+// Разбор's windows not decided yet: their time, how many, how many have a suggestion.
+export function inboxLeft(items, decisions) {
+  const left = items.filter((_, i) => !decisions[i]);
+  return { ms: left.reduce((n, it) => n + it.ms, 0), windows: left.length, hints: left.filter((it) => it.suggest).length };
+}

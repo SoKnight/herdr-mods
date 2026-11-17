@@ -1,7 +1,7 @@
 // The look of this repo's panels (Branch PR, Branch Issue), with only what this mod uses:
 // the same frame, header pills, icon button and message.
 import { div, svg } from "gpui-kit";
-import { h_flex, v_flex } from "gpui-base";
+import { h_flex, v_flex, Popup } from "gpui-base";
 import { theme } from "herdr";
 
 export const TEXT = { badge: 10, caption: 11, small: 12, tab: 12.8, body: 13 };
@@ -230,4 +230,55 @@ export function Check({ id, checked, label, radio, onClick }) {
     .on_click((_e, cx) => onClick(cx))
     .child(box)
     .child(label);
+}
+
+// A button that opens a list under it; items: [{ id, label, color }], a null item is a divider.
+// The trigger toggles on press, after the list's press-outside (capture phase) has closed it.
+export function Dropdown({ id, label, open, onToggle, items, onPick }) {
+  const t = theme();
+  const trigger = h_flex()
+    .id(id)
+    .flex_none()
+    .px(10)
+    .py(4)
+    .gap(6)
+    .items_center()
+    .rounded(6)
+    .border_1()
+    .border_color(t.border)
+    .bg(t.background)
+    .text_size(12)
+    .cursor_pointer()
+    .on_mouse_down("left", (_e, cx) => onToggle(!open, cx))
+    .child(label)
+    .child(div().text_color(t.dim).child(Icon("chevron-down", 12)));
+  const list = v_flex()
+    .w(200)
+    .p(6)
+    .rounded(8)
+    .border_1()
+    .border_color(t.border)
+    .bg(t.popover)
+    .shadow_lg()
+    .text_color(t.foreground)
+    .on_mouse_down_out((_e, cx) => onToggle(false, cx))
+    .children(
+      items.map((it) =>
+        it
+          ? h_flex()
+              .id(`${id}-${it.id}`)
+              .px(8)
+              .py(7)
+              .gap(8)
+              .items_center()
+              .rounded(5)
+              .cursor_pointer()
+              .hover((s) => s.bg(t.hover))
+              .on_click((_e, cx) => onPick(it.id, cx))
+              .when(Boolean(it.color), (el) => el.child(div().flex_none().size(8).rounded(4).bg(it.color)))
+              .child(div().min_w(0).truncate().child(it.label))
+          : div().flex_none().h(1).my(4).bg(t.border),
+      ),
+    );
+  return Popup.new(`${id}-popup`, trigger).anchor("top_right").when(open, (el) => el.content(list));
 }

@@ -9,7 +9,6 @@ import { rangeFromDrag, stepDay } from "../lanes.js";
 import { silence } from "../chip.js";
 import { Button, Icon, Message, TEXT } from "../ui.js";
 import { Link } from "./menu.js";
-import { Unassigned } from "./totals.js";
 import { Strip, AgentsStrip, HourLabels, Legend, DragArea } from "./strip.js";
 import { StretchList, SessionHeader } from "./stretches.js";
 import { Side } from "./side.js";
@@ -59,9 +58,6 @@ export class Day {
     this.drag = null;
     this.sel = null; // the selection the menu acts on
     this.step = "root";
-    this.unassigned = null;
-    this.unassignedOpen = false;
-    this.assigning = null;
     this.silentSince = null;
     this.lastSample = 0; // when the collector last heard from the computer
     this.scroll = ScrollHandle.new(); // the rows under the strip
@@ -89,9 +85,6 @@ export class Day {
         this.error = r.down ? null : (r.error ?? null); // a collector that is down is the notice's business; the last data stays
         if (!r.down && !r.error) this.took(r);
         this.silentSince = this.want ? null : (silence(Boolean(r.down), this.lastSample, Date.now())?.since ?? null);
-        if (!r.down && !r.error) {
-          if (this.unassignedOpen) await this.loadUnassigned(seq);
-        }
       } finally {
         // Even after a throw: no spinner left on, and the tick waits its minute before trying again.
         if (seq === this.seq) {
@@ -126,12 +119,6 @@ export class Day {
     if (!this.fresh) this.divergences = r.divergences;
   }
 
-  async loadUnassigned(seq = this.seq) {
-    const { from, to } = this.otherRange();
-    const r = await call(["unassigned", "--from", String(from), "--to", String(to)]);
-    if (seq === this.seq) this.unassigned = Array.isArray(r) ? r : [];
-  }
-
   go(n, cx) {
     if (this.today) this.show(stepDay(this.want, this.today, n), cx);
   }
@@ -139,7 +126,7 @@ export class Day {
   // Shows a day: null is today.
   show(want, cx) {
     this.dropNote();
-    Object.assign(this, { visit: this.visit + 1, want, fresh: false, divergences: [], sel: null, message: null, pending: null, unassigned: null, unassignedOpen: false });
+    Object.assign(this, { visit: this.visit + 1, want, fresh: false, divergences: [], sel: null, message: null, pending: null });
     this.load(cx);
   }
 
@@ -194,12 +181,6 @@ export class Day {
       const r = await call(["reopen", String(period)]);
       return r.down || r.error ? r : retry();
     }, done);
-  }
-
-  // A v1 "Другое" item: path, title or figma.
-  assign(item, project, cx) {
-    this.assigning = null;
-    this.editRule({ kind: item.kind === "path" ? "folder" : item.kind, value: item.value, project }, cx);
   }
 
   editRule(rule, cx) {
@@ -257,11 +238,6 @@ export class Day {
     return { from: this.data.from, to: this.data.to };
   }
 
-  // The time "Другое" is taken apart over.
-  otherRange() {
-    return { from: this.data.from, to: this.data.to };
-  }
-
   // Pointer position in the strip, in the px the bars are drawn in.
   point(e) {
     const p = e.local_position ?? { x: 0, y: 0 };
@@ -306,7 +282,7 @@ export class Day {
 
   // The header and strip stay put while the rows scroll under them. The rows open at their end,
   // and go back there when `key` changes (another day, a new stretch), so the latest one shows.
-  column(id, top, rows, key, after = []) {
+  column(id, top, rows, key) {
     if (key !== this.scrolledTo) {
       this.scrolledTo = key;
       this.scroll.scroll_to_item(rows.length); // the marker after the rows
@@ -318,7 +294,7 @@ export class Day {
       .child(v_flex().flex_none().pt(18).px(22).pb(14).gap(14).children(top))
       .child(
         v_flex().id(id).flex_1().min_h(0).overflow_y_scroll().track_scroll(this.scroll).px(22).pb(18).gap(14)
-          .children(rows).child(div().h(1).flex_none()).children(after),
+          .children(rows).child(div().h(1).flex_none()),
       );
   }
 
@@ -339,7 +315,7 @@ export class Day {
       ? sessions.map((s) => v_flex().flex_none().child(SessionHeader(this, t, s)).child(StretchList(this, t, s.stretches, { row: 30, gap: 16 })))
       : [Message("За этот день ничего не насчитано.")];
     const key = `${from}|${sessions.map((s) => s.stretches.length).join(",")}`;
-    return this.column("day", top, rows, key, this.unassignedOpen ? [Unassigned(this, t)] : []);
+    return this.column("day", top, rows, key);
   }
 
   sideView(t) {
@@ -464,15 +440,5 @@ export class Day {
       .text_color(m.error ? t.ansi1 : t.muted)
       .child(div().min_w(0).whitespace_normal().child(m.text))
       .when(Boolean(m.undo), (el) => el.child(Link({ id: "day-undo-last", label: "Отменить", onClick: (cx) => this.undo(m.undo, cx) })));
-  }
-
-  toggleUnassigned(cx) {
-    this.unassignedOpen = !this.unassignedOpen;
-    this.assigning = null;
-    if (!this.unassignedOpen) return cx.notify();
-    cx.spawn(async (cx) => {
-      await this.loadUnassigned();
-      cx.notify();
-    });
   }
 }

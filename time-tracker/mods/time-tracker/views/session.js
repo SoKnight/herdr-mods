@@ -9,7 +9,6 @@ import { theme } from "herdr";
 import { Day } from "./day.js";
 import { Strip, AgentsStrip, HourLabels, DragArea } from "./strip.js";
 import { StretchList } from "./stretches.js";
-import { Unassigned } from "./totals.js";
 import { Side } from "./side.js";
 
 export class SessionView extends Day {
@@ -26,11 +25,6 @@ export class SessionView extends Day {
   range() {
     const s = this.data.session;
     return sessionWindow(s.start, s.end, Date.now(), s.open);
-  }
-
-  otherRange() {
-    const s = this.data.session;
-    return { from: s.start, to: s.open ? Date.now() : s.end };
   }
 
   startSession(cx) {
@@ -76,7 +70,7 @@ export class SessionView extends Day {
         .child(DragArea(this).gap(4).child(Strip(this, t, { from, to, h: 26, radius: 5 })).child(AgentsStrip(this, t, { from, to })).child(HourLabels(t, from, to))),
     ];
     const rows = [StretchList(this, t, s.stretches, { row: 32, gap: 18 })];
-    return this.column("session", top, rows, `${s.start}|${s.stretches.length}`, this.unassignedOpen ? [Unassigned(this, t)] : []);
+    return this.column("session", top, rows, `${s.start}|${s.stretches.length}`);
   }
 
   empty(t, last) {

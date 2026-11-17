@@ -10,18 +10,8 @@ import { Link } from "./menu.js";
 export function Side(view, t, { caption, total, lines }) {
   const projects = view.data.report.projects.filter((p) => p.me >= 60_000); // under a minute reads as "—"
   const max = Math.max(...projects.map((p) => p.me));
-  return v_flex()
-    .id("day-side")
-    .w(270)
-    .flex_none()
-    .overflow_y_scroll()
-    .bg(t.chrome)
-    .border_l(1)
-    .border_color(t.border)
-    .pt(18)
-    .px(18)
+  return SideFrame(t, "day-side")
     .pb(18)
-    .gap(16)
     .child(
       v_flex()
         .gap(2)
@@ -39,9 +29,14 @@ export function Side(view, t, { caption, total, lines }) {
           ),
         )
         .when(projects.some((p) => !p.project), (el) =>
-          el.child(Link({ id: "day-unassigned", label: "разобрать «Другое» →", color: t.muted, onClick: (cx) => view.toggleUnassigned(cx) }).text_size(TEXT.small)),
+          el.child(Link({ id: "day-inbox", label: "разобрать «Другое» →", color: t.muted, onClick: (cx) => view.open("inbox", cx, view.want ?? null) }).text_size(TEXT.small)),
         ),
     );
+}
+
+// The right column's look, shared with Разбор.
+export function SideFrame(t, id) {
+  return v_flex().id(id).w(270).flex_none().overflow_y_scroll().bg(t.chrome).border_l(1).border_color(t.border).pt(18).px(18).gap(16);
 }
 
 export function ProjectBlock(t, { name, color, value, fill, other }) {

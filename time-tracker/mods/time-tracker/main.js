@@ -8,6 +8,7 @@ import { SessionView } from "./views/session.js";
 import { Table } from "./views/table.js";
 import { Report } from "./views/report.js";
 import { Projects } from "./views/projects.js";
+import { Inbox } from "./views/inbox.js";
 import { theme } from "herdr";
 import { Panel, PanelHeader, HeaderTab, Icon, Placeholder } from "./ui.js";
 
@@ -29,10 +30,10 @@ export default class TimeTracker extends View {
       this.parts.day.show(date === this.parts.day.today ? null : date, cx); // loads once; the tick finds it fresh
       cx.notify();
     };
-    const open = (tab, cx) => this.open(tab, cx);
+    const open = (tab, cx, arg) => this.open(tab, cx, arg);
     const showDialog = (d, cx) => this.showDialog(d, cx);
     this.dialog = null; // drawn over the whole panel while set
-    this.parts = { session: new SessionView(open, showDialog), projects: new Projects(open, showDialog), settings: placeholder(SETTINGS), day: new Day(open, showDialog), week: new Table("week", openDay), month: new Table("month", openDay), report: new Report() };
+    this.parts = { session: new SessionView(open, showDialog), projects: new Projects(open, showDialog), settings: placeholder(SETTINGS), day: new Day(open, showDialog), week: new Table("week", openDay), month: new Table("month", openDay), report: new Report(), inbox: new Inbox(open) };
     if (checking()) return;
     this.tick(cx);
     cx.timer.every(5000, (cx) => this.tick(cx));
@@ -43,10 +44,17 @@ export default class TimeTracker extends View {
     this.parts[this.tab].tick(cx);
   }
 
-  open(tab, cx) {
+  // With arg, the part shows it (a day, say), which reads; without, it reads again on coming back.
+  open(tab, cx, arg) {
     this.tab = tab;
-    this.parts[tab].wasShown = false; // read again on coming back
-    this.tick(cx);
+    const part = this.parts[tab];
+    if (arg !== undefined && part.show) {
+      part.show(arg, cx);
+      part.wasShown = true; // the tick would read a second time
+    } else {
+      part.wasShown = false;
+      this.tick(cx);
+    }
     cx.notify();
   }
 
