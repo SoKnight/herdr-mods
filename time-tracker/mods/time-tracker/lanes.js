@@ -84,3 +84,32 @@ export function sessionWindow(start, end, now, open) {
   while ((to - from) % tickStep(to - from) !== 0) to += H;
   return { from, to };
 }
+
+// My time in [start, end] by project, most first.
+export function composition(me, start, end) {
+  const by = new Map();
+  for (const s of me) {
+    const ms = Math.min(s.end, end) - Math.max(s.start, start);
+    if (ms > 0) by.set(s.project, (by.get(s.project) ?? 0) + ms);
+  }
+  return [...by].map(([project, ms]) => ({ project, ms })).sort((a, b) => b.ms - a.ms);
+}
+
+// The app + title + path with the most time in [start, end], or null.
+export function topWindow(me, start, end) {
+  const by = new Map();
+  for (const s of me) {
+    const ms = Math.min(s.end, end) - Math.max(s.start, start);
+    if (ms <= 0) continue;
+    const key = JSON.stringify([s.app, s.title, s.path ?? ""]);
+    by.set(key, { app: s.app, title: s.title, path: s.path ?? "", ms: (by.get(key)?.ms ?? 0) + ms });
+  }
+  return [...by.values()].sort((a, b) => b.ms - a.ms)[0] ?? null;
+}
+
+// What a rule from a window matches on: path, else the Figma file, else the title.
+export function ruleItem(win) {
+  if (win.path) return { kind: "path", value: win.path };
+  if (!win.title) return null;
+  return { kind: win.app === "Figma.exe" ? "figma" : "title", value: win.title };
+}

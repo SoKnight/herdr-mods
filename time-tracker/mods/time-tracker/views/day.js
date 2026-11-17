@@ -180,6 +180,10 @@ export class Day {
 
   assign(item, project, cx) {
     this.assigning = null;
+    this.addRule(item, project, cx);
+  }
+
+  addRule(item, project, cx) {
     this.perform(cx, () => call(["rule", "add", JSON.stringify(ruleFor(item, project))]), () => ({ text: `Правило добавлено: ${this.name(project)}.` }));
   }
 

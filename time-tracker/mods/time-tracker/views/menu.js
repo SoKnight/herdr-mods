@@ -2,10 +2,9 @@
 import { div } from "gpui-kit";
 import { h_flex, v_flex, Input } from "gpui-base";
 import { theme } from "herdr";
-import { hhmm } from "../format.js";
+import { hhmm, formatDuration } from "../format.js";
+import { composition, topWindow, ruleItem, projectColor } from "../lanes.js";
 import { TEXT } from "../ui.js";
-
-const TARGETS = { me: "моё время", agents: "агенты", both: "оба" };
 
 // A word that acts: for confirmations, strips and list rows.
 export function Link({ id, label, onClick, color }) {
@@ -20,86 +19,107 @@ export function Link({ id, label, onClick, color }) {
     .child(label);
 }
 
-function Item(id, label, onClick) {
+function Item(id, onClick, open) {
   const t = theme();
   return h_flex()
     .id(id)
-    .h(28)
+    .flex_none()
     .px(8)
+    .py(7)
+    .gap(8)
     .items_center()
-    .rounded(6)
-    .text_size(TEXT.small)
+    .rounded(5)
+    .text_size(TEXT.body)
     .cursor_pointer()
+    .when(Boolean(open), (el) => el.bg(t.hover))
     .hover((s) => s.bg(t.hover))
-    .on_click((_e, cx) => onClick(cx))
-    .child(div().flex_1().min_w(0).truncate().child(label));
+    .on_click((_e, cx) => onClick(cx));
 }
 
-// day: the Day view, which holds the selection (sel), the step and the actions.
-export function SelectionMenu(day) {
+const Divider = () => div().flex_none().h(1).my(4).bg(theme().border);
+
+// The popover look of the menu and its submenus.
+function Panel(id, width) {
   const t = theme();
-  const { sel, step } = day;
-  const go = (next) => (cx) => {
-    day.step = next;
-    cx.notify();
-  };
-  const back = Item("menu-back", "‹ Назад", go(sel.undo ? "undo" : "root"));
-  const projects = (pick) => [
-    ...day.projects.map((p) => Item(`menu-p-${p.id}`, p.name || p.id, (cx) => pick(p.id, cx))),
-    Item("menu-p-none", "Без проекта", (cx) => pick("", cx)),
-  ];
-  const activities = (pick) => day.activities.map((a) => Item(`menu-a-${a.id}`, a.label || a.id, (cx) => pick(a.id, cx)));
-  const mine = sel.target !== "agents"; // activity, notes and added time are only ever mine
-
-  let items;
-  if (step === "undo")
-    items = sel.undo.map((id) => Item(`menu-undo-${id}`, `Отменить правку #${id}`, (cx) => day.undo(id, cx)));
-  else if (step === "project") items = [back, ...projects((project, cx) => day.correct({ kind: "project", project }, cx))];
-  else if (step === "activity") items = [back, ...activities((activity, cx) => day.correct({ kind: "activity", activity }, cx))];
-  else if (step === "add-project")
-    items = [back, ...projects((project, cx) => {
-      day.addProject = project;
-      go("add-activity")(cx);
-    })];
-  else if (step === "add-activity")
-    items = [back, ...activities((activity, cx) => day.correct({ kind: "add", project: day.addProject, activity }, cx))];
-  else if (step === "note")
-    items = [
-      back,
-      h_flex()
-        .p(4)
-        .gap(6)
-        .items_center()
-        .child(Input.new(day.note).id("menu-note").flex_1().min_w(0).h(28).px(8).rounded(6).border_1().border_color(t.border).bg(t.input).text_size(TEXT.small))
-        .child(Link({ id: "menu-note-save", label: "Сохранить", onClick: (cx) => day.saveNote(cx) })),
-    ];
-  else
-    items = [
-      Item("menu-project", "Проект →", go("project")),
-      mine && Item("menu-activity", "Вид →", go("activity")),
-      Item("menu-exclude", "Не считать", (cx) => day.correct({ kind: "exclude" }, cx)),
-      mine && Item("menu-add", "Добавить время…", go("add-project")),
-      mine && Item("menu-note", "Заметка", (cx) => {
-        day.openNote(cx);
-        go("note")(cx);
-      }),
-    ].filter(Boolean);
-
-  const caption = sel.undo ? "Правки этого отрезка" : `${hhmm(sel.start)}–${hhmm(sel.end)} · ${TARGETS[sel.target]}`;
   return v_flex()
-    .id("day-menu")
-    .w(240)
-    .max_h(320)
-    .overflow_y_scroll()
-    .p(5)
-    .gap(1)
-    .rounded(7)
+    .id(id)
+    .flex_none()
+    .w(width)
+    .p(6)
+    .rounded(8)
     .border_1()
     .border_color(t.border)
     .bg(t.popover)
+    .shadow_lg()
     .text_color(t.foreground)
-    .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-    .on_mouse_down_out((_e, cx) => day.closeMenu(cx))
-    .child(div().px(8).py(4).text_size(TEXT.caption).text_color(t.dim).child(caption))
-    .children(items);
+    .on_mouse_down("left", (_e, cx) => cx.stop_propagation());
+}
+
+// Rows above the submenu's: the header and the items before the one that opened it.
+const HEADER = 56;
+const ROW = 31;
+const SUB_ROW = { project: 0, activity: 1, note: 3, rule: 4 };
+
+// view: the Day view (or Session view), which holds the selection (sel), the step and the actions.
+export function MarkupMenu(view) {
+  const t = theme();
+  const { sel, step } = view;
+  const comp = composition(view.data.timeline.me, sel.start, sel.end);
+  const top = comp[0]?.project;
+  const win = topWindow(view.data.timeline.me, sel.start, sel.end);
+  const rule = win ? ruleItem(win) : null;
+  const go = (next) => (cx) => {
+    if (next === "note") view.openNote(cx);
+    view.step = next;
+    cx.notify();
+  };
+  const chevron = () => div().flex_1().flex().justify_end().text_color(t.dim).child("›");
+  const sub = (id, label, to) => Item(id, go(to), step === to).child(label).child(chevron());
+
+  const total = comp.reduce((n, c) => n + c.ms, 0);
+  const summary = comp.map((c) => `${c.project ? view.name(c.project) : "другое"} ${formatDuration(c.ms)}`).join(" · ");
+  const menu = Panel("day-menu", 264)
+    .on_mouse_down_out((_e, cx) => view.closeMenu(cx))
+    .child(
+      v_flex().flex_none().gap(2).px(8).pt(6).pb(8).mb(4).border_b_1().border_color(t.border)
+        .child(div().font_semibold().child(`${hhmm(sel.start)} – ${hhmm(sel.end)} · ${formatDuration(total)}`))
+        .child(div().text_size(TEXT.small).text_color(t.dim).child(summary)),
+    )
+    .child(sub("menu-project", "Назначить проект", "project"))
+    .child(sub("menu-activity", "Вид работы", "activity"))
+    .child(Item("menu-exclude", (cx) => view.correct({ kind: "exclude" }, cx)).child("Исключить — не работа"))
+    .child(Item("menu-note", go("note"), step === "note").child("Заметка…"));
+  if (rule)
+    menu
+      .child(Divider())
+      .child(
+        Item("menu-rule", go("rule"), step === "rule")
+          .items_start()
+          .child(
+            v_flex().gap(2).child(div().child("Создать правило из окна…")).child(div().text_size(TEXT.caption).text_color(t.dim).child(`${win.app.replace(/\.exe$/i, "")} · «${win.title}»`)),
+          ),
+      );
+
+  const projects = (prefix, pick) =>
+    view.projects.map((p) =>
+      Item(`${prefix}-${p.id}`, (cx) => pick(p.id, cx), p.id === top)
+        .child(div().flex_none().size(8).rounded(4).bg(t[projectColor(p.id, view.order())] ?? t.muted))
+        .child(div().min_w(0).truncate().child(p.name || p.id)),
+    );
+  let submenu = null;
+  if (step === "project") submenu = projects("menu-p", (project, cx) => view.correct({ kind: "project", project }, cx));
+  else if (step === "rule") submenu = projects("menu-r", (project, cx) => view.addRule(rule, project, cx));
+  else if (step === "activity") submenu = view.activities.map((a) => Item(`menu-a-${a.id}`, (cx) => view.correct({ kind: "activity", activity: a.id }, cx)).child(a.label || a.id));
+  else if (step === "note")
+    submenu = [
+      h_flex().p(2).gap(6).items_center()
+        .child(Input.new(view.note).id("menu-note-input").flex_1().min_w(0).h(28).px(8).rounded(6).border_1().border_color(t.border).bg(t.input).text_size(TEXT.small))
+        .child(Link({ id: "menu-note-save", label: "Сохранить", onClick: (cx) => view.saveNote(cx) })),
+    ];
+
+  return h_flex()
+    .items_start()
+    .gap(4)
+    .child(menu)
+    .when(Boolean(submenu), (el) => el.child(Panel("day-submenu", 200).mt(HEADER + (SUB_ROW[step] ?? 0) * ROW).children(submenu)));
 }

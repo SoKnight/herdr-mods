@@ -5,7 +5,7 @@ import { h_flex, v_flex, Popup } from "gpui-base";
 import { hhmm } from "../format.js";
 import { bars, projectColor, ticks } from "../lanes.js";
 import { TEXT } from "../ui.js";
-import { SelectionMenu } from "./menu.js";
+import { MarkupMenu } from "./menu.js";
 
 const items = (segs, valueOf) => (segs ?? []).map((seg) => ({ start: seg.start, end: seg.end, value: valueOf(seg), seg }));
 
@@ -44,7 +44,7 @@ export function Strip(view, t, { from, to, h, radius }) {
   const g = view.drag;
   const range = (el, x, w) => el.absolute().top(0).h(h).left(view.pct(x)).w(view.pct(w)).bg(t.selection).border_l(2).border_r(2).border_color(t.foreground);
   if (g) strip.child(range(div(), Math.min(g.x0, g.x1), Math.abs(g.x1 - g.x0)));
-  else if (view.sel) strip.child(range(Popup.new("day-sel", div().size_full()), view.sel.x, view.sel.w).anchor("top_left").content(SelectionMenu(view)));
+  else if (view.sel) strip.child(range(Popup.new("day-sel", div().size_full()), view.sel.x, view.sel.w).anchor("top_left").content(MarkupMenu(view)));
   return strip;
 }
 

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/lanes.js'), 'utf8');
-const L = new Function(`${code.replace(/^export /gm, '')}\nreturn { bars, projectColor, rangeFromDrag, correctionIds, shiftDay, ruleFor, stepDay, tickStep, ticks, sessionWindow };`)();
+const L = new Function(`${code.replace(/^export /gm, '')}\nreturn { bars, projectColor, rangeFromDrag, correctionIds, shiftDay, ruleFor, stepDay, tickStep, ticks, sessionWindow, composition, topWindow, ruleItem };`)();
 
 const H = 3600_000;
 const seg = (start, end, extra = {}) => ({ start, end, app: 'idea64.exe', title: 't', project: 'easylauncher', activity: 'development', why: '', corrected: false, ...extra });
@@ -92,4 +92,25 @@ test('session window: whole hours, three at least, even ticks', () => {
   assert.deepEqual(L.sessionWindow(t(16, 10, 20), t(16, 10, 40), t(16, 18), false), { from: t(16, 10), to: t(16, 13) });
   assert.deepEqual(L.sessionWindow(t(16, 9, 30), t(16, 19, 10), t(16, 19, 20), false), { from: t(16, 9), to: t(16, 21) });
   assert.deepEqual(L.sessionWindow(t(16, 10), t(16, 10, 30), t(16, 13, 30), true), { from: t(16, 10), to: t(16, 14) });
+});
+
+const M = 60_000;
+test('composition of a range, most first', () => {
+  const me = [seg(0, 25 * M, { project: 'tricky' }), seg(25 * M, 32 * M, { project: '' }), seg(32 * M, 40 * M, { project: 'universe' })];
+  assert.deepEqual(L.composition(me, 0, 37 * M), [{ project: 'tricky', ms: 25 * M }, { project: '', ms: 7 * M }, { project: 'universe', ms: 5 * M }]);
+  assert.deepEqual(L.composition(me, 50 * M, 60 * M), []);
+});
+
+test('the window a rule comes from', () => {
+  const me = [
+    seg(0, 5 * M, { app: 'chrome.exe', title: 'tricky-network/core', path: '' }),
+    seg(5 * M, 8 * M, { app: 'idea64.exe', title: 'Main.kt', path: 'C:\Dev\easy' }),
+    seg(8 * M, 10 * M, { app: 'chrome.exe', title: 'tricky-network/core', path: '' }),
+  ];
+  assert.deepEqual(L.topWindow(me, 0, 10 * M), { app: 'chrome.exe', title: 'tricky-network/core', path: '', ms: 7 * M });
+  assert.equal(L.topWindow(me, 20 * M, 30 * M), null);
+  assert.deepEqual(L.ruleItem({ app: 'idea64.exe', title: 'Main.kt', path: 'C:\Dev\easy' }), { kind: 'path', value: 'C:\Dev\easy' });
+  assert.deepEqual(L.ruleItem({ app: 'Figma.exe', title: 'Universe — App', path: '' }), { kind: 'figma', value: 'Universe — App' });
+  assert.deepEqual(L.ruleItem({ app: 'chrome.exe', title: 'tricky-network/core', path: '' }), { kind: 'title', value: 'tricky-network/core' });
+  assert.equal(L.ruleItem({ app: 'x.exe', title: '', path: '' }), null);
 });
