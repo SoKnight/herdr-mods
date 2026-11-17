@@ -87,6 +87,36 @@ func TestRuleEditFromTodayKeepsThePast(t *testing.T) {
 	assertEq(t, api.do("PUT", fmt.Sprintf("/v1/rules/%d", r.ID), map[string]any{"kind": "title", "value": "x", "project": "easy"}, nil), http.StatusNotFound)
 }
 
+func TestRuleEditInPlaceAndRaised(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 16, 12, 0) })
+	var r, r2 Rule
+	api.do("POST", "/v1/rules", map[string]any{"kind": "title", "value": "Spec", "project": "other", "scope": "today"}, &r)
+	assertEq(t, api.do("PUT", fmt.Sprintf("/v1/rules/%d", r.ID), map[string]any{"kind": "title", "value": "Specs", "project": "other"}, &r2), http.StatusOK)
+	assertEq(t, r2.ID, r.ID) // started on the scope's day or later: rewritten in place
+	assertEq(t, r2.From, mskAt(2026, 11, 1, 6, 0))
+	assertEq(t, api.do("PUT", "/v1/rules/3", map[string]any{"kind": "title", "value": "Easy", "project": "other", "scope": "today", "before": 1}, &r2), http.StatusOK)
+	assertEq(t, fmt.Sprint(ruleIDs(d.Config.Rules)), fmt.Sprintf("[%d 1 2 3 %d]", r2.ID, r.ID)) // the new version went above rule 1
+}
+
+func TestRuleBadEditWritesNothing(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	file := filepath.Join(d.Home, "projects.json")
+	before, err := os.ReadFile(file)
+	must(t, err)
+	assertEq(t, api.do("PUT", "/v1/rules/3", map[string]any{"kind": "title", "value": "x", "project": "nope"}, nil), http.StatusBadRequest)
+	after, err := os.ReadFile(file)
+	must(t, err)
+	assertEq(t, string(after), string(before))
+}
+
+func TestMoveBeforeZeroMovesNothing(t *testing.T) {
+	rules := []Rule{{ID: 0}, {ID: 1}, {ID: 2}}
+	assertEq(t, fmt.Sprint(ruleIDs(moveBefore(rules, 2, 0))), "[0 1 2]")
+}
+
 func TestRuleDeleteKeepsPastMonths(t *testing.T) {
 	d := testDaemon(t)
 	api := serve(t, d)
@@ -154,6 +184,9 @@ func TestRulesListWithHits(t *testing.T) {
 	assertEq(t, fmt.Sprint(ruleIDs([]Rule{list.Rules[0].Rule, list.Rules[1].Rule, list.Rules[2].Rule})), "[1 2 3]")
 	assertEq(t, list.Rules[2].Ms, int64(30*minMs))
 	assertEq(t, list.Rules[2].Windows, 1)
+	assertEq(t, api.do("POST", "/v1/corrections", Correction{Kind: "project", Project: "other", Start: at(10), End: at(30)}, nil), http.StatusCreated)
+	assertEq(t, api.do("GET", "/v1/rules", nil, &list), http.StatusOK)
+	assertEq(t, list.Rules[2].Ms, int64(10*minMs)) // the corrected part went to another project
 }
 
 func TestCLIRulesAndProjects(t *testing.T) {

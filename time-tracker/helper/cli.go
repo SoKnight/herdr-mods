@@ -336,7 +336,7 @@ func runCollector(s Settings, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	srv := &http.Server{Handler: newServer(d), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Handler: newServer(d), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 10 * time.Second} // a stalled body would hold d.mu
 	go srv.Serve(ln)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()

@@ -143,6 +143,22 @@ func TestFirstMatchingRuleWins(t *testing.T) {
 	assertEq(t, err != nil, true)
 }
 
+func TestCompileWantsUniqueIDs(t *testing.T) {
+	rule := Rule{ID: 1, Kind: "title", Value: "x", Project: "exclude"}
+	noID := rule
+	noID.ID = 0
+	_, err := Config{Rules: []Rule{rule, noID}}.Compile()
+	assertEq(t, fmt.Sprint(err), "rule 0: id must be positive")
+	_, err = Config{Rules: []Rule{rule, rule}}.Compile()
+	assertEq(t, fmt.Sprint(err), "rule 1: id is used twice")
+}
+
+func TestMigrationSkipsEmptyApp(t *testing.T) {
+	c, _, err := migrate(Config{Projects: []Project{{ID: "s", Apps: []string{"", "Telemost.exe"}}}})
+	must(t, err)
+	assertEq(t, fmt.Sprint(c.Rules), fmt.Sprint([]Rule{{ID: 1, Kind: "process", Value: "Telemost.exe", Project: "s"}}))
+}
+
 func TestMigrationOrdersLikeV1(t *testing.T) {
 	c, changed, err := migrate(Config{Projects: []Project{
 		{ID: "u", Paths: []string{`C:\Dev\starmc`}, Titles: []string{"(?i)universe"}},

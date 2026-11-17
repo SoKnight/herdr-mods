@@ -109,8 +109,13 @@ type Rules struct {
 
 func (c Config) Compile() (*Rules, error) {
 	r := &Rules{rules: c.Rules, projects: c.Projects, apps: c.Apps}
+	ids := map[int64]bool{}
 	for _, x := range c.Rules {
 		switch {
+		case x.ID <= 0:
+			return nil, fmt.Errorf("rule %d: id must be positive", x.ID)
+		case ids[x.ID]:
+			return nil, fmt.Errorf("rule %d: id is used twice", x.ID)
 		case !slices.Contains(ruleKinds, x.Kind):
 			return nil, fmt.Errorf("rule %d: kind %q: want one of %s", x.ID, x.Kind, strings.Join(ruleKinds, ", "))
 		case x.Value == "":
@@ -118,6 +123,7 @@ func (c Config) Compile() (*Rules, error) {
 		case x.Project != excludeID && x.Project != leisureID && !slices.ContainsFunc(c.Projects, func(p Project) bool { return p.ID == x.Project }):
 			return nil, fmt.Errorf("rule %d: unknown project %q", x.ID, x.Project)
 		}
+		ids[x.ID] = true
 	}
 	for _, f := range c.Files {
 		re, err := regexp.Compile(f.Match)
@@ -237,7 +243,9 @@ func migrate(c Config) (Config, bool, error) {
 			}
 		}
 		for _, v := range p.Apps {
-			apps = append(apps, Rule{Kind: "process", Value: v, Project: p.ID})
+			if strings.TrimSpace(v) != "" { // an empty exe never matched in v1
+				apps = append(apps, Rule{Kind: "process", Value: v, Project: p.ID})
+			}
 		}
 		if err := text(p, "title", p.Titles, &titles); err != nil {
 			return c, false, err

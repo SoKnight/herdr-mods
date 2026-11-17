@@ -73,8 +73,11 @@ func newProjectID(name string, taken func(string) bool) string {
 	return id
 }
 
-// moveBefore moves rule id to just before rule before when it is below it.
+// moveBefore moves rule id to just before rule before when it is below it; before <= 0 moves nothing.
 func moveBefore(rules []Rule, id, before int64) []Rule {
+	if before <= 0 {
+		return rules
+	}
 	i := slices.IndexFunc(rules, func(r Rule) bool { return r.ID == id })
 	j := slices.IndexFunc(rules, func(r Rule) bool { return r.ID == before })
 	if i < 0 || j < 0 || i <= j {
