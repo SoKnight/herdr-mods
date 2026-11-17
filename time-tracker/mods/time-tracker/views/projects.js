@@ -4,14 +4,15 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex, Input, InputState, Popover } from "gpui-base";
 import { theme, props, layout } from "herdr";
 import { call } from "../client.js";
-import { formatDuration } from "../format.js";
+import { formatDuration, fmtMin, goalOn, goalShort, goalLine, weeklyTotal } from "../format.js";
 import { projectColor } from "../lanes.js";
 import { RULE_KINDS, COLORS, ruleText, targetName } from "../rules.js";
-import { Button, Icon, Message, TEXT } from "../ui.js";
+import { Button, Icon, IconButton, Message, TEXT } from "../ui.js";
 import { Item, MenuPanel } from "./menu.js";
 import { panelShown } from "./day.js";
 import { RuleEdit, confirmDelete } from "./ruleedit.js";
 import { NewProject } from "./newproject.js";
+import { GoalEdit } from "./goal.js";
 
 const NONE = "#00000000";
 
@@ -55,6 +56,7 @@ export class Projects {
     this.rules = []; // [{id, kind, value, title?, project, from?, ms, windows}] in priority order
     this.suggestions = []; // [{kind, value, ms}] Другое of the last 3 days, read while there are no projects
     this.other = 0; // today's Другое, ms
+    this.today = null; // the collector's day, from `timeline`
     this.selected = null; // a project id, "exclude" or "leisure"
     this.menu = null; // the rule whose menu is open
     this.error = null;
@@ -88,6 +90,7 @@ export class Projects {
         this.error = bad ? (bad.down ? "Сборщик не запущен" : bad.error) : null;
         if (Array.isArray(p.projects)) this.projects = p.projects;
         if (Array.isArray(r.rules)) this.rules = r.rules;
+        if (day.day) this.today = day.day;
         if (Array.isArray(day.report?.projects)) this.other = day.report.projects.find((x) => !x.project)?.me ?? 0;
         const known = ["exclude", "leisure"].includes(this.selected) || this.projects.some((x) => x.id === this.selected);
         if (!known) this.selected = this.list()[0]?.id ?? "leisure";
@@ -110,6 +113,11 @@ export class Projects {
 
   project() {
     return this.projects.find((p) => p.id === this.selected);
+  }
+
+  // The goal in force today, or null.
+  goal(p) {
+    return goalOn(p.goals ?? [], this.today ?? "");
   }
 
   select(id, cx) {
@@ -158,14 +166,21 @@ export class Projects {
     if (p) this.setProject(p, { archived: !p.archived }, cx);
   }
 
+  // After a dialog wrote: its message, if any, and everything read again.
+  saved(text, cx) {
+    if (text) this.message = { text };
+    this.load(cx);
+  }
+
   // rule: one of this.rules, or a new one's { kind, value, project }.
   editRule(rule, cx) {
     this.menu = null;
-    const onSaved = (text, cx) => {
-      this.message = { text };
-      this.load(cx);
-    };
-    RuleEdit.open(this.showDialog, { rule, projects: this.projects, onSaved }, cx);
+    RuleEdit.open(this.showDialog, { rule, projects: this.projects, onSaved: (text, cx) => this.saved(text, cx) }, cx);
+  }
+
+  editGoal(p, cx) {
+    this.menu = null;
+    GoalEdit.open(this.showDialog, { project: p, today: this.today, onSaved: (text, cx) => this.saved(text, cx) }, cx);
   }
 
   newProject(cx, hint) {
@@ -174,7 +189,7 @@ export class Projects {
       this.selected = id;
       this.load(cx);
     };
-    NewProject.open(this.showDialog, { projects: this.projects, hint, onCreated, onSaved: (_text, cx) => this.load(cx) }, cx);
+    NewProject.open(this.showDialog, { projects: this.projects, hint, today: this.today, onCreated, onSaved: (text, cx) => this.saved(text, cx) }, cx);
   }
 
   deleteRule(rule, cx) {
@@ -193,6 +208,7 @@ export class Projects {
   sidebar(t) {
     const count = (target) => div().flex_none().text_size(TEXT.small).text_color(t.dim).child(String(this.rules.filter((r) => r.project === target).length));
     const icon = (name) => div().flex_none().text_color(t.muted).child(Icon(name, 14));
+    const goals = this.projects.map((p) => this.goal(p)).filter(Boolean);
     const other = this.other >= 60_000 && div().flex_none().px(6).py(1).rounded(4).bg(t.muted).text_size(TEXT.caption).text_color(t.background).child(formatDuration(this.other));
     return v_flex()
       .id("projects-side")
@@ -232,10 +248,25 @@ export class Projects {
                 id: p.id,
                 lead: div().flex_none().size(8).rounded(4).bg(t[projectColor(p.id, this.projects)] ?? t.muted).when(Boolean(p.archived), (el) => el.opacity(0.45)),
                 label: div().min_w(0).truncate().font_medium().child(p.name || p.id),
+                end: this.goal(p) && div().flex_none().text_size(12).text_color(t.dim).child(goalShort(this.goal(p))),
                 dim: p.archived,
               }),
             ),
-          ),
+          )
+          .when(goals.length > 0, (el) => el.child(
+            h_flex()
+              .flex_none()
+              .px(8)
+              .py(4)
+              .gap(6)
+              .items_center()
+              .text_size(TEXT.caption)
+              .text_color(t.dim)
+              .child(Icon("target", 12))
+              .child("всего")
+              .child(div().flex_1())
+              .child(`${fmtMin(weeklyTotal(goals))} / нед`),
+          )),
       ))
       .child(div().flex_none().h(1).bg(t.border))
       .child(
@@ -290,8 +321,25 @@ export class Projects {
           .text_color(t.muted)
           .child(Icon("bot", 14))
           .child("агенты по папке проекта"),
-      );
+      ).child(this.goalRow(t, p));
     return col;
+  }
+
+  goalRow(t, p) {
+    const g = this.goal(p);
+    return h_flex()
+      .flex_none()
+      .h(40)
+      .gap(10)
+      .items_center()
+      .border_t(1)
+      .border_color(t.border)
+      .text_size(TEXT.small)
+      .text_color(t.muted)
+      .child(Icon("target", 14))
+      .child(g ? goalLine(g) : "цели нет")
+      .child(div().flex_1())
+      .when(Boolean(this.today), (el) => el.child(IconButton({ id: "projects-goal-edit", icon: "pencil", label: "Изменить цель", onClick: (cx) => this.editGoal(p, cx) })));
   }
 
   // The first run: nothing to show but what Другое could become.

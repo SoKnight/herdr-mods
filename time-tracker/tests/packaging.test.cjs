@@ -47,3 +47,8 @@ test('the Проекты screen has its icons', () => {
   for (const icon of ['folder', 'app-window', 'type', 'pen-tool', 'gamepad-2', 'archive', 'ellipsis', 'plus', 'inbox', 'ban', 'coffee', 'bot', 'sparkles', 'x', 'check', 'chevron-down'])
     assert.match(fs.readFileSync(path.join(runtime, 'icons', `${icon}.svg`), 'utf8'), /^<!-- @license lucide-static v1\.68\.0 - ISC -->/, icon);
 });
+
+test('the goal dialog has its icons', () => {
+  for (const icon of ['target', 'pencil'])
+    assert.match(fs.readFileSync(path.join(runtime, 'icons', `${icon}.svg`), 'utf8'), /^<!-- @license lucide-static v1\.68\.0 - ISC -->/, icon);
+});

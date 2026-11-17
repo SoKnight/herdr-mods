@@ -9,6 +9,7 @@ import { Dialog, Check, Button, Icon, Message, TEXT } from "../ui.js";
 import { Link } from "./menu.js";
 import { Swatches } from "./projects.js";
 import { RuleEdit } from "./ruleedit.js";
+import { GoalEdit } from "./goal.js";
 
 const HINTS_MS = 600;
 const key = (h) => `${h.kind}\n${h.value}\n${h.title ?? ""}`;
@@ -21,11 +22,13 @@ export class NewProject {
     d.fetch(cx);
   }
 
-  // projects: the existing ones; hint: { kind, value, ms } to start from; onCreated(id, cx) after a create.
-  constructor({ projects, hint, onCreated, onSaved, showDialog }) {
+  // projects: the existing ones; hint: { kind, value, ms } to start from; onCreated(id, cx) after a create;
+  // today: the collector's day, for «+ цель» (left out without it).
+  constructor({ projects, hint, today, onCreated, onSaved, showDialog }) {
     this.projects = projects;
+    this.today = today;
     this.onCreated = onCreated;
-    this.onSaved = onSaved; // (text, cx) after «+ своё правило» is saved
+    this.onSaved = onSaved; // (text, cx) after «+ своё правило» or «+ цель» is saved
     this.project = null; // { id, name, color } once made: a retry only sends the rules left
     this.added = new Set(); // keys of the rules already sent
     this.showDialog = showDialog;
@@ -120,6 +123,10 @@ export class NewProject {
     this.create(cx, (p, cx) => RuleEdit.open(this.showDialog, { rule: { kind: "folder", value: "", project: p.id }, projects: [...this.projects, p], onSaved: this.onSaved }, cx));
   }
 
+  goal(cx) {
+    this.create(cx, (p, cx) => GoalEdit.open(this.showDialog, { project: { ...p, goals: [] }, today: this.today, onSaved: this.onSaved }, cx));
+  }
+
   render() {
     const t = theme();
     const body = v_flex()
@@ -144,6 +151,7 @@ export class NewProject {
       )
       .when(this.hints.length > 0, (el) => el.child(this.hintList(t)))
       .child(Link({ id: "new-project-rule", label: "+ своё правило", onClick: (cx) => this.own(cx) }).text_size(TEXT.small))
+      .when(Boolean(this.today), (el) => el.child(Link({ id: "new-project-goal", label: "+ цель", onClick: (cx) => this.goal(cx) }).text_size(TEXT.small)))
       .when(Boolean(this.error), (el) => el.child(Message(this.error, true)));
     return Dialog({
       id: "new-project",

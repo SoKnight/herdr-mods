@@ -204,7 +204,7 @@ export class Day {
       this.sel = sel;
       this.correct({ kind: "project", project: id }, cx);
     };
-    NewProject.open(this.showDialog, { projects: this.projects, onCreated, onSaved: (_text, cx) => this.load(cx) }, cx);
+    NewProject.open(this.showDialog, { projects: this.projects, today: this.today, onCreated, onSaved: (_text, cx) => this.load(cx) }, cx);
   }
 
   // Time added by hand on the day shown.
