@@ -76,7 +76,7 @@ func showGoals(w io.Writer, resp []byte) error {
 	return nil
 }
 
-// showMonth prints the month's rows and Итого; without a goal, working days, goal and difference are left out.
+// showMonth prints the month's rows, Итого and the pay line; without a goal, working days, goal and difference are left out.
 func showMonth(w io.Writer, resp []byte) error {
 	var m monthReport
 	if err := json.Unmarshal(resp, &m); err != nil {
@@ -94,6 +94,9 @@ func showMonth(w io.Writer, resp []byte) error {
 		line(r.Label, r)
 	}
 	line("Итого", m.Total)
+	if m.Pay != nil {
+		fmt.Fprintln(w, payLine(m.Pay))
+	}
 	return nil
 }
 
@@ -173,14 +176,13 @@ func showExport(out string) func(io.Writer, []byte) error {
 			_, err := fmt.Fprint(w, ex.Content)
 			return err
 		}
-		_, err := fmt.Fprintf(w, "сохранено в %s, период #%d закрыт\n", out, ex.Period)
+		_, err := fmt.Fprintf(w, "сохранено в %s\n", out)
 		return err
 	}
 }
 
 type exportResult struct {
 	Content string `json:"content"`
-	Period  int64  `json:"period"`
 }
 
 func correctionLine(c Correction) string {

@@ -88,8 +88,14 @@ func (a testAPI) do(method, path string, body, out any) int {
 	return resp.StatusCode
 }
 
-func exportBody(project string, from, to int64, round int) map[string]any {
-	return map[string]any{"project": project, "from": from, "to": to, "format": "csv", "round": round}
+// legacyPeriod closes [from, to) of a project as v1's export did: a snapshot of the fresh timeline.
+func legacyPeriod(t *testing.T, d *Daemon, project string, from, to int64) Period {
+	t.Helper()
+	tl, err := d.fresh(from, to)
+	must(t, err)
+	p, err := d.Store.AddPeriod(Snapshot(tl, project, from, to))
+	must(t, err)
+	return p
 }
 
 func TestHeartbeatRequiresHeader(t *testing.T) {
@@ -166,8 +172,7 @@ func TestForeignHostRefused(t *testing.T) {
 func TestCorrectionInClosedPeriodConflicts(t *testing.T) {
 	d := testDaemon(t)
 	api := serve(t, d)
-	var ex exportResult
-	assertEq(t, api.do("POST", "/v1/export", exportBody("easy", at(0), at(60), 15), &ex), http.StatusOK)
+	ex := legacyPeriod(t, d, "easy", at(0), at(60))
 
 	corr := Correction{Kind: "project", Target: "me", Start: at(30), End: at(40), Project: "easy"}
 	var conflict struct {
@@ -176,21 +181,21 @@ func TestCorrectionInClosedPeriodConflicts(t *testing.T) {
 	}
 	assertEq(t, api.do("POST", "/v1/corrections", corr, &conflict), http.StatusConflict)
 	assertEq(t, conflict.Error, "closed")
-	assertEq(t, conflict.Period, ex.Period)
+	assertEq(t, conflict.Period, ex.ID)
 	cs, err := d.Store.Corrections()
 	must(t, err)
 	assertEq(t, len(cs), 0)
 
-	assertEq(t, api.do("POST", fmt.Sprintf("/v1/periods/%d/reopen", ex.Period), nil, nil), http.StatusNoContent)
+	assertEq(t, api.do("POST", fmt.Sprintf("/v1/periods/%d/reopen", ex.ID), nil, nil), http.StatusNoContent)
 	var created Correction
 	assertEq(t, api.do("POST", "/v1/corrections", corr, &created), http.StatusCreated)
 	assertEq(t, created.ID, int64(1))
 	assertEq(t, created.Project, "easy")
 
 	// Closing the period again protects the correction from removal too.
-	assertEq(t, api.do("POST", "/v1/export", exportBody("easy", at(0), at(60), 15), &ex), http.StatusOK)
+	ex = legacyPeriod(t, d, "easy", at(0), at(60))
 	assertEq(t, api.do("DELETE", "/v1/corrections/1", nil, &conflict), http.StatusConflict)
-	assertEq(t, conflict.Period, ex.Period)
+	assertEq(t, conflict.Period, ex.ID)
 	var list []Correction
 	assertEq(t, api.do("GET", "/v1/corrections", nil, &list), http.StatusOK)
 	assertEq(t, len(list), 1)
@@ -228,96 +233,11 @@ func TestCorrectionNeverReachesTheFuture(t *testing.T) {
 	assertEq(t, created.End, at(30))
 }
 
-func TestExportClosesPeriodAndRounds(t *testing.T) {
-	d := testDaemon(t)
-	api := serve(t, d)
-	seed(t, d, power(0, 120), inp(0, 22), win("idea64.exe", "Easy – Main.kt", 0, 22))
-
-	var ex exportResult
-	assertEq(t, api.do("POST", "/v1/export", exportBody("easy", at(0), at(60), 15), &ex), http.StatusOK)
-	for _, want := range []string{"2026-11-16,development,22,15,\n", "total,,22,15,\n"} {
-		if !strings.Contains(ex.Content, want) {
-			t.Errorf("export lacks %q:\n%s", want, ex.Content)
-		}
-	}
-
-	var periods []map[string]any
-	assertEq(t, api.do("GET", "/v1/periods?project=easy", nil, &periods), http.StatusOK)
-	assertEq(t, len(periods), 1)
-	p := periods[0]
-	assertEq(t, int64(p["id"].(float64)), ex.Period)
-	assertEq(t, int64(p["from"].(float64)), at(0))
-	assertEq(t, int64(p["to"].(float64)), at(60))
-	assertEq(t, p["delta_ms"].(float64), 0.0)
-	if _, ok := p["me"]; ok {
-		t.Errorf("period list carries segments: %v", p)
-	}
-	assertEq(t, api.do("GET", "/v1/periods?project=other", nil, &periods), http.StatusOK)
-	assertEq(t, len(periods), 0)
-
-	// The snapshot stays inside its period: the next day knows nothing of it.
-	var next struct {
-		Timeline    Timeline     `json:"timeline"`
-		Divergences []Divergence `json:"divergences"`
-	}
-	assertEq(t, api.do("GET", "/v1/timeline?day=2026-11-17", nil, &next), http.StatusOK)
-	assertEq(t, len(next.Timeline.Me), 0)
-	assertEq(t, len(next.Divergences), 0)
-
-	// A new rule that takes the time elsewhere shows up as a divergence, the export stays.
-	must(t, d.setConfig(func() Config {
-		c := serverConfig()
-		c.Projects[0].Titles = nil
-		return c
-	}()))
-	assertEq(t, api.do("GET", "/v1/periods", nil, &periods), http.StatusOK)
-	assertEq(t, periods[0]["delta_ms"].(float64), float64(-22*minMs))
-
-	assertEq(t, api.do("POST", "/v1/export", exportBody("easy", at(30), at(90), 15), nil), http.StatusConflict)
-	assertEq(t, api.do("POST", "/v1/export", exportBody("other", at(0), at(60), 10), nil), http.StatusBadRequest)
-}
-
-func TestExportRefusesMinutesBilledToAnotherProject(t *testing.T) {
-	d := testDaemon(t)
-	api := serve(t, d)
-	seed(t, d, power(0, 120), inp(0, 22), win("idea64.exe", "Easy – Main.kt", 0, 10), win("idea64.exe", "Easy – Spec.kt", 10, 22))
-	var a exportResult
-	assertEq(t, api.do("POST", "/v1/export", exportBody("easy", at(0), at(60), 15), &a), http.StatusOK)
-
-	c := serverConfig() // a new rule takes 10–22 to the other project
-	c.Projects[0].Titles = []string{"Main"}
-	c.Projects[1].Titles = []string{"Spec"}
-	must(t, d.setConfig(c))
-	var conflict struct {
-		Error  string `json:"error"`
-		Period int64  `json:"period"`
-	}
-	for _, body := range []map[string]any{exportBody("other", at(0), at(60), 15), exportBody("other", at(15), at(30), 15)} {
-		assertEq(t, api.do("POST", "/v1/export", body, &conflict), http.StatusConflict)
-		assertEq(t, conflict.Error, "closed")
-		assertEq(t, conflict.Period, a.Period)
-	}
-	dry := exportBody("other", at(0), at(60), 15)
-	dry["dry_run"] = true
-	assertEq(t, api.do("POST", "/v1/export", dry, nil), http.StatusConflict) // the preview says so too
-
-	// Range overlap alone is no conflict: other's time after 22 was never billed.
-	seed(t, d, inp(30, 40), win("idea64.exe", "Spec v2", 30, 40))
-	assertEq(t, api.do("POST", "/v1/export", exportBody("other", at(25), at(60), 15), nil), http.StatusOK)
-
-	assertEq(t, api.do("POST", fmt.Sprintf("/v1/periods/%d/reopen", a.Period), nil, nil), http.StatusNoContent)
-	var b exportResult
-	assertEq(t, api.do("POST", "/v1/export", exportBody("other", at(0), at(25), 15), &b), http.StatusOK)
-	if !strings.Contains(b.Content, "total,,12,15,") {
-		t.Errorf("other's export:\n%s", b.Content)
-	}
-}
-
 func TestTimelineFreshSkipsSnapshots(t *testing.T) {
 	d := testDaemon(t)
 	api := serve(t, d)
 	seed(t, d, power(0, 120), inp(0, 22), win("idea64.exe", "Easy – Main.kt", 0, 22))
-	assertEq(t, api.do("POST", "/v1/export", exportBody("easy", at(0), at(60), 15), nil), http.StatusOK)
+	legacyPeriod(t, d, "easy", at(0), at(60))
 	must(t, d.setConfig(func() Config { // the title rule goes: fresh rules no longer find the project
 		c := serverConfig()
 		c.Projects[0].Titles = nil
@@ -422,72 +342,41 @@ func TestCLITalksToServer(t *testing.T) {
 	assertEq(t, len(mustLoad(t, d.Store, at(-1), at(1)).Beats), 1)
 
 	seed(t, d, power(0, 120), inp(0, 22), win("idea64.exe", "Easy – Main.kt", 0, 22))
-	file := filepath.Join(t.TempDir(), "easy.md")
-	args := []string{"export", "--project", "easy", "--from", fmt.Sprint(at(0)), "--to", fmt.Sprint(at(60)), "--format", "md", "--out", file}
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 16, 22, 0) })
+	file := filepath.Join(t.TempDir(), "easy.txt")
 	out.Reset()
-	assertEq(t, runCLI(args, &out, &errOut), 0)
-	md, err := os.ReadFile(file)
+	assertEq(t, runCLI([]string{"export", "--project", "easy", "--month", "2026-11", "--format", "text", "--out", file}, &out, &errOut), 0)
+	text, err := os.ReadFile(file)
 	must(t, err)
-	assertEq(t, strings.Contains(string(md), "| Разработка | 15 |"), true)
-
-	out.Reset()
-	assertEq(t, runCLI(append(args, "--json"), &out, &errOut), 1)
-	assertEq(t, strings.Contains(out.String(), `"error":"closed"`), true)
+	assertEq(t, strings.Contains(string(text), "\n16 ноя · 22м\n"), true)
 }
 
-func TestExportNeverClosesTheFuture(t *testing.T) {
+func TestExportRouteClosesNothing(t *testing.T) {
 	d := testDaemon(t)
 	api := serve(t, d)
-	swap(t, &nowMs, func() int64 { return at(30) })
-	var ex exportResult
-	assertEq(t, api.do("POST", "/v1/export", exportBody("easy", at(0), at(24*60), 15), &ex), http.StatusOK)
-	ps, err := d.Store.Periods()
-	must(t, err)
-	assertEq(t, ps[0].To, at(30))
-	assertEq(t, api.do("POST", "/v1/export", exportBody("other", at(40), at(100), 15), nil), http.StatusBadRequest)
-}
-
-func TestDryRunExportMatchesTheRealOneAndClosesNothing(t *testing.T) {
-	d := testDaemon(t)
-	api := serve(t, d)
-	seed(t, d, power(0, 120), inp(0, 22), win("idea64.exe", "Easy – Main.kt", 0, 22))
-	body := exportBody("easy", at(0), at(60), 15)
-	body["dry_run"] = true
-	var dry, real exportResult
-	assertEq(t, api.do("POST", "/v1/export", body, &dry), http.StatusOK)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 16, 22, 0) })
+	seedWindow(t, d, mskAt(2026, 11, 16, 12, 0), "notepad.exe", "Easy notes", 181)
+	var ex struct {
+		Content string `json:"content"`
+	}
+	assertEq(t, api.do("POST", "/v1/export", map[string]any{"project": "easy", "month": "2026-11", "rows": "week", "format": "csv"}, &ex), http.StatusOK)
+	assertEq(t, strings.HasPrefix(ex.Content, "\ufeffС;По;Моё, мин\r\n"), true)
+	assertEq(t, api.do("POST", "/v1/export", map[string]any{"project": "easy", "month": "2026-11", "rows": "week", "format": "md"}, nil), http.StatusBadRequest)
 	ps, err := d.Store.Periods()
 	must(t, err)
 	assertEq(t, len(ps), 0)
-
-	assertEq(t, api.do("POST", "/v1/export", exportBody("easy", at(0), at(60), 15), &real), http.StatusOK)
-	if dry.Content == "" || dry.Content != real.Content {
-		t.Errorf("dry run differs:\n%s\nreal:\n%s", dry.Content, real.Content)
-	}
-	// A closed range answers a dry run with the same conflict.
-	assertEq(t, api.do("POST", "/v1/export", body, nil), http.StatusConflict)
 }
 
-func TestDryRunRefusesOut(t *testing.T) {
+func TestCLIExportWritesTheFile(t *testing.T) {
 	d := testDaemon(t)
-	_, err := buildCall(d.S, "export", []string{"--from", "1", "--to", "2", "--project", "easy", "--dry-run", "--out", "x.md"})
-	if err == nil || !strings.Contains(err.Error(), "--dry-run") {
-		t.Fatalf("--dry-run with --out: %v", err)
-	}
-}
-
-func TestCLIReopensWhenOutFails(t *testing.T) {
-	d := testDaemon(t)
-	api := serve(t, d)
-	cliHome(t, portOf(t, api.url))
-	seed(t, d, power(0, 120), inp(0, 22), win("idea64.exe", "Easy – Main.kt", 0, 22))
-	bad := filepath.Join(t.TempDir(), "missing", "easy.md")
-	var out, errOut bytes.Buffer
-	args := []string{"export", "--project", "easy", "--from", fmt.Sprint(at(0)), "--to", fmt.Sprint(at(60)), "--out", bad}
-	assertEq(t, runCLI(args, &out, &errOut), 1)
-	assertEq(t, errOut.Len() > 0, true)
-	ps, err := d.Store.Periods()
+	cliHome(t, portOf(t, serve(t, d).url))
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 16, 22, 0) })
+	out := filepath.Join(t.TempDir(), "easy_2026-11.csv")
+	var stdout, stderr bytes.Buffer
+	assertEq(t, runCLI([]string{"export", "--project", "easy", "--month", "2026-11", "--format", "csv", "--out", out}, &stdout, &stderr), 0)
+	data, err := os.ReadFile(out)
 	must(t, err)
-	assertEq(t, len(ps), 0) // no file, so nothing stays closed
+	assertEq(t, strings.HasPrefix(string(data), "\ufeff"), true)
 }
 
 type sessionAnswer struct {

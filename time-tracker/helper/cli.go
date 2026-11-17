@@ -29,7 +29,7 @@ const usage = `herdr-time <команда> [--json]
   timeline [--day YYYY-MM-DD] [--fresh]   --fresh: без снимков закрытых периодов
   projects
   report --from --to [--project id]
-  export --from --to --project id [--format md|csv] [--round 1|5|15] [--agents] [--out файл] [--dry-run]
+  export --project id --month YYYY-MM [--rows week|day] [--format text|csv] [--notes] [--pay] [--agents] [--goal] [--out файл]
   correct add <json> | rm <id> | ls
   beat <json>
   inbox [--day YYYY-MM-DD]
@@ -126,9 +126,6 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		if err := os.WriteFile(c.save, []byte(ex.Content), 0o644); err != nil {
-			if ex.Period != 0 { // no file, no closed period
-				send(s, "POST", fmt.Sprintf("/v1/periods/%d/reopen", ex.Period), nil)
-			}
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
@@ -191,12 +188,15 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 	day := fs.String("day", "", "")
 	fromArg, toArg := fs.String("from", "", ""), fs.String("to", "", "")
 	project := fs.String("project", "", "")
-	format := fs.String("format", "md", "")
-	round := fs.Int("round", 15, "")
-	agents := fs.Bool("agents", false, "")
+	monthArg := fs.String("month", "", "")
+	format := fs.String("format", "text", "")
+	var opts exportOpts
+	fs.BoolVar(&opts.Notes, "notes", false, "")
+	fs.BoolVar(&opts.Pay, "pay", false, "")
+	fs.BoolVar(&opts.Agents, "agents", false, "")
+	fs.BoolVar(&opts.Goal, "goal", false, "")
 	out := fs.String("out", "", "")
 	fresh := fs.Bool("fresh", false, "")
-	dry := fs.Bool("dry-run", false, "")
 	name := fs.String("name", "", "")
 	days := fs.Int("days", 30, "")
 	rows := fs.String("rows", "", "")
@@ -263,15 +263,8 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 		}
 		return apiCall{method: "GET", path: "/v1/inbox?" + q.Encode(), show: showInbox}, nil
 	case cmd == "export":
-		if *dry && *out != "" {
-			return apiCall{}, fmt.Errorf("export: --dry-run never writes a file, drop --out")
-		}
-		from, to, err := span()
-		if err != nil {
-			return apiCall{}, err
-		}
-		body, err := json.Marshal(map[string]any{"project": *project, "from": from, "to": to,
-			"format": *format, "round": *round, "agents": *agents, "dry_run": *dry})
+		body, err := json.Marshal(map[string]any{"project": *project, "month": *monthArg, "rows": *rows, "format": *format,
+			"notes": opts.Notes, "pay": opts.Pay, "agents": opts.Agents, "goal": opts.Goal})
 		return apiCall{method: "POST", path: "/v1/export", body: body, save: *out, show: showExport(*out)}, err
 	case cmd == "correct" && sub == "add":
 		body, err := arg(1, "<json>")
