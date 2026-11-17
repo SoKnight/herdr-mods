@@ -26,7 +26,7 @@ export class NewProject {
     this.projects = projects;
     this.onCreated = onCreated;
     this.onSaved = onSaved; // (text, cx) after «+ своё правило» is saved
-    this.id = null; // the project once made: a retry only sends the rules left
+    this.project = null; // { id, name, color } once made: a retry only sends the rules left
     this.added = new Set(); // keys of the rules already sent
     this.showDialog = showDialog;
     this.name = InputState.new({ placeholder: "Название", value: hint ? guessName(hint) : "" });
@@ -38,6 +38,7 @@ export class NewProject {
     this.error = null;
     this.seq = 0; // the latest change: older answers are dropped
     this.busy = false;
+    this.closed = false; // close() ran: a create still on its way must not close again
   }
 
   changed(cx) {
@@ -75,7 +76,7 @@ export class NewProject {
     cx.notify();
   }
 
-  // Makes the project and the checked rules; then(id, cx) runs after onCreated.
+  // Makes the project and the checked rules; then(project, cx) runs after onCreated and onSaved.
   create(cx, then) {
     if (this.busy) return;
     const name = this.name.value().trim();
@@ -86,33 +87,37 @@ export class NewProject {
     this.busy = true;
     this.error = null;
     cx.spawn(async (cx) => {
-      if (!this.id) {
+      if (!this.project) {
         const p = await call(["project", "add", JSON.stringify({ name, color: this.color })]);
         if (p.down || p.error) return this.fail(p, cx);
-        this.id = p.id;
+        this.project = { id: p.id, name: p.name, color: p.color };
         this.onCreated(p.id, cx); // it exists now, even if a rule fails below
       }
       for (const h of this.hints.filter((h) => this.checked.has(key(h)) && !this.added.has(key(h)))) {
-        const rule = { kind: h.kind, value: h.value, project: this.id, scope: "month" };
+        const rule = { kind: h.kind, value: h.value, project: this.project.id, scope: "month" };
         if (h.title) rule.title = h.title;
         const r = await call(["rule", "add", JSON.stringify(rule)]);
         if (r.down || r.error) return this.fail(r, cx);
         this.added.add(key(h));
       }
       this.busy = false;
+      this.onSaved?.(null, cx); // onCreated read before the rules landed
+      if (this.closed) return;
       this.close(cx);
-      then?.(this.id, cx);
+      then?.(this.project, cx);
     });
   }
 
   close(cx) {
+    if (this.closed) return;
+    this.closed = true;
     this.seq++;
     this.name.release();
     this.showDialog(null, cx);
   }
 
   own(cx) {
-    this.create(cx, (id, cx) => RuleEdit.open(this.showDialog, { rule: { kind: "folder", value: "", project: id }, projects: this.projects, onSaved: this.onSaved }, cx));
+    this.create(cx, (p, cx) => RuleEdit.open(this.showDialog, { rule: { kind: "folder", value: "", project: p.id }, projects: [...this.projects, p], onSaved: this.onSaved }, cx));
   }
 
   render() {
