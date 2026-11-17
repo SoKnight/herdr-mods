@@ -85,4 +85,6 @@ type Period struct {
 	Goals    map[string]*Goal    `json:"goals,omitempty"` // each project's goal as the month report shows it
 	Pay      map[string]*payment `json:"pay,omitempty"`   // projects with pay or bonuses that month
 	Reopened int64               `json:"reopened,omitempty"`
+
+	GoalVersions map[string][]Goal `json:"goal_versions,omitempty"` // each project's goal versions at the close, for the plan's days
 }

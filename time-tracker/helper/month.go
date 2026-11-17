@@ -181,7 +181,7 @@ func (d *Daemon) monthReport(project, month, rows string) (monthReport, error) {
 	if firstDay > today {
 		return monthReport{}, fail(http.StatusBadRequest, "month: not started yet")
 	}
-	days, err := d.planRange(firstDay, lastDay)
+	days, _, err := d.planRange(firstDay, lastDay)
 	if err != nil {
 		return monthReport{}, err
 	}

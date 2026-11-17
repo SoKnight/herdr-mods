@@ -148,7 +148,7 @@ func (d *Daemon) getMonthState(r *http.Request) (int, any, error) {
 	}
 	st.Prev = &monthState{Month: prevMonth, Closed: prev != nil, Sent: prev != nil && prev.Sent}
 
-	days, err := d.planRange(first, last)
+	days, _, err := d.planRange(first, last)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -217,7 +217,7 @@ func (d *Daemon) postMonthClose(r *http.Request) (int, any, error) {
 	if err != nil {
 		return 0, nil, err
 	}
-	days, err := d.planRange(first, last)
+	days, _, err := d.planRange(first, last)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -227,6 +227,12 @@ func (d *Daemon) postMonthClose(r *http.Request) (int, any, error) {
 	}
 	p := Snapshot(tl, "", from, to)
 	p.Month, p.Sent, p.ExportedAt, p.Days, p.Goals, p.Pay = month, req.Sent, nowMs(), days, d.monthGoals(days, today), pays
+	p.GoalVersions = map[string][]Goal{}
+	for _, pr := range d.Config.Projects {
+		if len(pr.Goals) > 0 {
+			p.GoalVersions[pr.ID] = pr.Goals
+		}
+	}
 	if p, err = d.Store.AddPeriod(p); err != nil {
 		return 0, nil, err
 	}

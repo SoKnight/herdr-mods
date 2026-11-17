@@ -220,46 +220,54 @@ func dayList(first, last string) ([]string, error) {
 	return days, nil
 }
 
+// frozenDays maps each day of a plan range that a closed month covers to that month's record.
+type frozenDays map[string]*Period
+
+// goalOn is p's goal on day: from the record's goal versions on a closed day, else from the config.
+func (f frozenDays) goalOn(p Project, day string) *Goal {
+	if rec := f[day]; rec != nil {
+		return goalOn(rec.GoalVersions[p.ID], day)
+	}
+	return goalOn(p.Goals, day)
+}
+
 // planRange is the plan of every day from first to last, both in; a closed month's days come from its
-// record. Callers hold mu.
-func (d *Daemon) planRange(first, last string) ([]planDay, error) {
+// record, and frozen says which ones. Callers hold mu.
+func (d *Daemon) planRange(first, last string) ([]planDay, frozenDays, error) {
 	days, err := dayList(first, last)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	from, _, err := dayRange(d.S, first)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	_, to, err := dayRange(d.S, last)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	tl, _, err := d.timeline(from, to)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	off, err := d.Store.DaysOff()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	periods, err := d.Store.Periods()
 	if err != nil {
-		return nil, err
-	}
-	frozen := map[string]planDay{}
-	for _, p := range periods {
-		for _, pd := range p.Days {
-			frozen[pd.Day] = pd
-		}
+		return nil, nil, err
 	}
 	out := planDays(days, d.Cal, d.Config.Projects, off, Summarize(tl, d.S, d.order()))
-	for i, pd := range out {
-		if f, ok := frozen[pd.Day]; ok {
-			out[i] = f
+	frozen := frozenDays{}
+	for i := range periods {
+		for _, pd := range periods[i].Days {
+			if j := slices.IndexFunc(out, func(x planDay) bool { return x.Day == pd.Day }); j >= 0 {
+				out[j], frozen[pd.Day] = pd, &periods[i]
+			}
 		}
 	}
-	return out, nil
+	return out, frozen, nil
 }
 
 // checkGoal validates g; week and month goals lose the day-goal fields, an Off keeps only From.
@@ -371,7 +379,7 @@ func (d *Daemon) deleteDayOff(r *http.Request) (int, any, error) {
 // them, and its goal: the latest version in force on a day of the range up to today.
 func (d *Daemon) getPlan(r *http.Request) (int, any, error) {
 	first, last := r.URL.Query().Get("from"), r.URL.Query().Get("to")
-	days, err := d.planRange(first, last)
+	days, frozen, err := d.planRange(first, last)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -382,7 +390,7 @@ func (d *Daemon) getPlan(r *http.Request) (int, any, error) {
 		for _, pd := range days {
 			_, ok := pd.Plan[p.ID]
 			planned = planned || ok
-			if g := goalOn(p.Goals, pd.Day); g != nil && pd.Day <= today {
+			if g := frozen.goalOn(p, pd.Day); g != nil && pd.Day <= today {
 				goals[p.ID] = *g
 			}
 		}
@@ -390,9 +398,11 @@ func (d *Daemon) getPlan(r *http.Request) (int, any, error) {
 			sums[p.ID] = sumGoal(days, p.ID, today)
 		}
 	}
-	var names []string
+	var names []string // a closed month's days depend on no calendar
 	for _, pd := range days {
-		names = append(names, pd.Day)
+		if frozen[pd.Day] == nil {
+			names = append(names, pd.Day)
+		}
 	}
 	return http.StatusOK, map[string]any{"today": today, "days": days, "goals": goals, "sums": sums,
 		"no_calendar": d.Cal.Missing(names)}, nil
@@ -421,7 +431,7 @@ func (d *Daemon) getGoals(r *http.Request) (int, any, error) {
 	weekFrom, weekTo := date(mon), date(mon.AddDate(0, 0, 6))
 	month := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
 	monthFrom, monthTo := date(month), date(month.AddDate(0, 1, -1))
-	days, err := d.planRange(min(weekFrom, monthFrom), max(weekTo, monthTo)) // at most 37 days
+	days, frozen, err := d.planRange(min(weekFrom, monthFrom), max(weekTo, monthTo)) // at most 37 days
 	if err != nil {
 		return 0, nil, err
 	}
@@ -430,7 +440,7 @@ func (d *Daemon) getGoals(r *http.Request) (int, any, error) {
 	}
 	out := []goalInfo{}
 	for _, p := range d.Config.Projects {
-		g := goalOn(p.Goals, day)
+		g := frozen.goalOn(p, day)
 		if g == nil {
 			continue
 		}

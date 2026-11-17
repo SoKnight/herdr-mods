@@ -211,3 +211,82 @@ func TestMonthCLI(t *testing.T) {
 	assertEq(t, runCLI([]string{"periods"}, &out, &errOut), 0)
 	assertEq(t, strings.TrimSpace(out.String()), "#1  ноябрь 2026 · все проекты  закрыт 2 дек")
 }
+
+// planJSON is /v1/plan over November and /v1/goals on 16 and 20 November, as the answers come.
+func planJSON(t *testing.T, api testAPI) string {
+	var out []string
+	for _, path := range []string{"/v1/plan?from=2026-11-01&to=2026-11-30", "/v1/goals?day=2026-11-16", "/v1/goals?day=2026-11-20"} {
+		var raw json.RawMessage
+		assertEq(t, api.do("GET", path, nil, &raw), http.StatusOK)
+		out = append(out, string(raw))
+	}
+	return strings.Join(out, "\n")
+}
+
+func TestClosedMonthKeepsItsPlanAndGoals(t *testing.T) {
+	d, api := november(t)
+	day := func(minutes int) map[string]any {
+		return map[string]any{"from": "2026-11-01", "dir": "min", "minutes": minutes, "period": "day", "weekdays": []int{1, 2, 3, 4, 5}}
+	}
+	mid := day(480) // a version from the 20th: each day keeps its own
+	mid["from"] = "2026-11-20"
+	assertEq(t, api.do("PUT", "/v1/projects/easy/goal", mid, nil), http.StatusOK)
+	before := planJSON(t, api)
+	assertEq(t, api.do("POST", "/v1/months/2026-11/close", nil, nil), http.StatusOK)
+	for _, step := range []struct {
+		project string
+		goal    map[string]any
+	}{
+		{"easy", map[string]any{"from": "2026-11-01", "off": true}}, // removed
+		{"easy", day(480)},  // 390 → 480 for the whole month
+		{"other", day(120)}, // a goal where November had none
+	} {
+		assertEq(t, api.do("PUT", "/v1/projects/"+step.project+"/goal", step.goal, nil), http.StatusOK)
+		assertEq(t, planJSON(t, api), before)
+	}
+	cal := d.Cal
+	d.Cal = Calendar{} // no year at all: a closed month's days still need none
+	assertEq(t, planJSON(t, api), before)
+	d.Cal = cal
+	assertEq(t, api.do("POST", "/v1/months/2026-11/reopen", nil, nil), http.StatusNoContent)
+	after := planJSON(t, api)
+	assertEq(t, fmt.Sprint(after != before, strings.Contains(after, `"project":"other"`), strings.Contains(after, `"no_calendar":[]`)), "true true true")
+}
+
+func TestUndoCloseAndItsReopen(t *testing.T) {
+	d, api := november(t)
+	assertEq(t, api.do("POST", "/v1/months/2026-11/close", map[string]any{"sent": true}, nil), http.StatusOK)
+	records := func() string {
+		ps, err := d.Store.AllPeriods()
+		must(t, err)
+		b, err := json.Marshal(ps)
+		must(t, err)
+		return string(b)
+	}
+	kinds := func() string {
+		var h history
+		api.do("GET", fmt.Sprintf("/v1/history?from=%d&to=%d", nowMs()-minMs, nowMs()+minMs), nil, &h)
+		var ks []string
+		for _, c := range h.Changes {
+			ks = append(ks, c.Kind)
+		}
+		return strings.Join(ks, " ")
+	}
+	record, closeID := records(), changeOf(t, api, "month-close")
+
+	assertEq(t, api.do("POST", fmt.Sprintf("/v1/history/%d/undo", closeID), nil, nil), http.StatusNoContent) // History's открыть заново
+	assertEq(t, kinds(), "month-reopen pay-set goal-set")
+	assertEq(t, monthRecordOf(t, d) == nil, true)
+
+	assertEq(t, api.do("POST", fmt.Sprintf("/v1/history/%d/undo", changeOf(t, api, "month-reopen")), nil, nil), http.StatusNoContent)
+	assertEq(t, kinds(), "month-close pay-set goal-set")
+	assertEq(t, changeOf(t, api, "month-close"), closeID)
+	assertEq(t, monthRecordOf(t, d) != nil, true)
+	assertEq(t, records(), record)
+}
+
+func monthRecordOf(t *testing.T, d *Daemon) *Period {
+	rec, err := d.monthRecord("2026-11")
+	must(t, err)
+	return rec
+}
