@@ -101,6 +101,7 @@ export class GoalEdit {
       Dropdown({ id: `goal-${id}`, label, open: this.openList === id, items, onToggle: (open, cx) => ((this.openList = open ? id : null), cx.notify()), onPick: (v, cx) => (pick(v), (this.openList = null), cx.notify()) });
     const labelOf = (items, id) => items.find((it) => it.id === id)?.label ?? "";
     const from = this.froms.find((f) => f.day === this.from);
+    const since = `с ${from?.label ?? this.from}`; // the buttons name the day they act from
     const versions = [...(this.project.goals ?? [])].sort((a, b) => b.from.localeCompare(a.from));
     const body = v_flex()
       .p(18)
@@ -180,7 +181,7 @@ export class GoalEdit {
       .when(Boolean(this.error), (el) => el.child(Message(this.error, true)));
     return Dialog({
       id: "goal",
-      width: 400,
+      width: 560, // room for «Убрать с сегодня, 30 сентября» and «Сохранить с …» side by side
       title: "Цель",
       sub: h_flex()
         .flex_none()
@@ -193,10 +194,10 @@ export class GoalEdit {
       onClose: (cx) => this.close(cx),
       body,
       footer: [
-        this.current && Button({ id: "goal-remove", label: "Убрать цель", ghost: true, onClick: (cx) => this.remove(cx) }).px(0),
+        this.current && Button({ id: "goal-remove", label: `Убрать ${since}`, ghost: true, onClick: (cx) => this.remove(cx) }).px(0),
         div().flex_1(),
         Button({ id: "goal-cancel", label: "Отмена", onClick: (cx) => this.close(cx) }).px(14).py(6).text_size(TEXT.body),
-        Button({ id: "goal-save", label: "Сохранить", primary: true, onClick: (cx) => this.save(cx) }).px(14).py(6).text_size(TEXT.body),
+        Button({ id: "goal-save", label: `Сохранить ${since}`, primary: true, onClick: (cx) => this.save(cx) }).px(14).py(6).text_size(TEXT.body),
       ].filter(Boolean),
     });
   }
