@@ -100,12 +100,6 @@ export function monthRange(day, dayStartMs = 4 * 3600_000, offset = 0) {
   return { from: new Date(y, m - 1 + offset, 1).getTime() + dayStartMs, to: new Date(y, m + offset, 1).getTime() + dayStartMs };
 }
 
-// The file's name: the days it covers, the last one as the collector counts it (the end cut at now, `to`
-// being exclusive) and the day starting dayStartMs after midnight.
-export function exportName(project, from, to, format, dayStartMs = 0, now = Date.now()) {
-  return `${project}_${dayString(from - dayStartMs)}_${dayString(Math.min(to, now) - 1 - dayStartMs)}.${format}`;
-}
-
 // The line under a session's title: how it began and when it ends.
 export const sessionNote = (manual, minutes) => `${manual ? "начата вручную" : "началась сама после простоя"} · закончится после ${minutes} мин без активности`;
 
@@ -173,13 +167,57 @@ export function goalBlock(info) {
 // "прогноз ноября по Universe ≈ 81ч 41м из 130ч".
 export const forecastLine = (info, name, day) => `прогноз ${MONTHS[Number(day.slice(5, 7)) - 1]} по ${name} ≈ ${fmtMin(info.month.forecast)} из ${fmtMin(info.month.plan)}`;
 
+// Whole rubles as "100 000 ₽", plain spaces so it pastes cleanly.
+export const money = (rub) => `${String(rub).replace(/\B(?=(\d{3})+$)/g, " ")} ₽`;
+
+// "100 000" / "15000" → whole rubles; anything else, or 0, → null.
+export function parseMoney(s) {
+  const t = String(s).trim();
+  return /^\d[\d ]*$/.test(t) ? Number(t.replace(/ /g, "")) || null : null;
+}
+
+const monthTitle = (i) => MONTH_NAMES[i][0].toUpperCase() + MONTH_NAMES[i].slice(1);
+
+// The n months up to today's, newest first: [{ id: "2026-11", label: "Ноябрь 2026" }, …].
+export function monthOptions(today, n = 12) {
+  const [y, m] = today.split("-").map(Number);
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(y, m - 1 - i, 1);
+    return { id: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`, label: `${monthTitle(d.getMonth())} ${d.getFullYear()}` };
+  });
+}
+
+// Отчёт's goal strip: "6ч 30м в рабочий день" and what counts toward it.
+export function goalStrip(g) {
+  const per = g.period === "day" && g.calendar ? "в рабочий день" : PERIOD_IN[g.period];
+  const weekends = g.period === "day" && g.weekends;
+  return { text: `${g.dir === "max" ? "не больше " : ""}${fmtMin(g.minutes)} ${per}`, sub: weekends ? "активное время · выходные в зачёт" : "активное время" };
+}
+
+// The note under Отчёт's table: the calendar and weekends for a day goal, the agents with their column.
+export function reportFootnote(rep, agents) {
+  const g = rep.goal, parts = [];
+  if (g?.period === "day" && g.calendar) {
+    const days = (rep.holidays ?? []).map((d) => Number(d.slice(8)));
+    const month = rep.holidays?.length ? MONTHS[Number(rep.holidays[0].slice(5, 7)) - 1] : "";
+    const list = days.length > 1 ? `${days.slice(0, -1).join(", ")} и ${days[days.length - 1]}` : String(days[0]);
+    parts.push(`Рабочие дни — по производственному календарю${days.length ? ` (${list} ${month} — ${days.length > 1 ? "праздники" : "праздник"})` : ""}.`);
+  }
+  if (g?.period === "day") parts.push(g.weekends ? "Время в выходные идёт в зачёт." : "Время в выходные в цель не идёт.");
+  if (agents) parts.push("Агенты в разницу не входят.");
+  return parts.join(" ");
+}
+
+// The CSV's file name from the project id, without what Windows forbids in a name.
+export const exportFile = (project, month) => `${project.replace(/[<>:"/\\|?*]/g, "")}_${month}.csv`;
+
 // Each row's `me` (ms) rounded half up to whole minutes, the total their sum.
 export function roundRows(rows) {
   const out = rows.map((r) => ({ ...r, me: Math.floor(r.me / 60000 + 0.5) * 60000 }));
   return { rows: out, total: out.reduce((n, r) => n + r.me, 0) };
 }
 
-const SHORT_MONTHS = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+export const SHORT_MONTHS = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 const dayMonth = (ms) => [new Date(ms).getDate(), SHORT_MONTHS[new Date(ms).getMonth()]];
 
 // "17 ноя, 00:40".

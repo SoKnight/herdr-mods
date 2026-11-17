@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/format.js'), 'utf8');
-const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, exportName, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs, fmtMin, signed, roundRows, parseHours, hoursText, goalOn, goalShort, goalLine, goalVersion, weeklyTotal, progressText, goalBlock, forecastLine, weekDays, weekTitle, weekRelative, mainGoal, dayDiff, weekRows, monthGrid, cellBars, offTitle, workdaysText, offReduce };`)();
+const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs, fmtMin, signed, roundRows, parseHours, hoursText, goalOn, goalShort, goalLine, goalVersion, weeklyTotal, progressText, goalBlock, forecastLine, weekDays, weekTitle, weekRelative, mainGoal, dayDiff, weekRows, monthGrid, cellBars, offTitle, workdaysText, offReduce, money, parseMoney, monthOptions, goalStrip, reportFootnote, exportFile };`)();
 const rcode = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/rules.js'), 'utf8');
 const R = new Function(`${rcode.replace(/^export /gm, '')}
 return { ruleText, targetName };`)();
@@ -82,16 +82,32 @@ test('ranges step back and on by an offset', () => {
   assert.deepEqual(F.monthRange('2026-01-10', DAY_START, -1), { from: at('2025-12-01', 4), to: at('2026-01-01', 4) }); // across a year
 });
 
-test('export file name follows the collector days', () => {
-  // end cut at now: a week in progress is named by its last day so far
-  assert.equal(F.exportName('easy', at('2026-11-16', 4), at('2026-11-23', 4), 'md', DAY_START, at('2026-11-18', 10)), 'easy_2026-11-16_2026-11-18.md');
-  // just after 04:00 the new day has begun
-  assert.equal(F.exportName('easy', at('2026-11-16', 4), at('2026-11-23', 4), 'md', DAY_START, at('2026-11-18', 3)), 'easy_2026-11-16_2026-11-17.md');
+test('report wording', () => {
+  assert.deepEqual([0, 769, 15000, 100000, 1234567].map(F.money), ['0 ₽', '769 ₽', '15 000 ₽', '100 000 ₽', '1 234 567 ₽']);
+  assert.deepEqual(['100 000', '15000', ' 7 ', '0', '1,5', 'abc', ''].map(F.parseMoney), [100000, 15000, 7, null, null, null, null]);
+  assert.deepEqual(F.monthOptions('2026-11-16', 3), [{ id: '2026-11', label: 'Ноябрь 2026' }, { id: '2026-10', label: 'Октябрь 2026' }, { id: '2026-09', label: 'Сентябрь 2026' }]);
+  assert.equal(F.monthOptions('2026-01-05', 2)[1].id, '2025-12');
+  const u = { dir: 'min', minutes: 390, period: 'day', weekdays: [1, 2, 3, 4, 5], calendar: true, weekends: true };
+  assert.deepEqual(F.goalStrip(u), { text: '6ч 30м в рабочий день', sub: 'активное время · выходные в зачёт' });
+  assert.deepEqual(F.goalStrip({ dir: 'max', minutes: 2400, period: 'month' }), { text: 'не больше 40ч в месяц', sub: 'активное время' });
+  const rep = { goal: u, holidays: ['2026-11-04'] };
+  assert.equal(F.reportFootnote(rep, true), 'Рабочие дни — по производственному календарю (4 ноября — праздник). Время в выходные идёт в зачёт. Агенты в разницу не входят.');
+  assert.equal(F.reportFootnote({ goal: { ...u, weekends: false }, holidays: ['2026-05-01', '2026-05-09', '2026-05-11'] }, true), 'Рабочие дни — по производственному календарю (1, 9 и 11 мая — праздники). Время в выходные в цель не идёт. Агенты в разницу не входят.');
+  assert.equal(F.exportFile('universe', '2026-11'), 'universe_2026-11.csv');
 });
 
-test('export file name', () => {
-  assert.equal(F.exportName('easylauncher', at('2026-11-01'), at('2026-12-01'), 'md', 0, at('2026-12-05')), 'easylauncher_2026-11-01_2026-11-30.md');
-  assert.equal(F.exportName('easylauncher', at('2026-11-16', 4), at('2026-11-23', 4), 'csv', DAY_START, at('2026-12-01')), 'easylauncher_2026-11-16_2026-11-22.csv');
+test('report wording: the rest of the strip, footnote and file name', () => {
+  assert.deepEqual(F.goalStrip({ dir: 'min', minutes: 480, period: 'week' }), { text: '8ч в неделю', sub: 'активное время' });
+  assert.deepEqual(F.goalStrip({ dir: 'min', minutes: 390, period: 'day', calendar: false, weekends: false }), { text: '6ч 30м в день', sub: 'активное время' });
+  const u = { dir: 'min', minutes: 390, period: 'day', calendar: true, weekends: true };
+  assert.equal(F.reportFootnote({ goal: u, holidays: [] }, false), 'Рабочие дни — по производственному календарю. Время в выходные идёт в зачёт.');
+  assert.equal(F.reportFootnote({ goal: u, holidays: ['2026-11-04', '2026-11-11'] }, false), 'Рабочие дни — по производственному календарю (4 и 11 ноября — праздники). Время в выходные идёт в зачёт.');
+  assert.equal(F.reportFootnote({ goal: { ...u, calendar: false }, holidays: ['2026-11-04'] }, true), 'Время в выходные идёт в зачёт. Агенты в разницу не входят.');
+  // week and month goals: no calendar and no weekend sentence (checkGoal keeps weekends false for them)
+  assert.equal(F.reportFootnote({ goal: { dir: 'min', minutes: 480, period: 'week', weekends: false }, holidays: ['2026-11-04'] }, true), 'Агенты в разницу не входят.');
+  assert.equal(F.reportFootnote({ goal: null, holidays: ['2026-11-04'] }, true), 'Агенты в разницу не входят.');
+  assert.equal(F.reportFootnote({ goal: null, holidays: [] }, false), '');
+  assert.equal(F.exportFile('a<b>:c"d/e\\f|g?h*', '2026-11'), 'abcdefgh_2026-11.csv');
 });
 
 
