@@ -279,3 +279,18 @@ func TestOpenSpansStopAtTheLastPollAfterSleep(t *testing.T) {
 	must(t, err)
 	assertEq(t, sp[0].End, at(0)+5000)
 }
+
+func TestPollAddsMinecraftServer(t *testing.T) {
+	d := testDaemon(t)
+	log := filepath.Join(t.TempDir(), "latest.log")
+	must(t, os.WriteFile(log, []byte("Connecting to play.tricky.net, 25565\n"), 0o644))
+	d.S.MinecraftLogs = []string{log}
+	swap(t, &nowMs, func() int64 { return at(0) })
+	swap(t, &takeSample, func(ms int64) (Sample, error) {
+		return Sample{At: ms, LastInput: ms, Exe: "javaw.exe", Title: "Minecraft 26.3 - Multiplayer (3rd-party Server)"}, nil
+	})
+	d.poll()
+	assertEq(t, find(d.openSpans(at(0)), "window").Server, "play.tricky.net:25565")
+	d.S.MinecraftLogs = []string{filepath.Join(t.TempDir(), "none.log")}
+	d.poll() // no log: no server, no error
+}

@@ -74,10 +74,10 @@ func (b *beatState) advance(t int64) {
 }
 
 // look gives what a window shows at t: its app rule, that app's fresh signal and the window to match.
-func (b *beatState) look(rules *Rules, exe, title string, t int64) (*AppRule, *Heartbeat, window) {
+func (b *beatState) look(rules *Rules, exe, title, server string, t int64) (*AppRule, *Heartbeat, window) {
 	app := rules.App(exe)
 	hb := b.fresh(app, t)
-	w := window{exe: exe, title: title, at: t}
+	w := window{exe: exe, title: title, server: server, at: t}
 	if hb != nil {
 		w.path = hb.ProjectPath
 	}
@@ -142,17 +142,17 @@ func Attribute(raw Raw, rules *Rules, corr []Correction, s Settings, from, to in
 
 			seg := Segment{Start: t}
 			if w := windows.at(t); w != nil {
-				seg.App, seg.Title = w.Exe, w.Title
+				seg.App, seg.Title, seg.Server = w.Exe, w.Title, w.Server
 			}
-			app, hb, w := beats.look(rules, seg.App, seg.Title, t)
+			app, hb, w := beats.look(rules, seg.App, seg.Title, seg.Server, t)
 			var callWhy string
 			if inCall && !strings.EqualFold(seg.App, call.Exe) {
 				// A call in the background still is the call: attribute it, not the focused window,
 				// unless that window is Досуг.
 				if r, ok := rules.Match(w); !ok || r.Project != leisureID {
-					seg.App, seg.Title = call.Exe, call.Title
+					seg.App, seg.Title, seg.Server = call.Exe, call.Title, ""
 					callWhy = "звонок " + call.Exe + " в фоне; "
-					app, hb, w = beats.look(rules, seg.App, seg.Title, t)
+					app, hb, w = beats.look(rules, seg.App, seg.Title, seg.Server, t)
 				}
 			}
 
@@ -392,7 +392,7 @@ func activityOf(rules *Rules, app *AppRule, hb *Heartbeat) (activity, why string
 func appendSegment(me []Segment, seg Segment) []Segment {
 	if n := len(me); n > 0 {
 		p := &me[n-1]
-		if p.End == seg.Start && p.App == seg.App && p.Title == seg.Title && p.Path == seg.Path &&
+		if p.End == seg.Start && p.App == seg.App && p.Title == seg.Title && p.Server == seg.Server && p.Path == seg.Path &&
 			p.Project == seg.Project && p.Activity == seg.Activity && p.Why == seg.Why && p.Rule == seg.Rule {
 			p.End = seg.End
 			return me

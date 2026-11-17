@@ -19,11 +19,13 @@ type Settings struct {
 	SessionIdleMinutes int `json:"session_idle_minutes"`
 	PauseMinutes       int `json:"pause_minutes"`
 
+	MinecraftLogs []string `json:"minecraft_logs"` // latest.log files to read the server from
+
 	Loc *time.Location `json:"-"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{IdleMinutes: 5, CarryMinutes: 15, Port: 47613, PollSeconds: 5, DayStart: "06:00", SessionIdleMinutes: 45, PauseMinutes: 15, Loc: time.Local}
+	return Settings{IdleMinutes: 5, CarryMinutes: 15, Port: 47613, PollSeconds: 5, DayStart: "06:00", SessionIdleMinutes: 45, PauseMinutes: 15, MinecraftLogs: []string{`%APPDATA%\.minecraft\logs\latest.log`}, Loc: time.Local}
 }
 
 // Home is where data lives, outside the mod folder so reinstalling the mod keeps it.

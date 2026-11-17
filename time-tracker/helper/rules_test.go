@@ -319,13 +319,15 @@ func TestDefaultSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertEq(t, string(data), `{"idle_minutes":5,"carry_minutes":15,"port":47613,"poll_seconds":5,"day_start":"06:00","session_idle_minutes":45,"pause_minutes":15}`)
+	assertEq(t, string(data), `{"idle_minutes":5,"carry_minutes":15,"port":47613,"poll_seconds":5,"day_start":"06:00","session_idle_minutes":45,"pause_minutes":15,"minecraft_logs":["%APPDATA%\\.minecraft\\logs\\latest.log"]}`)
 	var back Settings
 	if err := json.Unmarshal(data, &back); err != nil {
 		t.Fatal(err)
 	}
 	back.Loc = s.Loc
-	assertEq(t, back, s)
+	if !reflect.DeepEqual(back, s) {
+		t.Errorf("got %v, want %v", back, s)
+	}
 }
 
 func TestDefaultActivities(t *testing.T) {

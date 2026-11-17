@@ -263,6 +263,10 @@ func (d *Daemon) poll() {
 		// The tracker closes its spans at the last poll before the sleep; the agents follow it.
 		d.appendSpans(d.agents.Cut(p.At, s.At))
 	}
+	// ponytail: reads the log tail every poll while online; cache by mod time if it ever shows in a profile
+	if isMinecraftOnline(s.Exe, s.Title) {
+		s.Server = minecraftServer(d.S.MinecraftLogs)
+	}
 	d.appendSpans(d.tracker.Feed(s))
 	if err := d.Store.SaveOpen(d.openSpans(now), d.tracker.lastSeen(now)); err != nil {
 		log.Printf("open.json: %v", err)

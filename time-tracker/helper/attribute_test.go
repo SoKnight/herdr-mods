@@ -535,3 +535,14 @@ func TestCorrectionMovesLeisureToProject(t *testing.T) {
 	assertEq(t, len(tl.Leisure), 0)
 	assertEq(t, segAt(t, tl, 5, 0).Project, "tricky")
 }
+
+func TestMinecraftRuleMatchesServer(t *testing.T) {
+	rules := mustCompile(t, Config{Projects: []Project{{ID: "tricky"}}, Rules: []Rule{{ID: 1, Kind: "minecraft", Value: "play.tricky.net:25565", Project: "tricky"}}})
+	w := win("javaw.exe", "Minecraft 26.3 - Multiplayer (3rd-party Server)", 0, 10)
+	w.Server = "play.tricky.net:25565"
+	s := DefaultSettings()
+	s.Loc = msk
+	tl := Attribute(spans(power(0, 10), inp(0, 10), w), rules, nil, s, at(0), at(10))
+	assertEq(t, tl.Me[0].Project, "tricky")
+	assertEq(t, tl.Me[0].Server, "play.tricky.net:25565")
+}

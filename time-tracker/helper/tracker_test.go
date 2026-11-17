@@ -112,3 +112,11 @@ func TestTrackerOpenStopsAtTheLastPollAfterSleep(t *testing.T) {
 	assertEq(t, find(tr.Open(20_000), "window").End, int64(20_000)) // three polls: still awake
 	assertEq(t, find(tr.Open(3_600_000), "window").End, int64(5000))
 }
+
+func TestTrackerSplitsWindowOnServer(t *testing.T) {
+	tr := Tracker{PollMs: 5000}
+	tr.Feed(Sample{At: at(0), Exe: "javaw.exe", Title: "Minecraft", Server: "a.net:1"})
+	out := tr.Feed(Sample{At: at(0) + 5000, Exe: "javaw.exe", Title: "Minecraft", Server: "b.net:1"})
+	w := find(out, "window")
+	assertEq(t, w.Server, "a.net:1")
+}

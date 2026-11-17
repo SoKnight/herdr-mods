@@ -7,6 +7,7 @@ type Sample struct {
 	At, LastInput int64
 	Locked        bool
 	Exe, Title    string
+	Server        string   // Minecraft server host:port, from the game log
 	CallExes      []string // exes currently holding the microphone
 }
 
@@ -46,32 +47,32 @@ func (t *Tracker) Feed(s Sample) []Span {
 		}
 	}
 	// set keeps kind open iff want; a changed key (exe/title) closes and reopens.
-	set := func(kind string, want bool, start, closeAt int64, exe, title string) {
+	set := func(kind string, want bool, start, closeAt int64, exe, title, server string) {
 		o := t.open[kind]
-		if o != nil && (!want || o.Exe != exe || o.Title != title) {
+		if o != nil && (!want || o.Exe != exe || o.Title != title || o.Server != server) {
 			out = append(out, finish(*o, closeAt)...)
 			delete(t.open, kind)
 			o = nil
 		}
 		if o == nil && want {
-			t.open[kind] = &Span{Kind: kind, Start: start, Exe: exe, Title: title}
+			t.open[kind] = &Span{Kind: kind, Start: start, Exe: exe, Title: title, Server: server}
 		}
 	}
 	prevAt := s.At
 	if t.prev != nil {
 		prevAt = t.prev.At
 	}
-	set("power", true, s.At, s.At, "", "")
+	set("power", true, s.At, s.At, "", "", "")
 	hasInput := s.LastInput > lower && s.LastInput <= s.At
 	if hasInput && t.open["input"] == nil {
-		set("input", true, s.LastInput, s.At, "", "")
+		set("input", true, s.LastInput, s.At, "", "", "")
 	} else if !hasInput {
-		set("input", false, 0, prevAt, "", "")
+		set("input", false, 0, prevAt, "", "", "")
 	}
-	set("lock", s.Locked, s.At, s.At, "", "")
-	set("window", s.Exe != "", s.At, s.At, s.Exe, s.Title)
+	set("lock", s.Locked, s.At, s.At, "", "", "")
+	set("window", s.Exe != "", s.At, s.At, s.Exe, s.Title, s.Server)
 	ce := t.callExe(s)
-	set("call", ce != "", s.At, s.At, ce, "")
+	set("call", ce != "", s.At, s.At, ce, "", "")
 	t.prev = &s
 	return out
 }
