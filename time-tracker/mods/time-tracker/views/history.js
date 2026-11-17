@@ -1,13 +1,13 @@
-// История правок: corrections, rule and goal changes and days off of a month or a day, each with Отменить.
+// История правок: corrections, rule, goal, pay and month changes and days off of a month or a day, each with Отменить.
 import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme } from "herdr";
 import { call } from "../client.js";
-import { monthRange, midnight, dayTitle, activityLabel, catalog, stamp, historyEntries, ACTIVITIES, MONTH_NAMES } from "../format.js";
+import { monthRange, midnight, dayTitle, activityLabel, catalog, stamp, historyEntries, monthTitle, ACTIVITIES, MONTH_NAMES } from "../format.js";
 import { ruleText, targetName } from "../rules.js";
 import { Button, Icon, Message, Segmented, TEXT } from "../ui.js";
 
-const ICONS = { assign: "arrow-right", excl: "ban", activity: "tag", note: "sticky-note", manual: "plus", rule: "funnel", goal: "target", pay: "wallet", dayoff: "calendar" };
+const ICONS = { assign: "arrow-right", excl: "ban", activity: "tag", note: "sticky-note", manual: "plus", rule: "funnel", goal: "target", pay: "wallet", dayoff: "calendar", "month-close": "lock", "month-reopen": "lock-open" };
 
 export class History {
   // open(tab, cx): shows another tab of the panel.
@@ -27,8 +27,9 @@ export class History {
   // Reads on show and after an undo only.
   tick() {}
 
-  show({ day, dayStartMs }, cx) {
-    Object.assign(this, { day, dayStartMs, entries: null, message: null, error: null });
+  // period: "month" or "day" to show; the one last chosen when left out.
+  show({ day, dayStartMs, period = this.period }, cx) {
+    Object.assign(this, { day, dayStartMs, period, entries: null, message: null, error: null });
     this.load(cx);
   }
 
@@ -68,9 +69,9 @@ export class History {
       try {
         const r = await call(entry.undo);
         if (r.down || r.error) {
-          this.message = { text: r.down ? "Сборщик не запущен" : r.error === "closed" ? "Период закрыт выгрузкой: ничего не записано." : r.error, error: true };
+          this.message = { text: r.down ? "Сборщик не запущен" : r.error === "closed" ? "Месяц закрыт: ничего не записано." : r.error, error: true };
         } else {
-          this.message = { text: "Отменено." };
+          this.message = { text: entry.kind === "month-close" ? `${monthTitle(entry.month)} открыт заново.` : "Отменено." };
           this.load(cx);
         }
       } finally {
@@ -118,6 +119,8 @@ export class History {
 
   row(t, e) {
     const id = e.key.replace(":", "-");
+    // a month close: a 1 px border and no background, its button a ghost named as the entry says
+    const undo = e.border ? Button({ id: `history-undo-${id}`, label: e.undoLabel, ghost: true, onClick: (cx) => this.undo(e, cx) }) : Button({ id: `history-undo-${id}`, label: "Отменить", icon: "undo-2", onClick: (cx) => this.undo(e, cx) });
     return h_flex()
       .id(`history-${id}`)
       .flex_none()
@@ -126,7 +129,8 @@ export class History {
       .gap(12)
       .items_center()
       .rounded(8)
-      .bg(t.chrome)
+      .when(Boolean(e.border), (el) => el.border_1().border_color(t.border))
+      .when(!e.border, (el) => el.bg(t.chrome))
       .child(div().flex_none().size(30).flex().items_center().justify_center().rounded(6).bg(t.raised).child(Icon(ICONS[e.kind], 15)))
       .child(
         v_flex()
@@ -134,9 +138,9 @@ export class History {
           .min_w(0)
           .gap(2)
           .child(div().truncate().child(e.title))
-          .child(div().truncate().text_size(TEXT.small).text_color(t.dim).child(e.sub)),
+          .when(Boolean(e.sub), (el) => el.child(div().truncate().text_size(TEXT.small).text_color(t.dim).child(e.sub))),
       )
       .child(div().flex_none().text_size(TEXT.small).text_color(t.dim).child(stamp(e.at)))
-      .child(Button({ id: `history-undo-${id}`, label: "Отменить", icon: "undo-2", onClick: (cx) => this.undo(e, cx) }));
+      .child(undo);
   }
 }

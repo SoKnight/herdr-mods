@@ -5,7 +5,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme, props, layout } from "herdr";
 import { call } from "../client.js";
-import { fmtMin, signed, catalog, dayTitle, dayString, activityLabel, ACTIVITIES, MONTH_NAMES, SHORT_MONTHS, money, monthOptions, goalStrip, reportFootnote } from "../format.js";
+import { fmtMin, signed, catalog, dayTitle, dayString, activityLabel, ACTIVITIES, MONTH_NAMES, SHORT_MONTHS, money, monthOptions, monthTitle, goalStrip, reportFootnote } from "../format.js";
 import { projectColor } from "../lanes.js";
 import { Button, Check, Dropdown, Icon, IconButton, Message, TEXT } from "../ui.js";
 import { Link } from "./menu.js";
@@ -13,6 +13,7 @@ import { SideFrame } from "./side.js";
 import { GoalEdit } from "./goal.js";
 import { BonusAdd } from "./bonus.js";
 import { saveCSV, ExportText } from "./export.js";
+import { CloseMonth } from "./closemonth.js";
 import { panelShown } from "./day.js";
 
 const REFRESH_MS = 60_000;
@@ -20,7 +21,6 @@ const ROWS = [{ id: "week", label: "по неделям" }, { id: "day", label: 
 const DOWN = "Сборщик не запущен";
 
 const monthName = (month) => MONTH_NAMES[Number(month.slice(5, 7)) - 1]; // "ноябрь"
-const title = (month) => monthName(month)[0].toUpperCase() + monthName(month).slice(1); // "Ноябрь"
 const dayOfMonth = (day) => dayTitle(day).split(", ")[1]; // "2026-12-01" → "1 декабря"
 const problem = (x) => (x?.down ? DOWN : (x?.error ?? null));
 
@@ -52,6 +52,11 @@ export class Report {
     const shown = Boolean(props()?.overlay) || panelShown(layout());
     if (shown && (!this.wasShown || Date.now() - this.loadedAt >= REFRESH_MS)) this.load(cx);
     this.wasShown = shown;
+  }
+
+  // A project and month asked for from elsewhere (Закрыть месяц's `добавить`).
+  show({ project, month }, cx) {
+    this.choose({ project, month: month === this.today?.slice(0, 7) ? null : month, menu: null }, cx);
   }
 
   shownMonth() {
@@ -151,7 +156,11 @@ export class Report {
 
   reopen(cx) {
     const month = this.shownMonth();
-    cx.spawn((cx) => this.write(["month", "reopen", month], `${title(month)} открыт заново.`, cx));
+    cx.spawn((cx) => this.write(["month", "reopen", month], `${monthTitle(month)} открыт заново.`, cx));
+  }
+
+  closeMonth(cx) {
+    CloseMonth.open(this.showDialog, { month: this.state.month, project: this.project, name: this.name(this.project), open: this.open, onDone: (text, cx) => this.saved(text, cx) }, cx);
   }
 
   removeBonus(id, cx) {
@@ -287,7 +296,7 @@ export class Report {
       const at = [dayOfMonth(dayString(st.closed_at)), st.sent && "отчёт отправлен"].filter(Boolean).join(" · ");
       return box
         .child(div().text_color(t.muted).child(Icon("lock", 14)))
-        .child(div().flex_none().child(`${title(month)} закрыт`))
+        .child(div().flex_none().child(`${monthTitle(month)} закрыт`))
         .child(note(at))
         .child(div().flex_1())
         .child(Link({ id: "report-reopen", label: "открыть заново", onClick: (cx) => this.reopen(cx) }));
@@ -296,9 +305,10 @@ export class Report {
     const [y, m] = month.split("-").map(Number);
     return box
       .child(div().text_color(t.muted).child(Icon("lock-open", 14)))
-      .child(div().flex_none().child(`${title(month)} открыт`))
+      .child(div().flex_none().child(`${monthTitle(month)} открыт`))
       .child(note(`правила и правки ещё меняют цифры${prev}`))
       .child(div().flex_1())
+      .when(st.over, (el) => el.child(Button({ id: "report-close-month", label: "Закрыть месяц", icon: "lock", onClick: (cx) => this.closeMonth(cx) })))
       .when(!st.over, (el) => el.child(div().flex_none().text_size(TEXT.small).text_color(t.dim).child(`закрыть можно с ${dayOfMonth(dayString(new Date(y, m, 1).getTime()))}`)));
   }
 

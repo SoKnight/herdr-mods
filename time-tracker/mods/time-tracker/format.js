@@ -194,14 +194,25 @@ export function dialogWrites(opened, now) {
 // "2026-11" → "ноября 2026".
 export const monthOf = (month) => `${MONTHS[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
 
-const monthTitle = (i) => MONTH_NAMES[i][0].toUpperCase() + MONTH_NAMES[i].slice(1);
+// "2026-10" → "Октябрь".
+export const monthTitle = (month) => {
+  const name = MONTH_NAMES[Number(month.slice(5, 7)) - 1];
+  return name[0].toUpperCase() + name.slice(1);
+};
+
+// "2026-11" → "ноября".
+export const monthGenitive = (month) => MONTHS[Number(month.slice(5, 7)) - 1];
+
+// A 409 `closed` answer as День's question; null for a v1 period, whose callers keep v1's text.
+export const closedText = (r) => (r.month ? `${monthTitle(r.month)} закрыт. Открыть заново?` : null);
 
 // The n months up to today's, newest first: [{ id: "2026-11", label: "Ноябрь 2026" }, …].
 export function monthOptions(today, n = 12) {
   const [y, m] = today.split("-").map(Number);
   return Array.from({ length: n }, (_, i) => {
     const d = new Date(y, m - 1 - i, 1);
-    return { id: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`, label: `${monthTitle(d.getMonth())} ${d.getFullYear()}` };
+    const id = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+    return { id, label: `${monthTitle(id)} ${d.getFullYear()}` };
   });
 }
 
@@ -263,6 +274,18 @@ export const offLabel = (kind) => OFF_KINDS.find((k) => k.id === kind)?.label ??
 // "23 – 27 ноября", "23 ноября", "30 ноября – 2 декабря".
 export const offTitle = (from, to) => daySpan(from, to, MONTHS, " – ");
 
+// `month state`'s holidays and days off, joined where they touch: "4 ноя", "4 ноя, 23–27 ноя", "нет".
+export function offDaysText({ holidays = [], days_off = [] }) {
+  const spans = [...holidays.map((d) => ({ from: d, to: d })), ...days_off.map(({ from, to }) => ({ from, to }))].sort((a, b) => (a.from < b.from ? -1 : 1));
+  const joined = [];
+  for (const s of spans) {
+    const last = joined[joined.length - 1];
+    if (last && s.from <= dayString(midnight(last.to, 1))) last.to = s.to > last.to ? s.to : last.to;
+    else joined.push({ ...s });
+  }
+  return joined.length ? joined.map((s) => daySpan(s.from, s.to, SHORT_MONTHS, "–")).join(", ") : "нет";
+}
+
 export const workdaysText = (n) => plural(n, "раб. день", "раб. дня", "раб. дней");
 
 // How much plan marking these `plan` days off takes from a project, whole minutes.
@@ -270,7 +293,7 @@ export const offReduce = (days, project) => Math.round(days.reduce((n, d) => n +
 
 const ENTRY_KIND = { project: "assign", exclude: "excl", activity: "activity", note: "note", add: "manual" };
 
-// История правок: corrections, rule, goal and pay changes and days off as rows, newest first; change kinds it
+// История правок: corrections, rule, goal, pay and month changes and days off as rows, newest first; change kinds it
 // doesn't know are left out. opts: name(project id), activity(id), ruleText(rule), dayStartMs.
 export function historyEntries({ corrections = [], changes = [], days_off = [] }, { name, activity, ruleText, dayStartMs }) {
   const span = (c) => `${hhmm(c.start)}–${hhmm(c.end)}`;
@@ -301,8 +324,14 @@ export function historyEntries({ corrections = [], changes = [], days_off = [] }
     const title = p.kind === "none" ? `Оплата ${name(h.project)} снята` : `Оплата ${name(h.project)}: ${payShort(p)}`;
     return { key: `h:${h.id}`, kind: "pay", title, sub: `с ${monthOf(p.from)}${was ? ` · было: ${payShort(was)}` : p.kind === "none" ? "" : " · новая"}`, at: h.at, undo: ["history", "undo", String(h.id)] };
   };
+  const fromMonth = (h) => {
+    const entry = { key: `h:${h.id}`, kind: h.kind, month: h.month, at: h.at, undo: ["history", "undo", String(h.id)] };
+    if (h.kind === "month-reopen") return { ...entry, title: `${monthTitle(h.month)} открыт заново`, sub: "закрытые цифры сохранены" };
+    return { ...entry, title: `${monthTitle(h.month)} закрыт${h.sent ? " · отчёт отправлен" : ""}`, border: true, undoLabel: "открыть заново" };
+  };
   const fromChange = (h) => {
     if (h.kind === "goal-set") return fromGoal(h);
+    if (h.kind === "month-close" || h.kind === "month-reopen") return fromMonth(h);
     if (h.kind === "pay-set") return fromPay(h);
     if (!h.kind?.startsWith("rule-")) return null;
     const range = `применено к ${appliedRange(h.from, h.at, dayStartMs)}`;

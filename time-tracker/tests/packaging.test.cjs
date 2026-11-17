@@ -57,3 +57,8 @@ test('the Отчёт screen has its icons', () => {
   for (const icon of ['lock', 'lock-open', 'wallet', 'download', 'copy'])
     assert.match(fs.readFileSync(path.join(runtime, 'icons', `${icon}.svg`), 'utf8'), /^<!-- @license lucide-static v1\.68\.0 - ISC -->/, icon);
 });
+
+test('the Закрыть месяц dialog has its icons', () => {
+  for (const icon of ['circle-alert', 'circle', 'circle-check'])
+    assert.match(fs.readFileSync(path.join(runtime, 'icons', `${icon}.svg`), 'utf8'), /^<!-- @license lucide-static v1\.68\.0 - ISC -->/, icon);
+});

@@ -110,7 +110,7 @@ export class Inbox {
       try {
         const r = await call(["inbox", "apply", JSON.stringify({ day: this.data.day, past: this.past, decisions })]);
         if (r.down || r.error) {
-          this.message = { text: r.down ? "Сборщик не запущен" : r.error === "closed" ? "Период закрыт выгрузкой: ничего не записано." : r.error, error: true };
+          this.message = { text: r.down ? "Сборщик не запущен" : r.error === "closed" ? "Месяц закрыт: ничего не записано." : r.error, error: true };
         } else {
           this.show(this.want, cx);
           this.message = { text: `Разобрано: правил — ${r.rules}, правок — ${r.corrections}.` };

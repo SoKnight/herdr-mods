@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/format.js'), 'utf8');
-const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs, fmtMin, signed, roundRows, parseHours, hoursText, goalOn, goalShort, goalLine, goalVersion, weeklyTotal, progressText, goalBlock, forecastLine, weekDays, weekTitle, weekRelative, mainGoal, dayDiff, weekRows, monthGrid, cellBars, offTitle, workdaysText, offReduce, money, parseMoney, monthOptions, goalStrip, reportFootnote, exportFile, payOn, payShort, dialogWrites };`)();
+const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs, fmtMin, signed, roundRows, parseHours, hoursText, goalOn, goalShort, goalLine, goalVersion, weeklyTotal, progressText, goalBlock, forecastLine, weekDays, weekTitle, weekRelative, mainGoal, dayDiff, weekRows, monthGrid, cellBars, offTitle, workdaysText, offReduce, money, parseMoney, monthOptions, goalStrip, reportFootnote, exportFile, payOn, payShort, dialogWrites, monthTitle, monthGenitive, closedText, offDaysText };`)();
 const rcode = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/rules.js'), 'utf8');
 const R = new Function(`${rcode.replace(/^export /gm, '')}
 return { ruleText, targetName };`)();
@@ -313,4 +313,21 @@ test('month edges', () => {
     { id: 2, from: '2026-11-30', to: '2026-12-02', kind: 'vacation', projects: [], made: 2 },
   ] }, opts);
   assert.deepEqual(e.map((x) => [x.title, x.sub]), [['23 ноя · отгул', 'план снижен: u'], ['30 ноя – 2 дек · отпуск', 'план не менялся']]);
+});
+
+test('month close wording', () => {
+  assert.deepEqual([F.monthTitle('2026-10'), F.monthGenitive('2026-11')], ['Октябрь', 'ноября']);
+  assert.equal(F.closedText({ error: 'closed', period: 3, month: '2026-11' }), 'Ноябрь закрыт. Открыть заново?');
+  assert.equal(F.closedText({ error: 'closed', period: 3, month: '' }), null);
+  assert.equal(F.offDaysText({ holidays: ['2026-11-04'], days_off: [{ from: '2026-11-23', to: '2026-11-27' }] }), '4 ноя, 23–27 ноя');
+  assert.equal(F.offDaysText({ holidays: [], days_off: [] }), 'нет');
+  const lookup = { name: (id) => id, activity: () => '', ruleText: () => '', dayStartMs: 6 * 3600_000 };
+  const e = F.historyEntries({ changes: [
+    { id: 9, at: new Date(2026, 11, 2, 12, 0).getTime(), kind: 'month-reopen', month: '2026-10', period: 2 },
+    { id: 8, at: new Date(2026, 10, 2, 12, 0).getTime(), kind: 'month-close', month: '2026-10', period: 2, sent: true },
+  ] }, lookup);
+  assert.deepEqual(e.map((x) => [x.kind, x.title, x.sub ?? null, Boolean(x.border), x.undo]), [
+    ['month-reopen', 'Октябрь открыт заново', 'закрытые цифры сохранены', false, ['history', 'undo', '9']],
+    ['month-close', 'Октябрь закрыт · отчёт отправлен', null, true, ['history', 'undo', '8']],
+  ]);
 });

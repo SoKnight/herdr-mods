@@ -4,7 +4,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex, InputState, ScrollHandle } from "gpui-base";
 import { theme, props, layout } from "herdr";
 import { call } from "../client.js";
-import { formatDuration, activityLabel, catalog, hhmm, dayTitle, plural, midnight, ACTIVITIES } from "../format.js";
+import { formatDuration, activityLabel, catalog, hhmm, dayTitle, plural, midnight, signed, closedText, monthTitle, ACTIVITIES } from "../format.js";
 import { rangeFromDrag, stepDay } from "../lanes.js";
 import { silence } from "../chip.js";
 import { Button, Icon, IconButton, Message, TEXT } from "../ui.js";
@@ -52,7 +52,7 @@ export class Day {
     this.divergences = [];
     this.error = null;
     this.message = null; // { text, error?, undo? }
-    this.pending = null; // a correction a closed period stopped: { period, date, retry, done }
+    this.pending = null; // a correction a closed period stopped: { period, month, text, date, retry, done }
     this.loading = false;
     this.loadedAt = 0;
     this.wasShown = false;
@@ -153,7 +153,9 @@ export class Day {
         if (!r.down && !r.error) this.load(cx);
         return;
       }
-      if (r.error === "closed" && r.period) {
+      if (r.error === "closed" && r.month) {
+        this.pending = { month: r.month, text: closedText(r), retry: step, done };
+      } else if (r.error === "closed" && r.period) {
         const periods = await call(["periods"]);
         if (visit !== this.visit) return;
         const p = Array.isArray(periods) ? periods.find((x) => x.id === r.period) : null;
@@ -180,16 +182,22 @@ export class Day {
     this.perform(cx, () => call(["correct", "rm", String(id)]), () => ({ text: `Правка #${id} отменена.` }));
   }
 
-  reopen(period, cx, then = () => ({ text: "Период переоткрыт." })) {
+  // A month record is reopened by its month, a v1 period by its id.
+  reopenArgs({ month, period }) {
+    return month ? ["month", "reopen", month] : ["reopen", String(period)];
+  }
+
+  reopen(closed, cx) {
     this.fresh = false;
-    this.perform(cx, () => call(["reopen", String(period)]), then);
+    this.perform(cx, () => call(this.reopenArgs(closed)), () => ({ text: closed.month ? `${monthTitle(closed.month)} открыт заново.` : "Период переоткрыт." }));
   }
 
   confirmReopen(cx) {
-    const { period, retry, done } = this.pending;
+    const { retry, done } = this.pending;
+    const args = this.reopenArgs(this.pending);
     this.pending = null;
     this.perform(cx, async () => {
-      const r = await call(["reopen", String(period)]);
+      const r = await call(args);
       return r.down || r.error ? r : retry();
     }, done);
   }
@@ -381,13 +389,16 @@ export class Day {
       );
   }
 
-  // Above the strip: an error, a reopen to confirm, closed exports the rules would change, the last message.
+  // Above the strip: an error, a reopen to confirm, closed months and exports the rules would change, the last message.
   notices(t) {
+    const months = new Map();
+    for (const v of this.divergences) if (v.month) months.set(v.month, [...(months.get(v.month) ?? []), v]);
     return [
       this.silentSince !== null && this.silentView(t),
       this.error && Message(this.error, true),
       this.pending && this.confirmView(t),
-      ...this.divergences.map((v) => this.divergenceView(v, t)),
+      ...[...months].map(([month, list]) => this.monthDivergenceView(month, list, t)),
+      ...this.divergences.filter((v) => !v.month).map((v) => this.divergenceView(v, t)),
       this.message && this.messageView(t),
     ].filter(Boolean);
   }
@@ -438,10 +449,24 @@ export class Day {
 
   confirmView(t) {
     const p = this.pending;
-    return this.strip("day-confirm", t, `Период закрыт выгрузкой${p.date ? ` от ${p.date}` : ""}. Переоткрыть?`, [
+    return this.strip("day-confirm", t, p.text ?? `Период закрыт выгрузкой${p.date ? ` от ${p.date}` : ""}. Переоткрыть?`, [
       Link({ id: "day-confirm-no", label: "Отмена", color: t.muted, onClick: (cx) => ((this.pending = null), cx.notify()) }),
-      Link({ id: "day-confirm-yes", label: "Переоткрыть", onClick: (cx) => this.confirmReopen(cx) }),
+      Link({ id: "day-confirm-yes", label: p.month ? "Открыть заново" : "Переоткрыть", onClick: (cx) => this.confirmReopen(cx) }),
     ]);
+  }
+
+  // A closed month the rules would now count otherwise: one line for all its projects.
+  monthDivergenceView(month, list, t) {
+    const moves = list.map((v) => `${this.name(v.project)} ${signed(Math.round(v.delta_ms / 60_000))}`).join(", ");
+    return this.strip(`day-div-${month}`, t, `${monthTitle(month)} закрыт: сейчас правила дали бы ${moves}.`, [
+      Link({ id: `day-div-fresh-${month}`, label: this.fresh ? "Показать закрытые цифры" : "Посмотреть разницу", onClick: (cx) => this.toggleFresh(cx) }),
+      Link({ id: `day-div-reopen-${month}`, label: "Открыть заново", onClick: (cx) => this.reopen({ month }, cx) }),
+    ]);
+  }
+
+  toggleFresh(cx) {
+    this.fresh = !this.fresh;
+    this.load(cx);
   }
 
   divergenceView(v, t) {
@@ -449,12 +474,9 @@ export class Day {
       Link({
         id: `day-div-fresh-${v.period}`,
         label: this.fresh ? "Показать выгрузку" : "Посмотреть разницу",
-        onClick: (cx) => {
-          this.fresh = !this.fresh;
-          this.load(cx);
-        },
+        onClick: (cx) => this.toggleFresh(cx),
       }),
-      Link({ id: `day-div-reopen-${v.period}`, label: "Переоткрыть", onClick: (cx) => this.reopen(v.period, cx) }),
+      Link({ id: `day-div-reopen-${v.period}`, label: "Переоткрыть", onClick: (cx) => this.reopen(v, cx) }),
     ]);
   }
 

@@ -121,8 +121,8 @@ export function Placeholder(title, text) {
 }
 
 // A dialog over the whole panel (which is `relative`): a dimmed backdrop that keeps presses from what's
-// under it, and the dialog centred on it. `sub` sits after the title; `footer` is the row's children.
-export function Dialog({ id, width, title, sub, onClose, body, footer }) {
+// under it, and the dialog centred on it. `icon` sits before the title, `sub` after it; `footer` is the row's children.
+export function Dialog({ id, width, icon, title, sub, onClose, body, footer }) {
   const t = theme();
   const stop = (_e, cx) => cx.stop_propagation();
   return div()
@@ -155,6 +155,7 @@ export function Dialog({ id, width, title, sub, onClose, body, footer }) {
             .items_center()
             .border_b(1)
             .border_color(t.border)
+            .when(Boolean(icon), (el) => el.child(Icon(icon, 16)))
             .child(div().flex_none().text_size(15).font_semibold().child(title))
             .when(Boolean(sub), (el) => el.child(sub))
             .child(div().flex_1())
