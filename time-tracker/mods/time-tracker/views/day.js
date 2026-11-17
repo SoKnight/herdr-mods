@@ -1,7 +1,7 @@
 // The panel's День tab: the day as a strip, its sessions as stretches, my time by project on the
 // right, and corrections made by selecting time. The Сессия tab is the same view over a session.
 import { div } from "gpui-kit";
-import { h_flex, v_flex, InputState } from "gpui-base";
+import { h_flex, v_flex, InputState, ScrollHandle } from "gpui-base";
 import { theme, props, layout } from "herdr";
 import { call } from "../client.js";
 import { formatDuration, activityLabel, catalog, hhmm, dayTitle, plural, ACTIVITIES } from "../format.js";
@@ -61,6 +61,8 @@ export class Day {
     this.assigning = null;
     this.silentSince = null;
     this.lastSample = 0; // when the collector last heard from the computer
+    this.scroll = ScrollHandle.new(); // the rows under the strip
+    this.scrolledTo = null; // the rows last scrolled to their end
   }
 
   // Read again on showing, then once a minute while shown; a hidden panel reads nothing.
@@ -286,12 +288,30 @@ export class Day {
       .when(Boolean(this.data), (el) => el.child(this.sideView(t)));
   }
 
+  // The header and strip stay put while the rows scroll under them. The rows open at their end,
+  // and go back there when `key` changes (another day, a new stretch), so the latest one shows.
+  column(id, top, rows, key, after = []) {
+    if (key !== this.scrolledTo) {
+      this.scrolledTo = key;
+      this.scroll.scroll_to_item(rows.length); // the marker after the rows
+    }
+    return v_flex()
+      .flex_1()
+      .min_w(0)
+      .min_h(0)
+      .child(v_flex().flex_none().pt(18).px(22).pb(14).gap(14).children(top))
+      .child(
+        v_flex().id(id).flex_1().min_h(0).overflow_y_scroll().track_scroll(this.scroll).px(22).pb(18).gap(14)
+          .children(rows).child(div().h(1).flex_none()).children(after),
+      );
+  }
+
   left(t) {
     const d = this.data;
-    const col = v_flex().id("day").flex_1().min_w(0).min_h(0).overflow_y_scroll().pt(18).px(22).pb(18).gap(14).child(this.header(t)).children(this.notices(t));
-    if (!d) return col.child(Message(this.loading ? "Загрузка…" : ""));
+    const top = [this.header(t), ...this.notices(t)];
+    if (!d) return this.column("day", [...top, Message(this.loading ? "Загрузка…" : "")], [], null);
     const { from, to } = this.range();
-    col.child(
+    top.push(
       v_flex()
         .flex_none()
         .gap(4)
@@ -299,10 +319,11 @@ export class Day {
         .child(Legend(t)),
     );
     const sessions = d.sessions ?? [];
-    if (!sessions.length) col.child(Message("За этот день ничего не насчитано."));
-    for (const s of sessions) col.child(v_flex().flex_none().child(SessionHeader(this, t, s)).child(StretchList(this, t, s.stretches, { row: 30, gap: 16 })));
-    if (this.unassignedOpen) col.child(Unassigned(this, t));
-    return col;
+    const rows = sessions.length
+      ? sessions.map((s) => v_flex().flex_none().child(SessionHeader(this, t, s)).child(StretchList(this, t, s.stretches, { row: 30, gap: 16 })))
+      : [Message("За этот день ничего не насчитано.")];
+    const key = `${from}|${sessions.map((s) => s.stretches.length).join(",")}`;
+    return this.column("day", top, rows, key, this.unassignedOpen ? [Unassigned(this, t)] : []);
   }
 
   sideView(t) {

@@ -50,34 +50,33 @@ export class SessionView extends Day {
   left(t) {
     const d = this.data;
     const s = d?.session;
-    const col = v_flex().id("session").flex_1().min_w(0).min_h(0).overflow_y_scroll().pt(18).px(22).pb(18).gap(14).children(this.notices(t));
-    if (!d) return col.child(Message(this.loading ? "Загрузка…" : ""));
-    if (!s?.open) return col.child(this.empty(t, s));
+    if (!d || !s?.open) {
+      const col = v_flex().id("session").flex_1().min_w(0).min_h(0).overflow_y_scroll().pt(18).px(22).pb(18).gap(14).children(this.notices(t));
+      return col.child(d ? this.empty(t, s) : Message(this.loading ? "Загрузка…" : ""));
+    }
     const { from, to } = this.range();
-    return col
-      .child(
-        v_flex()
-          .flex_none()
-          .gap(4)
-          .child(
-            h_flex()
-              .gap(10)
-              .items_center()
-              .child(div().text_size(15).font_semibold().child("Идёт сессия"))
-              .child(div().text_color(t.dim).child(`с ${hhmm(s.start)} · ${formatDuration(Date.now() - s.start)}`))
-              .child(div().flex_1())
-              .child(Button({ id: "session-end", label: "Завершить", onClick: (cx) => this.endSession(cx) })),
-          )
-          .child(div().text_size(TEXT.small).text_color(t.dim).child(sessionNote(s.manual, d.session_idle_minutes))),
-      )
-      .child(
-        v_flex()
-          .flex_none()
-          .gap(4)
-          .child(DragArea(this).gap(4).child(Strip(this, t, { from, to, h: 26, radius: 5 })).child(AgentsStrip(this, t, { from, to })).child(HourLabels(t, from, to))),
-      )
-      .child(StretchList(this, t, s.stretches, { row: 32, gap: 18 }))
-      .when(this.unassignedOpen, (el) => el.child(Unassigned(this, t)));
+    const top = [
+      ...this.notices(t),
+      v_flex()
+        .flex_none()
+        .gap(4)
+        .child(
+          h_flex()
+            .gap(10)
+            .items_center()
+            .child(div().text_size(15).font_semibold().child("Идёт сессия"))
+            .child(div().text_color(t.dim).child(`с ${hhmm(s.start)} · ${formatDuration(Date.now() - s.start)}`))
+            .child(div().flex_1())
+            .child(Button({ id: "session-end", label: "Завершить", onClick: (cx) => this.endSession(cx) })),
+        )
+        .child(div().text_size(TEXT.small).text_color(t.dim).child(sessionNote(s.manual, d.session_idle_minutes))),
+      v_flex()
+        .flex_none()
+        .gap(4)
+        .child(DragArea(this).gap(4).child(Strip(this, t, { from, to, h: 26, radius: 5 })).child(AgentsStrip(this, t, { from, to })).child(HourLabels(t, from, to))),
+    ];
+    const rows = [StretchList(this, t, s.stretches, { row: 32, gap: 18 })];
+    return this.column("session", top, rows, `${s.start}|${s.stretches.length}`, this.unassignedOpen ? [Unassigned(this, t)] : []);
   }
 
   empty(t, last) {
