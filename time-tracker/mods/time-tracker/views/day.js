@@ -9,7 +9,7 @@ import { rangeFromDrag, stepDay, ruleFor } from "../lanes.js";
 import { Message, TEXT } from "../ui.js";
 import { Link } from "./menu.js";
 import { Unassigned } from "./totals.js";
-import { Strip, AgentsStrip, HourLabels, Legend } from "./strip.js";
+import { Strip, AgentsStrip, HourLabels, Legend, DragArea } from "./strip.js";
 import { StretchList, SessionHeader } from "./stretches.js";
 import { Side } from "./side.js";
 
@@ -277,9 +277,7 @@ export class Day {
       v_flex()
         .flex_none()
         .gap(4)
-        .child(Strip(this, t, { from, to, h: 20, radius: 4 }))
-        .child(AgentsStrip(this, t, { from, to }))
-        .child(HourLabels(t, from, to))
+        .child(DragArea(this).gap(4).child(Strip(this, t, { from, to, h: 20, radius: 4 })).child(AgentsStrip(this, t, { from, to })).child(HourLabels(t, from, to)))
         .child(Legend(t)),
     );
     const sessions = d.sessions ?? [];

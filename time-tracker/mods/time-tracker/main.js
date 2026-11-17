@@ -29,7 +29,7 @@ export default class TimeTracker extends View {
       cx.notify();
     };
     const open = (tab, cx) => this.open(tab, cx);
-    this.parts = { session: placeholder(["Сессия", "Появится в следующем обновлении."]), projects: placeholder(PROJECTS), settings: placeholder(SETTINGS), day: new Day(open),week: new Table("week", openDay), month: new Table("month", openDay), report: new Report() };
+    this.parts = { session: placeholder(["Сессия", "Появится в следующем обновлении."]), projects: placeholder(PROJECTS), settings: placeholder(SETTINGS), day: new Day(open), week: new Table("week", openDay), month: new Table("month", openDay), report: new Report() };
     if (checking()) return;
     this.tick(cx);
     cx.timer.every(5000, (cx) => this.tick(cx));

@@ -9,7 +9,7 @@ import { Link } from "./menu.js";
 // total: ms; lines: strings.
 export function Side(view, t, { caption, total, lines }) {
   const order = view.order();
-  const projects = view.data.report.projects.filter((p) => p.me > 0);
+  const projects = view.data.report.projects.filter((p) => p.me >= 60_000); // under a minute reads as "—"
   const max = Math.max(...projects.map((p) => p.me));
   return v_flex()
     .id("day-side")

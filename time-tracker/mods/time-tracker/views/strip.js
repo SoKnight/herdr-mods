@@ -1,7 +1,7 @@
 // A stretch of time as a strip: the computer on, my time by project, now; a drag over it selects time
 // for the menu. Under it the agents, the hours and the legend.
 import { div } from "gpui-kit";
-import { h_flex, Popup } from "gpui-base";
+import { h_flex, v_flex, Popup } from "gpui-base";
 import { hhmm } from "../format.js";
 import { bars, projectColor, ticks } from "../lanes.js";
 import { TEXT } from "../ui.js";
@@ -33,13 +33,27 @@ export function Strip(view, t, { from, to, h, radius }) {
     .h(h)
     .w_full()
     .flex_none()
-    .cursor_crosshair()
     .on_size_change((size, cx) => {
       if (size.width !== view.width) {
         view.width = size.width;
         cx.notify();
       }
     })
+    .child(track);
+
+  const g = view.drag;
+  const range = (el, x, w) => el.absolute().top(0).h(h).left(view.pct(x)).w(view.pct(w)).bg(t.selection).border_l(2).border_r(2).border_color(t.foreground);
+  if (g) strip.child(range(div(), Math.min(g.x0, g.x1), Math.abs(g.x1 - g.x0)));
+  else if (view.sel) strip.child(range(Popup.new("day-sel", div().size_full()), view.sel.x, view.sel.w).anchor("top_left").content(SelectionMenu(view)));
+  return strip;
+}
+
+// The strip with what goes under it, as wide as the strip: a drag over the strip lives here, so the
+// pointer can drift off the 20 px strip without ending it.
+export function DragArea(view) {
+  return v_flex()
+    .id("day-timeline")
+    .cursor_crosshair()
     .on_mouse_down("left", (e, cx) => {
       const p = view.point(e);
       view.sel = null;
@@ -52,14 +66,7 @@ export function Strip(view, t, { from, to, h, radius }) {
       cx.notify();
     })
     .on_mouse_up("left", (_e, cx) => view.finishDrag(cx))
-    .on_hover((hovered, cx) => !hovered && view.drag && view.finishDrag(cx))
-    .child(track);
-
-  const g = view.drag;
-  const range = (el, x, w) => el.absolute().top(0).h(h).left(view.pct(x)).w(view.pct(w)).bg(t.selection).border_l(2).border_r(2).border_color(t.foreground);
-  if (g) strip.child(range(div(), Math.min(g.x0, g.x1), Math.abs(g.x1 - g.x0)));
-  else if (view.sel) strip.child(range(Popup.new("day-sel", div().size_full()), view.sel.x, view.sel.w).anchor("top_left").content(SelectionMenu(view)));
-  return strip;
+    .on_hover((hovered, cx) => !hovered && view.drag && view.finishDrag(cx));
 }
 
 export function AgentsStrip(view, t, { from, to }) {
