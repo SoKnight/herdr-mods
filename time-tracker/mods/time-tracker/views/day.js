@@ -66,8 +66,10 @@ export class Day {
   }
 
   // Read again on showing, then once a minute while shown; a hidden panel reads nothing.
+  // Back from another tab or a hidden panel, the last «Отменить» goes: History or Разбор may have removed it since.
   tick(cx) {
     const shown = Boolean(props()?.overlay) || panelShown(layout());
+    if (shown && !this.wasShown && this.message?.undo) this.message = { ...this.message, undo: null };
     if (shown && (!this.wasShown || Date.now() - this.loadedAt >= REFRESH_MS)) this.load(cx);
     this.wasShown = shown;
   }

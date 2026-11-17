@@ -230,7 +230,8 @@ func (st *Store) ClearOpen() error {
 	return nil
 }
 
-// addItem appends to a JSON array file, assigning max(id)+1.
+// addItem appends to a JSON array file, assigning an id above every one it ever held: max(id)+1, or past
+// the highest removed id that removeItem keeps in <file>.maxid, so a stale id never names a new item.
 func addItem[T any](st *Store, file string, v T, id func(*T) *int64) (T, error) {
 	vs, err := addItems(st, file, []T{v}, id)
 	return vs[0], err
@@ -245,7 +246,11 @@ func addItems[T any](st *Store, file string, vs []T, id func(*T) *int64) ([]T, e
 	if err := readJSON(path, &all); err != nil {
 		return vs, err
 	}
-	var next int64 = 1
+	var removed int64 // the highest id removeItem took out; missing for a file that never lost one
+	if err := readJSON(path+".maxid", &removed); err != nil {
+		return vs, err
+	}
+	next := removed + 1
 	for i := range all {
 		next = max(next, *id(&all[i])+1)
 	}
@@ -269,6 +274,17 @@ func removeItem[T any](st *Store, file string, want int64, id func(*T) *int64) e
 		if *id(&all[i]) != want {
 			kept = append(kept, all[i])
 		}
+	}
+	if len(kept) == len(all) {
+		return nil
+	}
+	// The high-water mark goes first: a crash before the file is rewritten only skips an id.
+	var removed int64
+	if err := readJSON(path+".maxid", &removed); err != nil {
+		return err
+	}
+	if err := writeJSON(path+".maxid", max(removed, want)); err != nil {
+		return err
 	}
 	return writeJSON(path, kept)
 }

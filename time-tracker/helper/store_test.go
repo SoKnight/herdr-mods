@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -129,6 +130,30 @@ func TestCorrectionsIdsAndRemove(t *testing.T) {
 	c3, err := st.AddCorrection(Correction{Kind: "add"})
 	must(t, err)
 	assertEq(t, c3.ID, int64(3))
+}
+
+// A removed id is never handed out again, so a stale «Отменить» cannot delete another correction.
+func TestCorrectionIdsNotReused(t *testing.T) {
+	st := tempStore(t)
+	for range 2 {
+		_, err := st.AddCorrection(Correction{Kind: "note"})
+		must(t, err)
+	}
+	must(t, st.RemoveCorrection(2))
+	c, err := st.AddCorrection(Correction{Kind: "note"})
+	must(t, err)
+	assertEq(t, c.ID, int64(3))
+	must(t, st.RemoveCorrection(3))
+	must(t, st.RemoveCorrection(1))
+	cs, err := st.AddCorrections([]Correction{{Kind: "note"}, {Kind: "note"}})
+	must(t, err)
+	assertEq(t, fmt.Sprint(cs[0].ID, cs[1].ID), "4 5")
+
+	old := tempStore(t) // a file from before the high-water mark: max+1
+	must(t, writeJSON(filepath.Join(old.Dir, "corrections.json"), []Correction{{ID: 7, Kind: "note"}}))
+	c, err = old.AddCorrection(Correction{Kind: "note"})
+	must(t, err)
+	assertEq(t, c.ID, int64(8))
 }
 
 func TestPeriodsAddRemove(t *testing.T) {
