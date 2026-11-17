@@ -10,7 +10,7 @@ import { theme } from "herdr";
 import { Panel, PanelHeader, HeaderTab, Icon, Placeholder } from "./ui.js";
 
 const TABS = [["session", "Сессия"], ["day", "День"], ["week", "Неделя"], ["month", "Месяц"], ["report", "Отчёт"]];
-const PROJECTS = ["Проекты", "Список проектов, правила и цвета появятся здесь в следующем обновлении. Пока проекты и правила задаются в projects.json (%LOCALAPPDATA%\herdr-time\projects.json), сборщик перечитывает его сам."];
+const PROJECTS = ["Проекты", "Список проектов, правила и цвета появятся здесь в следующем обновлении. Пока проекты и правила задаются в projects.json (%LOCALAPPDATA%\\herdr-time\\projects.json), сборщик перечитывает его сам."];
 const SETTINGS = ["Настройки", "Экран настроек появится позже. Пока они в settings.json рядом с projects.json: session_idle_minutes (45), pause_minutes (15), day_start (\"06:00\")."];
 const placeholder = ([title, text]) => ({ tick() {}, render: () => Placeholder(title, text) });
 
