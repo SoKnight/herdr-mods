@@ -227,3 +227,57 @@ export function historyEntries({ corrections = [], changes = [] }, { name, activ
   };
   return [...corrections.map(fromCorrection), ...changes.map(fromChange)].sort((a, b) => b.at - a.at);
 }
+
+// The seven days, Monday to Sunday, of the week around a day.
+export function weekDays(day) {
+  const back = (new Date(midnight(day)).getDay() + 6) % 7;
+  return [0, 1, 2, 3, 4, 5, 6].map((i) => dayString(midnight(day, i - back)));
+}
+
+const dayMonthOf = (day) => [Number(day.slice(8)), MONTHS[Number(day.slice(5, 7)) - 1]];
+
+// "9 – 15 ноября", "30 ноября – 6 декабря".
+export function weekTitle(days) {
+  const [d1, m1] = dayMonthOf(days[0]), [d2, m2] = dayMonthOf(days[6]);
+  return m1 === m2 ? `${d1} – ${d2} ${m2}` : `${d1} ${m1} – ${d2} ${m2}`;
+}
+
+export function weekRelative(days, today) {
+  if (weekDays(today)[0] === days[0]) return "эта неделя";
+  return weekDays(dayString(midnight(today, -7)))[0] === days[0] ? "прошлая неделя" : "";
+}
+
+// The project whose day goal the Week's «цель дня» shows: the first in order with one.
+export const mainGoal = (goals, order) => order.find((id) => goals?.[id]?.period === "day") ?? null;
+
+// One day's «цель дня»: fact against the plan, or time on an unplanned day; nothing after today.
+export function dayDiff(day, project, today) {
+  if (day.day > today) return { text: "" };
+  const plan = day.plan?.[project] ?? 0, fact = day.fact?.[project] ?? 0;
+  if (plan > 0) return { text: signed(fact - plan), low: fact - plan <= -1 };
+  return { text: fact > 0 ? signed(fact) : "—" };
+}
+
+const sumOf = (m) => Object.values(m ?? {}).reduce((n, v) => n + v, 0);
+
+// The Week's rows from `plan`: each day's minutes as the collector rounded them, and the totals up to today.
+export function weekRows(plan, main) {
+  const rows = plan.days.map((d) => {
+    const [y, m, dd] = d.day.split("-").map(Number);
+    return {
+      day: d.day,
+      label: `${WEEKDAYS[new Date(y, m - 1, dd).getDay()]} ${dd}`,
+      weekend: !d.work,
+      me: sumOf(d.me),
+      agents: sumOf(d.agents),
+      diff: main ? dayDiff(d, main, plan.today) : { text: "" },
+    };
+  });
+  const past = rows.filter((r) => r.day <= plan.today);
+  const totals = {
+    me: past.reduce((n, r) => n + r.me, 0),
+    agents: past.reduce((n, r) => n + r.agents, 0),
+    diff: main ? signed(plan.sums?.[main]?.balance ?? 0) : "",
+  };
+  return { rows, totals };
+}

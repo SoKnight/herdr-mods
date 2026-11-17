@@ -89,7 +89,7 @@ export function HourLabels(t, from, to) {
   return h_flex().h(16).flex_none().justify_between().text_size(TEXT.caption).text_color(t.dim).children(ticks(from, to).map((ms) => div().child(hhmm(ms))));
 }
 
-export function Legend(t, leisure) {
+export function Legend(t, leisure, agents = true) {
   const item = (swatch, label) => h_flex().gap(6).items_center().child(swatch.w(14).flex_none().rounded(2)).child(label);
   return h_flex()
     .gap(16)
@@ -100,6 +100,6 @@ export function Legend(t, leisure) {
     .child(item(div().h(10).bg(t.muted), "я работал"))
     .child(item(div().h(10).bg(t.raised), "включён, без активности"))
     .child(item(div().h(10).bg(t.chrome).border_1().border_color(t.border), "выключен"))
-    .child(item(div().h(4).bg(t.muted), "агенты"))
+    .children(agents ? [item(div().h(4).bg(t.muted), "агенты")] : [])
     .children(leisure ? [item(div().h(10).bg(t.raised).border_1().border_color(t.muted), "досуг")] : []);
 }

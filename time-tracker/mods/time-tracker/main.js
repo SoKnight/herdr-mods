@@ -6,6 +6,7 @@ import { Status } from "./views/status.js";
 import { Day } from "./views/day.js";
 import { SessionView } from "./views/session.js";
 import { Table } from "./views/table.js";
+import { Week } from "./views/week.js";
 import { Report } from "./views/report.js";
 import { Projects } from "./views/projects.js";
 import { Inbox } from "./views/inbox.js";
@@ -34,7 +35,7 @@ export default class TimeTracker extends View {
     const open = (tab, cx, arg) => this.open(tab, cx, arg);
     const showDialog = (d, cx) => this.showDialog(d, cx);
     this.dialog = null; // drawn over the whole panel while set
-    this.parts = { session: new SessionView(open, showDialog), projects: new Projects(open, showDialog), settings: placeholder(SETTINGS), day: new Day(open, showDialog), week: new Table("week", openDay), month: new Table("month", openDay), report: new Report(), inbox: new Inbox(open), history: new History(open) };
+    this.parts = { session: new SessionView(open, showDialog), projects: new Projects(open, showDialog), settings: placeholder(SETTINGS), day: new Day(open, showDialog), week: new Week(openDay, open), month: new Table("month", openDay), report: new Report(), inbox: new Inbox(open), history: new History(open) };
     if (checking()) return;
     this.tick(cx);
     cx.timer.every(5000, (cx) => this.tick(cx));
