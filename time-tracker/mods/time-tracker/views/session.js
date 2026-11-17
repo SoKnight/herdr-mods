@@ -16,6 +16,11 @@ export class SessionView extends Day {
     return ["session"];
   }
 
+  // Today's goals: a session has none of its own.
+  goalArgs() {
+    return ["goals"];
+  }
+
   // A session isn't a day: no today, and the divergences are the day view's.
   took(r) {
     this.data = r;
@@ -91,7 +96,6 @@ export class SessionView extends Day {
     const s = this.data.session;
     return Side(this, t, {
       caption: "Моё время в сессии",
-      total: report.me,
       lines: [
         `агенты ${formatDuration(report.agents)} · перерывы ${formatDuration(s.breaks)}`,
         `${plural(s.switches, "переключение", "переключения", "переключений")} · фокус до ${formatDuration(s.focus)}`,

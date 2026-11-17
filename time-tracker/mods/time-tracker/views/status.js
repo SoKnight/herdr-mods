@@ -4,7 +4,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex, HoverCard } from "gpui-base";
 import { theme, run, focused, spaces, notify, layout, settings } from "herdr";
 import { call } from "../client.js";
-import { formatDuration, hhmm, catalog } from "../format.js";
+import { formatDuration, hhmm, catalog, goalBlock, forecastLine, roundRows } from "../format.js";
 import { chipState } from "../chip.js";
 import { projectColor } from "../lanes.js";
 import { beatFor, shouldSend } from "../signals.js";
@@ -32,6 +32,7 @@ export class Status {
   init(_given, cx) {
     this.status = null;
     this.day = null; // `timeline` for today, read when the card opens
+    this.goals = null; // `goals` for today, read with it
     this.catalog = null; // { projects, activities }
     this.dayAt = 0;
     this.dayBusy = false;
@@ -66,8 +67,9 @@ export class Status {
     cx.notify();
     cx.spawn(async (cx) => {
       try {
-        const [tl, projects] = await Promise.all([call(["timeline"]), call(["projects"])]);
+        const [tl, projects, goals] = await Promise.all([call(["timeline"]), call(["projects"]), call(["goals"])]);
         this.day = tl;
+        this.goals = goals.goals ? goals : null;
         this.catalog = catalog(projects) ?? this.catalog;
         this.dayAt = Date.now();
       } finally {
@@ -149,15 +151,26 @@ export class Status {
     if (this.day?.down || this.day?.error) return body.child(div().text_color(t.ansi3).whitespace_normal().child(this.day.down ? "Сборщик не отвечает" : this.day.error));
     if (!r) return body.child(div().text_color(t.dim).child(this.dayBusy ? "Загрузка…" : "Нет данных"));
     const order = this.catalog?.projects ?? [];
-    const projects = r.projects.filter((p) => p.me >= 60_000);
+    const color = (id) => t[projectColor(id, order)] ?? t.muted;
+    const { rows, total } = roundRows(r.projects); // as День and Неделя count them
+    const projects = rows.filter((p) => p.me >= 60_000);
     const max = Math.max(...projects.map((p) => p.me));
+    const goals = this.goals?.goals ?? [];
+    // With goals, only their projects, against the goal; else today's projects by share.
+    const blocks = goals.length
+      ? goals.map((g) => {
+          const b = goalBlock(g);
+          return ProjectBlock(t, { name: this.name(g.project), color: color(g.project), value: b.value, goal: b.goal, fill: b.fill ?? 0 });
+        })
+      : projects.map((p) => ProjectBlock(t, { name: this.name(p.project), color: color(p.project), value: formatDuration(p.me), fill: (p.me / max) * 100, other: !p.project }));
+    const ahead = goals.find((g) => g.goal.dir === "min" && g.month.plan > 0);
     const session = s?.session_start > 0 ? `сессия с ${hhmm(s.session_start)}` : "сессии нет";
     return body
-      .child(h_flex().items_center().child(div().font_semibold().child("Сегодня")).child(div().flex_1()).child(div().font_semibold().child(formatDuration(r.me))))
+      .child(h_flex().items_center().child(div().font_semibold().child("Сегодня")).child(div().flex_1()).child(div().font_semibold().child(formatDuration(total))))
       .child(div().text_size(TEXT.small).text_color(t.dim).child(`${session} · агенты ${formatDuration(r.agents)}`))
       .child(rule())
-      .child(v_flex().gap(12).children(projects.map((p) =>
-        ProjectBlock(t, { name: this.name(p.project), color: t[projectColor(p.project, order)] ?? t.muted, value: formatDuration(p.me), fill: (p.me / max) * 100, other: !p.project }))))
+      .child(v_flex().gap(12).children(blocks))
+      .when(Boolean(ahead), (el) => el.child(div().text_size(TEXT.small).text_color(t.dim).whitespace_normal().child(forecastLine(ahead, this.name(ahead.project), this.goals.day))))
       .child(rule())
       .child(div().id("time-card-open").text_size(TEXT.small).text_color(t.muted).cursor_pointer().hover((e) => e.text_color(t.foreground)).on_click(() => this.openPanel()).child("Открыть панель ›"));
   }

@@ -42,6 +42,7 @@ export class Day {
     this.showDialog = showDialog;
     this.data = null; // what `timeline` gave
     this.projects = []; // [{id, name}] in config order
+    this.goals = []; // `goals` entries for the day shown
     this.activities = ACTIVITIES; // [{id, label}], as the collector lists them
     this.want = null; // the day asked for; null is today, which only the collector knows
     this.today = null; // from the last answer for today
@@ -78,13 +79,15 @@ export class Day {
   load(cx) {
     const seq = ++this.seq;
     const args = this.args();
+    const goalArgs = this.goalArgs();
     this.loading = true;
     cx.notify();
     cx.spawn(async (cx) => {
       try {
-        const [r, projects] = await Promise.all([call(args), call(["projects"])]);
+        const [r, projects, goals] = await Promise.all([call(args), call(["projects"]), call(goalArgs)]);
         if (seq !== this.seq) return;
         Object.assign(this, catalog(projects));
+        this.goals = goals.goals ?? [];
         this.error = r.down ? null : (r.error ?? null); // a collector that is down is the notice's business; the last data stays
         if (!r.down && !r.error) this.took(r);
         this.silentSince = this.want ? null : (silence(Boolean(r.down), this.lastSample, Date.now())?.since ?? null);
@@ -112,6 +115,11 @@ export class Day {
   // What the load asks the collector.
   args() {
     return ["timeline", ...(this.want ? ["--day", this.want] : []), ...(this.fresh ? ["--fresh"] : [])];
+  }
+
+  // The goals of the day asked for.
+  goalArgs() {
+    return this.want ? ["goals", "--day", this.want] : ["goals"];
   }
 
   // Keeps a good answer. A day switch starts a newer load, which drops this one, so want is the one asked.
@@ -336,7 +344,7 @@ export class Day {
     const { report, stats } = this.data;
     const lines = [`агенты ${formatDuration(report.agents)} · включён ${formatDuration(report.uptime)}`];
     if (report.me > 0 && stats) lines.push(`${plural(stats.switches, "переключение", "переключения", "переключений")} · фокус до ${formatDuration(stats.focus)}`);
-    return Side(this, t, { caption: "Моё время", total: report.me, lines });
+    return Side(this, t, { caption: "Моё время", lines });
   }
 
   header(t) {
