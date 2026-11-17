@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -233,6 +234,13 @@ func (d *Daemon) postMonthClose(r *http.Request) (int, any, error) {
 			p.GoalVersions[pr.ID] = pr.Goals
 		}
 	}
+	offs, err := d.daysOffIn(first, last, "")
+	if err != nil {
+		return 0, nil, err
+	}
+	for _, o := range offs {
+		p.OffIDs = append(p.OffIDs, o.ID)
+	}
 	if p, err = d.Store.AddPeriod(p); err != nil {
 		return 0, nil, err
 	}
@@ -283,7 +291,7 @@ func (d *Daemon) markClose(id, at int64) error {
 }
 
 // undoMonth undoes a month-close (a reopen) or a month-reopen (the same record back in force, unless
-// the month was closed again since).
+// the month was closed again or changed since).
 func (d *Daemon) undoMonth(ch Change) error {
 	rec, err := d.monthRecord(ch.Month)
 	if err != nil {
@@ -298,8 +306,79 @@ func (d *Daemon) undoMonth(ch Change) error {
 	if rec != nil {
 		return fail(http.StatusConflict, "%s уже закрыт заново", monthTitle(ch.Month))
 	}
+	changed, err := d.changedSinceReopen(ch)
+	if err != nil {
+		return err
+	}
+	if changed {
+		return fail(http.StatusConflict, "После открытия %s менялся — закройте его заново.", strings.ToLower(monthTitle(ch.Month)))
+	}
 	if err := d.Store.SetReopened(ch.Period, 0); err != nil {
 		return err
 	}
 	return d.markClose(ch.Period, 0)
+}
+
+// changedSinceReopen tells whether the month the change reopen reopened was written to since, which the
+// record put back would hide: a correction in it, a day off overlapping it or a bonus of it added or
+// removed, a goal or pay change reaching it made or undone. A removed correction leaves no trace and is
+// not seen (TestUndoReopenAfterChangesIsRefused).
+func (d *Daemon) changedSinceReopen(reopen Change) (bool, error) {
+	first, last, from, to, err := monthSpan(d.S, reopen.Month)
+	if err != nil {
+		return false, err
+	}
+	all, err := d.Store.AllPeriods()
+	if err != nil {
+		return false, err
+	}
+	i := slices.IndexFunc(all, func(p Period) bool { return p.ID == reopen.Period })
+	if i < 0 {
+		return false, fail(http.StatusNotFound, "no period %d", reopen.Period)
+	}
+	rec := all[i]
+	cs, err := d.Store.Corrections()
+	if err != nil {
+		return false, err
+	}
+	// The month refused these while closed, so any made since the reopen are new.
+	if slices.ContainsFunc(cs, func(c Correction) bool { return c.Made >= rec.Reopened && c.Start < to && from < c.End }) {
+		return true, nil
+	}
+	offs, err := d.daysOffIn(first, last, "")
+	if err != nil {
+		return false, err
+	}
+	var offIDs []int64
+	for _, o := range offs {
+		offIDs = append(offIDs, o.ID)
+	}
+	if !slices.Equal(slices.Sorted(slices.Values(offIDs)), slices.Sorted(slices.Values(rec.OffIDs))) {
+		return true, nil
+	}
+	bs, err := d.Store.Bonuses()
+	if err != nil {
+		return false, err
+	}
+	if slices.ContainsFunc(bs, func(b Bonus) bool { return b.Month == reopen.Month && b.Made >= rec.Reopened }) {
+		return true, nil
+	}
+	for _, pay := range rec.Pay {
+		for _, kept := range pay.Bonuses {
+			if !slices.ContainsFunc(bs, func(b Bonus) bool { return b.ID == kept.ID }) {
+				return true, nil
+			}
+		}
+	}
+	changes, err := d.Store.Changes()
+	if err != nil {
+		return false, err
+	}
+	for _, c := range changes {
+		reaches := (c.Goal != nil && c.Goal.From <= last) || (c.Pay != nil && c.Pay.From <= reopen.Month)
+		if reaches && (c.ID > reopen.ID || c.Undone > rec.Reopened) {
+			return true, nil
+		}
+	}
+	return false, nil
 }

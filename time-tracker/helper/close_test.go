@@ -290,3 +290,110 @@ func monthRecordOf(t *testing.T, d *Daemon) *Period {
 	must(t, err)
 	return rec
 }
+
+// Undoing a reopen would hide what was entered while November was open behind the restored record.
+func TestUndoReopenAfterChangesIsRefused(t *testing.T) {
+	undoReopen := func(t *testing.T, api testAPI) (int, string) {
+		var e struct {
+			Error string `json:"error"`
+		}
+		return api.do("POST", fmt.Sprintf("/v1/history/%d/undo", changeOf(t, api, "month-reopen")), nil, &e), e.Error
+	}
+	open := func(t *testing.T) (*Daemon, testAPI) {
+		d, api := november(t)
+		assertEq(t, api.do("POST", "/v1/months/2026-11/close", nil, nil), http.StatusOK)
+		assertEq(t, api.do("POST", "/v1/months/2026-11/reopen", nil, nil), http.StatusNoContent)
+		return d, api
+	}
+	refused := fmt.Sprint(http.StatusConflict, " После открытия ноябрь менялся — закройте его заново.")
+
+	t.Run("nothing changed", func(t *testing.T) {
+		_, api := open(t)
+		code, _ := undoReopen(t, api)
+		assertEq(t, code, http.StatusNoContent)
+	})
+	t.Run("bonus added", func(t *testing.T) {
+		_, api := open(t)
+		assertEq(t, api.do("POST", "/v1/bonuses", map[string]any{"project": "easy", "month": "2026-11", "day": 12, "title": "Релиз", "amount": 15_000}, nil), http.StatusCreated)
+		code, msg := undoReopen(t, api)
+		assertEq(t, fmt.Sprint(code, " ", msg), refused)
+		var m monthReport
+		api.do("GET", "/v1/months/2026-11/report?project=easy", nil, &m)
+		assertEq(t, m.Pay.Total, int64(4000+15_000)) // 2h × 2 000 ₽/ч and the bonus: the month stays open
+	})
+	t.Run("bonus removed", func(t *testing.T) {
+		d, api := november(t)
+		var b Bonus
+		api.do("POST", "/v1/bonuses", map[string]any{"project": "easy", "month": "2026-11", "day": 12, "title": "Релиз", "amount": 1}, &b)
+		api.do("POST", "/v1/months/2026-11/close", nil, nil)
+		api.do("POST", "/v1/months/2026-11/reopen", nil, nil)
+		assertEq(t, api.do("DELETE", fmt.Sprintf("/v1/bonuses/%d", b.ID), nil, nil), http.StatusNoContent)
+		code, _ := undoReopen(t, api)
+		assertEq(t, fmt.Sprint(code, monthRecordOf(t, d) == nil), fmt.Sprint(http.StatusConflict, true))
+	})
+	t.Run("day off added", func(t *testing.T) {
+		_, api := open(t)
+		api.do("POST", "/v1/daysoff", map[string]any{"from": "2026-11-30", "to": "2026-12-01", "kind": "otgul", "projects": []string{"easy"}}, nil)
+		code, _ := undoReopen(t, api)
+		assertEq(t, code, http.StatusConflict)
+	})
+	t.Run("day off removed", func(t *testing.T) {
+		_, api := november(t)
+		var off DayOff
+		api.do("POST", "/v1/daysoff", map[string]any{"from": "2026-11-27", "to": "2026-11-27", "kind": "otgul", "projects": []string{"easy"}}, &off)
+		api.do("POST", "/v1/months/2026-11/close", nil, nil)
+		api.do("POST", "/v1/months/2026-11/reopen", nil, nil)
+		assertEq(t, api.do("DELETE", fmt.Sprintf("/v1/daysoff/%d", off.ID), nil, nil), http.StatusNoContent)
+		code, _ := undoReopen(t, api)
+		assertEq(t, code, http.StatusConflict)
+	})
+	t.Run("day off of another month", func(t *testing.T) {
+		_, api := open(t)
+		api.do("POST", "/v1/daysoff", map[string]any{"from": "2026-12-03", "to": "2026-12-03", "kind": "otgul", "projects": []string{"easy"}}, nil)
+		code, _ := undoReopen(t, api)
+		assertEq(t, code, http.StatusNoContent)
+	})
+	t.Run("correction made", func(t *testing.T) {
+		_, api := open(t)
+		api.do("POST", "/v1/corrections", Correction{Kind: "exclude", Target: "me", Start: mskAt(2026, 11, 16, 12, 0), End: mskAt(2026, 11, 16, 12, 30)}, nil)
+		code, _ := undoReopen(t, api)
+		assertEq(t, code, http.StatusConflict)
+	})
+	t.Run("goal set", func(t *testing.T) {
+		_, api := open(t)
+		api.do("PUT", "/v1/projects/easy/goal", map[string]any{"from": "2026-11-20", "dir": "min", "minutes": 480, "period": "day", "weekdays": []int{1, 2, 3, 4, 5}}, nil)
+		code, _ := undoReopen(t, api)
+		assertEq(t, code, http.StatusConflict)
+	})
+	t.Run("goal set from December", func(t *testing.T) {
+		_, api := open(t)
+		api.do("PUT", "/v1/projects/easy/goal", map[string]any{"from": "2026-12-01", "dir": "min", "minutes": 480, "period": "day", "weekdays": []int{1, 2, 3, 4, 5}}, nil)
+		code, _ := undoReopen(t, api)
+		assertEq(t, code, http.StatusNoContent)
+	})
+	t.Run("pay set", func(t *testing.T) {
+		_, api := open(t)
+		api.do("PUT", "/v1/projects/easy/pay", map[string]any{"from": "2026-10", "kind": "fixed", "amount": 1}, nil)
+		code, _ := undoReopen(t, api)
+		assertEq(t, code, http.StatusConflict)
+	})
+	t.Run("pay change undone", func(t *testing.T) {
+		_, api := november(t)
+		set := changeOf(t, api, "pay-set")
+		api.do("POST", "/v1/months/2026-11/close", nil, nil)
+		api.do("POST", "/v1/months/2026-11/reopen", nil, nil)
+		swap(t, &nowMs, func() int64 { return mskAt(2026, 12, 2, 12, 1) }) // the undo comes after the reopen
+		assertEq(t, api.do("POST", fmt.Sprintf("/v1/history/%d/undo", set), nil, nil), http.StatusNoContent)
+		code, _ := undoReopen(t, api)
+		assertEq(t, code, http.StatusConflict)
+	})
+}
+
+func TestShowMonthStateWithoutHolidays(t *testing.T) {
+	var out bytes.Buffer
+	must(t, showMonthState(&out, []byte(`{"month":"2026-12","holidays":[],"days_off":[]}`)))
+	assertEq(t, strings.Split(out.String(), "\n")[1], "другое — · ручных правок 0 · отгулов 0")
+	out.Reset()
+	must(t, showMonthState(&out, []byte(`{"month":"2026-11","holidays":["2026-11-04"],"days_off":[]}`)))
+	assertEq(t, strings.Split(out.String(), "\n")[1], "другое — · ручных правок 0 · праздники 2026-11-04 · отгулов 0")
+}

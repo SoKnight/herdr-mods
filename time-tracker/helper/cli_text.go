@@ -283,7 +283,11 @@ func showMonthState(w io.Writer, resp []byte) error {
 		state = "не закрыт"
 	}
 	fmt.Fprintf(w, "%s · %s\n", monthLabel(s.Month), state)
-	fmt.Fprintf(w, "другое %s · ручных правок %d · праздники %s · отгулов %d\n", mins(s.Other), s.Edits, strings.Join(s.Holidays, ", "), len(s.DaysOff))
+	holidays := ""
+	if len(s.Holidays) > 0 {
+		holidays = " · праздники " + strings.Join(s.Holidays, ", ")
+	}
+	fmt.Fprintf(w, "другое %s · ручных правок %d%s · отгулов %d\n", mins(s.Other), s.Edits, holidays, len(s.DaysOff))
 	if len(s.NoBonus) > 0 {
 		fmt.Fprintf(w, "премии не внесены: %s\n", strings.Join(s.NoBonus, ", "))
 	}

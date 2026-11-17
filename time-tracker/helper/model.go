@@ -87,4 +87,5 @@ type Period struct {
 	Reopened int64               `json:"reopened,omitempty"`
 
 	GoalVersions map[string][]Goal `json:"goal_versions,omitempty"` // each project's goal versions at the close, for the plan's days
+	OffIDs       []int64           `json:"off_ids,omitempty"`       // the days off overlapping the month at the close
 }
