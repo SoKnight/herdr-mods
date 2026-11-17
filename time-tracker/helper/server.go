@@ -24,8 +24,9 @@ func fail(code int, format string, a ...any) error {
 	return &apiError{code, map[string]any{"error": fmt.Sprintf(format, a...)}}
 }
 
-func closedPeriod(id int64) error {
-	return &apiError{http.StatusConflict, map[string]any{"error": "closed", "period": id}}
+// closedPeriod refuses a write inside p; month is empty for a v1 period.
+func closedPeriod(p *Period) error {
+	return &apiError{http.StatusConflict, map[string]any{"error": "closed", "period": p.ID, "month": p.Month}}
 }
 
 // api runs f under the daemon lock and writes its answer as JSON; no value means 204.
@@ -104,41 +105,44 @@ func newServer(d *Daemon) http.Handler {
 		}
 	}
 	routes := map[string]handler{
-		"POST /v1/heartbeat":            d.postHeartbeat,
-		"GET /v1/status":                read(d.getStatus),
-		"GET /v1/timeline":              read(d.getTimeline),
-		"GET /v1/session":               read(d.getSession),
-		"POST /v1/session":              d.postSession,
-		"GET /v1/report":                read(d.getReport),
-		"POST /v1/export":               read(d.postExport),
-		"GET /v1/corrections":           d.getCorrections,
-		"POST /v1/corrections":          d.postCorrection,
-		"DELETE /v1/corrections/{id}":   d.deleteCorrection,
-		"GET /v1/inbox":                 read(d.getInbox),
-		"POST /v1/inbox":                read(d.postInbox), // its corrections follow the timeline: not the defaults'
-		"GET /v1/rules":                 read(d.getRules),
-		"POST /v1/rules":                d.postRule,
-		"PUT /v1/rules/{id}":            d.putRule,
-		"DELETE /v1/rules/{id}":         d.deleteRule,
-		"POST /v1/rules/preview":        read(d.postRulePreview),
-		"GET /v1/hints":                 read(d.getHints),
-		"GET /v1/history":               d.getHistory,
-		"POST /v1/history/{id}/undo":    d.postUndo,
-		"GET /v1/periods":               d.getPeriods,
-		"GET /v1/projects":              read(d.getProjects),
-		"POST /v1/projects":             d.postProject,
-		"PATCH /v1/projects/{id}":       d.patchProject,
-		"PUT /v1/projects/{id}/goal":    d.putGoal,
-		"PUT /v1/projects/{id}/pay":     d.putPay,
-		"POST /v1/bonuses":              d.postBonus,
-		"DELETE /v1/bonuses/{id}":       d.deleteBonus,
-		"POST /v1/daysoff":              d.postDayOff,
-		"DELETE /v1/daysoff/{id}":       d.deleteDayOff,
-		"GET /v1/plan":                  read(d.getPlan),
-		"GET /v1/goals":                 read(d.getGoals),
-		"GET /v1/months/{month}/report": read(d.getMonthReport),
-		"POST /v1/periods/{id}/reopen":  d.reopenPeriod,
-		"POST /v1/quit":                 d.postQuit,
+		"POST /v1/heartbeat":             d.postHeartbeat,
+		"GET /v1/status":                 read(d.getStatus),
+		"GET /v1/timeline":               read(d.getTimeline),
+		"GET /v1/session":                read(d.getSession),
+		"POST /v1/session":               d.postSession,
+		"GET /v1/report":                 read(d.getReport),
+		"POST /v1/export":                read(d.postExport),
+		"GET /v1/corrections":            d.getCorrections,
+		"POST /v1/corrections":           d.postCorrection,
+		"DELETE /v1/corrections/{id}":    d.deleteCorrection,
+		"GET /v1/inbox":                  read(d.getInbox),
+		"POST /v1/inbox":                 read(d.postInbox), // its corrections follow the timeline: not the defaults'
+		"GET /v1/rules":                  read(d.getRules),
+		"POST /v1/rules":                 d.postRule,
+		"PUT /v1/rules/{id}":             d.putRule,
+		"DELETE /v1/rules/{id}":          d.deleteRule,
+		"POST /v1/rules/preview":         read(d.postRulePreview),
+		"GET /v1/hints":                  read(d.getHints),
+		"GET /v1/history":                d.getHistory,
+		"POST /v1/history/{id}/undo":     d.postUndo,
+		"GET /v1/periods":                d.getPeriods,
+		"GET /v1/projects":               read(d.getProjects),
+		"POST /v1/projects":              d.postProject,
+		"PATCH /v1/projects/{id}":        d.patchProject,
+		"PUT /v1/projects/{id}/goal":     d.putGoal,
+		"PUT /v1/projects/{id}/pay":      d.putPay,
+		"POST /v1/bonuses":               d.postBonus,
+		"DELETE /v1/bonuses/{id}":        d.deleteBonus,
+		"POST /v1/daysoff":               d.postDayOff,
+		"DELETE /v1/daysoff/{id}":        d.deleteDayOff,
+		"GET /v1/plan":                   read(d.getPlan),
+		"GET /v1/goals":                  read(d.getGoals),
+		"GET /v1/months/{month}/report":  read(d.getMonthReport),
+		"GET /v1/months/{month}":         read(d.getMonthState),
+		"POST /v1/months/{month}/close":  read(d.postMonthClose), // a snapshot by the defaults' rules would be wrong for good
+		"POST /v1/months/{month}/reopen": d.postMonthReopen,
+		"POST /v1/periods/{id}/reopen":   d.reopenPeriod,
+		"POST /v1/quit":                  d.postQuit,
 	}
 	for pattern, f := range routes {
 		mux.Handle(pattern, d.api(f))
@@ -440,7 +444,7 @@ func (d *Daemon) postCorrection(r *http.Request) (int, any, error) {
 		return 0, nil, err
 	}
 	if p := closedBy(periods, "", c.Start, c.End); p != nil {
-		return 0, nil, closedPeriod(p.ID)
+		return 0, nil, closedPeriod(p)
 	}
 	was := map[string]int64{}
 	if c.Start >= c.End-62*24*60*60_000 { // a longer one would hold the lock over a long timeline; End-Start can overflow
@@ -482,7 +486,7 @@ func (d *Daemon) deleteCorrection(r *http.Request) (int, any, error) {
 		return 0, nil, err
 	}
 	if p := closedBy(periods, "", cs[i].Start, cs[i].End); p != nil {
-		return 0, nil, closedPeriod(p.ID)
+		return 0, nil, closedPeriod(p)
 	}
 	return http.StatusNoContent, nil, d.Store.RemoveCorrection(id)
 }

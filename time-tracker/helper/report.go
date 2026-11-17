@@ -1,6 +1,8 @@
 package main
 
 import (
+	"maps"
+	"slices"
 	"sort"
 	"time"
 )
@@ -30,6 +32,7 @@ type Report struct {
 // Divergence says a closed period no longer matches what fresh rules would give.
 type Divergence struct {
 	Period  int64  `json:"period"`
+	Month   string `json:"month,omitempty"` // a month record's
 	Project string `json:"project"`
 	DeltaMs int64  `json:"delta_ms"`
 }
@@ -157,42 +160,56 @@ func clipSeg(s, e, from, to int64) (int64, int64, bool) {
 	return s, e, s < e
 }
 
-// Snapshot freezes the project's time inside [from, to) for a closed period.
+// Snapshot freezes the project's time inside [from, to) for a closed period; project "" takes every
+// project's time and Досуг, for a month record.
 func Snapshot(t Timeline, project string, from, to int64) Period {
 	p := Period{Project: project, From: from, To: to}
+	all := project == ""
 	for _, m := range t.Me {
-		if s, e, ok := clipSeg(m.Start, m.End, from, to); ok && m.Project == project {
+		if s, e, ok := clipSeg(m.Start, m.End, from, to); ok && (all || m.Project == project) {
 			m.Start, m.End = s, e
 			p.Me = append(p.Me, m)
 		}
 	}
 	for _, a := range t.Agents {
-		if s, e, ok := clipSeg(a.Start, a.End, from, to); ok && a.Project == project {
+		if s, e, ok := clipSeg(a.Start, a.End, from, to); ok && (all || a.Project == project) {
 			a.Start, a.End = s, e
 			p.Agents = append(p.Agents, a)
+		}
+	}
+	for _, l := range t.Leisure {
+		if s, e, ok := clipSeg(l.Start, l.End, from, to); ok && all {
+			l.Start, l.End = s, e
+			p.Leisure = append(p.Leisure, l)
 		}
 	}
 	return p
 }
 
-// ApplyPeriods replaces each closed period's project time with its snapshot. Other projects' fresh
-// time stays, so time that moved elsewhere shows up as a divergence, not as a silent change.
+// ApplyPeriods replaces each closed period's time with its snapshot: a v1 period its project's, other
+// projects' fresh time staying, so time that moved elsewhere shows up as a divergence, not as a silent
+// change; a month record all of it, Досуг included. v1 periods go first: a month closed over one froze
+// the time with it applied.
 func ApplyPeriods(t Timeline, periods []Period) (Timeline, []Divergence) {
 	out := t
 	out.Me = append([]Segment(nil), t.Me...)
 	out.Agents = append([]AgentSeg(nil), t.Agents...)
 	var div []Divergence
-	for _, p := range periods {
-		var fresh, snap int64
+	isMonth := func(p Period) bool { return p.Month != "" }
+	legacy := slices.DeleteFunc(slices.Clone(periods), isMonth)
+	months := slices.DeleteFunc(slices.Clone(periods), func(p Period) bool { return !isMonth(p) })
+	for _, p := range slices.Concat(legacy, months) {
+		takes := func(project string) bool { return p.Month != "" || project == p.Project }
+		delta := map[string]int64{} // fresh − snapshot by project
 		var me []Segment
 		for _, m := range out.Me {
-			if m.Project != p.Project {
+			if !takes(m.Project) {
 				me = append(me, m)
 				continue
 			}
 			splitBy(m.Start, m.End, p.From, p.To, func(s, e int64, inside bool) {
 				if inside {
-					fresh += e - s
+					delta[m.Project] += e - s
 					return
 				}
 				c := m
@@ -202,13 +219,13 @@ func ApplyPeriods(t Timeline, periods []Period) (Timeline, []Divergence) {
 		}
 		var ag []AgentSeg
 		for _, a := range out.Agents {
-			if a.Project != p.Project {
+			if !takes(a.Project) {
 				ag = append(ag, a)
 				continue
 			}
 			splitBy(a.Start, a.End, p.From, p.To, func(s, e int64, inside bool) {
 				if inside {
-					fresh += e - s
+					delta[a.Project] += e - s
 					return
 				}
 				c := a
@@ -220,17 +237,17 @@ func ApplyPeriods(t Timeline, periods []Period) (Timeline, []Divergence) {
 			if s, e, ok := clipSeg(m.Start, m.End, p.From, p.To); ok {
 				m.Start, m.End = s, e
 				me = append(me, m)
-				snap += e - s
+				delta[m.Project] -= e - s
 			}
 		}
 		for _, a := range p.Agents {
 			if s, e, ok := clipSeg(a.Start, a.End, p.From, p.To); ok {
 				a.Start, a.End = s, e
 				ag = append(ag, a)
-				snap += e - s
+				delta[a.Project] -= e - s
 			}
 		}
-		// The period is frozen as my time and its snapshot keeps no Досуг, so none shows inside it.
+		// A v1 period is frozen as my time and keeps no Досуг, so none shows inside it; a month record has its own.
 		var leisure []Segment
 		for _, l := range out.Leisure {
 			splitBy(l.Start, l.End, p.From, p.To, func(s, e int64, inside bool) {
@@ -241,12 +258,20 @@ func ApplyPeriods(t Timeline, periods []Period) (Timeline, []Divergence) {
 				}
 			})
 		}
-		out.Leisure = leisure
+		for _, l := range p.Leisure {
+			if s, e, ok := clipSeg(l.Start, l.End, p.From, p.To); ok {
+				l.Start, l.End = s, e
+				leisure = append(leisure, l)
+			}
+		}
 		sort.SliceStable(me, func(a, b int) bool { return me[a].Start < me[b].Start })
 		sort.SliceStable(ag, func(a, b int) bool { return ag[a].Start < ag[b].Start })
-		out.Me, out.Agents = me, ag
-		if fresh != snap {
-			div = append(div, Divergence{Period: p.ID, Project: p.Project, DeltaMs: fresh - snap})
+		sort.SliceStable(leisure, func(a, b int) bool { return leisure[a].Start < leisure[b].Start })
+		out.Me, out.Agents, out.Leisure = me, ag, leisure
+		for _, id := range slices.Sorted(maps.Keys(delta)) {
+			if delta[id] != 0 {
+				div = append(div, Divergence{Period: p.ID, Month: p.Month, Project: id, DeltaMs: delta[id]})
+			}
 		}
 	}
 	return out, div

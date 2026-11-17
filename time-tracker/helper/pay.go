@@ -123,6 +123,9 @@ func (d *Daemon) putPay(r *http.Request) (int, any, error) {
 }
 
 func (d *Daemon) postBonus(r *http.Request) (int, any, error) {
+	if err := d.configErr(); err != nil {
+		return 0, nil, err
+	}
 	var b Bonus
 	if err := decode(r, &b); err != nil {
 		return 0, nil, err
@@ -143,6 +146,9 @@ func (d *Daemon) postBonus(r *http.Request) (int, any, error) {
 	if b.Amount < 1 || b.Amount > maxMoney {
 		return 0, nil, fail(http.StatusBadRequest, "amount: want 1..100000000")
 	}
+	if err := d.refuseClosed(b.Month, b.Month); err != nil {
+		return 0, nil, err
+	}
 	b.ID, b.Made = 0, nowMs()
 	created, err := d.Store.AddBonus(b)
 	return http.StatusCreated, created, err
@@ -157,8 +163,12 @@ func (d *Daemon) deleteBonus(r *http.Request) (int, any, error) {
 	if err != nil {
 		return 0, nil, err
 	}
-	if !slices.ContainsFunc(bs, func(b Bonus) bool { return b.ID == id }) {
+	i := slices.IndexFunc(bs, func(b Bonus) bool { return b.ID == id })
+	if i < 0 {
 		return 0, nil, fail(http.StatusNotFound, "no bonus %d", id)
+	}
+	if err := d.refuseClosed(bs[i].Month, bs[i].Month); err != nil {
+		return 0, nil, err
 	}
 	return http.StatusNoContent, nil, d.Store.RemoveBonus(id)
 }

@@ -67,12 +67,22 @@ type AgentSeg struct {
 	Corrected bool   `json:"corrected"`
 }
 
+// Period is a closed stretch of time: a v1 export's, of one project, or a month record (Month set,
+// Project ""), which freezes every project's time, the month's plan days and each project's pay.
 type Period struct {
 	ID         int64      `json:"id"`
 	Project    string     `json:"project"`
 	From       int64      `json:"from"`
 	To         int64      `json:"to"`
-	ExportedAt int64      `json:"exported_at"`
+	ExportedAt int64      `json:"exported_at"` // a month record: when it was closed
 	Me         []Segment  `json:"me"`
 	Agents     []AgentSeg `json:"agents"`
+
+	Month    string              `json:"month,omitempty"` // YYYY-MM
+	Sent     bool                `json:"sent,omitempty"`  // the report went to the client
+	Leisure  []Segment           `json:"leisure,omitempty"`
+	Days     []planDay           `json:"days,omitempty"`
+	Goals    map[string]*Goal    `json:"goals,omitempty"` // each project's goal as the month report shows it
+	Pay      map[string]*payment `json:"pay,omitempty"`   // projects with pay or bonuses that month
+	Reopened int64               `json:"reopened,omitempty"`
 }

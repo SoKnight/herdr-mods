@@ -246,8 +246,46 @@ func showPeriods(w io.Writer, resp []byte) error {
 		return err
 	}
 	for _, p := range list {
+		if p.Month != "" {
+			fmt.Fprintf(w, "#%d  %s · все проекты  закрыт %s\n", p.ID, monthLabel(p.Month), shortDay(p.ExportedAt))
+			continue
+		}
 		fmt.Fprintf(w, "#%d %s %s – %s, выгружен %s, правила изменили бы на %+dм\n",
 			p.ID, p.Project, clock(p.From), clock(p.To), clock(p.ExportedAt), p.DeltaMs/60_000)
+	}
+	return nil
+}
+
+// monthLabel is "ноябрь 2026"; shortDay "2 дек".
+func monthLabel(month string) string {
+	t, _ := time.Parse("2006-01", month)
+	return fmt.Sprintf("%s %d", monthNames[t.Month()-1], t.Year())
+}
+
+func shortDay(ms int64) string {
+	t := time.UnixMilli(ms)
+	return fmt.Sprintf("%d %s", t.Day(), shortMonths[t.Month()-1])
+}
+
+// showMonthState prints whether the month is closed and Закрыть месяц's checklist.
+func showMonthState(w io.Writer, resp []byte) error {
+	var s monthState
+	if err := json.Unmarshal(resp, &s); err != nil {
+		return err
+	}
+	state := "идёт"
+	switch {
+	case s.Closed && s.Sent:
+		state = fmt.Sprintf("закрыт %s · отчёт отправлен", shortDay(s.ClosedAt))
+	case s.Closed:
+		state = "закрыт " + shortDay(s.ClosedAt)
+	case s.Over:
+		state = "не закрыт"
+	}
+	fmt.Fprintf(w, "%s · %s\n", monthLabel(s.Month), state)
+	fmt.Fprintf(w, "другое %s · ручных правок %d · праздники %s · отгулов %d\n", mins(s.Other), s.Edits, strings.Join(s.Holidays, ", "), len(s.DaysOff))
+	if len(s.NoBonus) > 0 {
+		fmt.Fprintf(w, "премии не внесены: %s\n", strings.Join(s.NoBonus, ", "))
 	}
 	return nil
 }
@@ -296,7 +334,7 @@ func showHistory(w io.Writer, resp []byte) error {
 		lines = append(lines, line{cmp.Or(c.Made, c.Start), "correct " + c.Kind, "correct rm", c.ID})
 	}
 	for _, c := range h.Changes {
-		lines = append(lines, line{c.At, strings.TrimSpace(c.Kind + " " + c.Project), "history undo", c.ID}) // goal-set easy
+		lines = append(lines, line{c.At, strings.TrimSpace(c.Kind + " " + cmp.Or(c.Project, c.Month)), "history undo", c.ID}) // goal-set easy, month-close 2026-11
 	}
 	for _, o := range h.DaysOff {
 		lines = append(lines, line{o.Made, fmt.Sprintf("dayoff %s %s–%s", o.Kind, o.From, o.To), "dayoff rm", o.ID})

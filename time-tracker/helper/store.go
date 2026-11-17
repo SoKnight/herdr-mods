@@ -345,24 +345,39 @@ func (st *Store) AddChange(c Change) (Change, error) {
 	return addItem(st, "history.json", c, changeID)
 }
 
-// MarkUndone marks a change undone at at; it stays, so neither its id nor its rules' ids come back.
-func (st *Store) MarkUndone(id, at int64) error {
+// editItem changes the item want of a JSON array file in place.
+func editItem[T any](st *Store, file string, want int64, id func(*T) *int64, f func(*T)) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	path := filepath.Join(st.Dir, "history.json")
-	var all []Change
+	path := filepath.Join(st.Dir, file)
+	var all []T
 	if err := readJSON(path, &all); err != nil {
 		return err
 	}
 	for i := range all {
-		if all[i].ID == id {
-			all[i].Undone = at
+		if *id(&all[i]) == want {
+			f(&all[i])
 		}
 	}
 	return writeJSON(path, all)
 }
 
-func (st *Store) Periods() ([]Period, error) { return listItems[Period](st, "periods.json") }
+// MarkUndone marks a change undone at at (0 puts it back); it stays, so neither its id nor its rules' ids come back.
+func (st *Store) MarkUndone(id, at int64) error {
+	return editItem(st, "history.json", id, changeID, func(c *Change) { c.Undone = at })
+}
+
+// SetReopened marks a month record reopened at at (0 puts it back in force); it stays, so undo can restore it.
+func (st *Store) SetReopened(id, at int64) error {
+	return editItem(st, "periods.json", id, perID, func(p *Period) { p.Reopened = at })
+}
+
+// Periods are the closed periods in force: v1's and the month records not reopened.
+func (st *Store) Periods() ([]Period, error) {
+	ps, err := st.AllPeriods()
+	return slices.DeleteFunc(ps, func(p Period) bool { return p.Reopened != 0 }), err
+}
+func (st *Store) AllPeriods() ([]Period, error) { return listItems[Period](st, "periods.json") }
 func (st *Store) AddPeriod(p Period) (Period, error) {
 	return addItem(st, "periods.json", p, perID)
 }

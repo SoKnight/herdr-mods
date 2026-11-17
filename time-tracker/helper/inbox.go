@@ -201,7 +201,7 @@ func (d *Daemon) postInbox(r *http.Request) (int, any, error) {
 		}
 		for _, c := range cs {
 			if p := closedBy(periods, "", c.Start, c.End); p != nil {
-				return 0, nil, closedPeriod(p.ID)
+				return 0, nil, closedPeriod(p)
 			}
 		}
 	}

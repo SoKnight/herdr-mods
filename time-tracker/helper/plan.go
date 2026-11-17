@@ -220,7 +220,8 @@ func dayList(first, last string) ([]string, error) {
 	return days, nil
 }
 
-// planRange is the plan of every day from first to last, both in. Callers hold mu.
+// planRange is the plan of every day from first to last, both in; a closed month's days come from its
+// record. Callers hold mu.
 func (d *Daemon) planRange(first, last string) ([]planDay, error) {
 	days, err := dayList(first, last)
 	if err != nil {
@@ -242,7 +243,23 @@ func (d *Daemon) planRange(first, last string) ([]planDay, error) {
 	if err != nil {
 		return nil, err
 	}
-	return planDays(days, d.Cal, d.Config.Projects, off, Summarize(tl, d.S, d.order())), nil
+	periods, err := d.Store.Periods()
+	if err != nil {
+		return nil, err
+	}
+	frozen := map[string]planDay{}
+	for _, p := range periods {
+		for _, pd := range p.Days {
+			frozen[pd.Day] = pd
+		}
+	}
+	out := planDays(days, d.Cal, d.Config.Projects, off, Summarize(tl, d.S, d.order()))
+	for i, pd := range out {
+		if f, ok := frozen[pd.Day]; ok {
+			out[i] = f
+		}
+	}
+	return out, nil
 }
 
 // checkGoal validates g; week and month goals lose the day-goal fields, an Off keeps only From.
@@ -305,6 +322,9 @@ func (d *Daemon) putGoal(r *http.Request) (int, any, error) {
 }
 
 func (d *Daemon) postDayOff(r *http.Request) (int, any, error) {
+	if err := d.configErr(); err != nil {
+		return 0, nil, err
+	}
 	var o DayOff
 	if err := decode(r, &o); err != nil {
 		return 0, nil, err
@@ -320,6 +340,9 @@ func (d *Daemon) postDayOff(r *http.Request) (int, any, error) {
 			return 0, nil, fail(http.StatusBadRequest, "unknown project %q", p)
 		}
 	}
+	if err := d.refuseClosed(o.From, o.To); err != nil {
+		return 0, nil, err
+	}
 	o.ID, o.Made, o.Projects = 0, nowMs(), nonNil(o.Projects)
 	created, err := d.Store.AddDayOff(o)
 	return http.StatusCreated, created, err
@@ -334,8 +357,12 @@ func (d *Daemon) deleteDayOff(r *http.Request) (int, any, error) {
 	if err != nil {
 		return 0, nil, err
 	}
-	if !slices.ContainsFunc(offs, func(o DayOff) bool { return o.ID == id }) {
+	i := slices.IndexFunc(offs, func(o DayOff) bool { return o.ID == id })
+	if i < 0 {
 		return 0, nil, fail(http.StatusNotFound, "no day off %d", id)
+	}
+	if err := d.refuseClosed(offs[i].From, offs[i].To); err != nil {
+		return 0, nil, err
 	}
 	return http.StatusNoContent, nil, d.Store.RemoveDayOff(id)
 }

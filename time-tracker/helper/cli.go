@@ -46,6 +46,7 @@ const usage = `herdr-time <команда> [--json]
   plan --from YYYY-MM-DD --to YYYY-MM-DD   дни, не Unix ms
   goals [--day YYYY-MM-DD]
   month report <YYYY-MM> --project id [--rows week|day]
+  month state <YYYY-MM> | close <YYYY-MM> [--sent] | reopen <YYYY-MM>   закрыть месяц для всех проектов
   session [start|end]
   periods [--project id]
   reopen <id>
@@ -108,11 +109,14 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 			var e struct {
 				Error  string `json:"error"`
 				Period int64  `json:"period"`
+				Month  string `json:"month"`
 			}
 			if json.Unmarshal(resp, &e) != nil || e.Error == "" {
 				e.Error = strings.TrimSpace(string(resp))
 			}
-			if e.Period != 0 {
+			if e.Month != "" {
+				e.Error += fmt.Sprintf(": месяц %s закрыт, herdr-time month reopen %s", e.Month, e.Month)
+			} else if e.Period != 0 {
 				e.Error += fmt.Sprintf(": период #%d закрыт выгрузкой, herdr-time reopen %d", e.Period, e.Period)
 			}
 			fmt.Fprintln(stderr, e.Error)
@@ -200,6 +204,7 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 	name := fs.String("name", "", "")
 	days := fs.Int("days", 30, "")
 	rows := fs.String("rows", "", "")
+	sent := fs.Bool("sent", false, "")
 	if err := fs.Parse(args); err != nil {
 		return apiCall{}, err
 	}
@@ -360,6 +365,16 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 			q.Set("rows", *rows)
 		}
 		return apiCall{method: "GET", path: "/v1/months/" + url.PathEscape(month) + "/report?" + q.Encode(), show: showMonth}, nil
+	case cmd == "month" && sub == "state":
+		month, err := arg(1, "<YYYY-MM>")
+		return apiCall{method: "GET", path: "/v1/months/" + url.PathEscape(month), show: showMonthState}, err
+	case cmd == "month" && sub == "close":
+		month, err := arg(1, "<YYYY-MM>")
+		body, _ := json.Marshal(map[string]bool{"sent": *sent})
+		return apiCall{method: "POST", path: "/v1/months/" + url.PathEscape(month) + "/close", body: body}, err
+	case cmd == "month" && sub == "reopen":
+		month, err := arg(1, "<YYYY-MM>")
+		return apiCall{method: "POST", path: "/v1/months/" + url.PathEscape(month) + "/reopen"}, err
 	case cmd == "periods":
 		if *project != "" {
 			q.Set("project", *project)

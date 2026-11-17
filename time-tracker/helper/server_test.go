@@ -174,30 +174,34 @@ func TestForeignHostRefused(t *testing.T) {
 func TestCorrectionInClosedPeriodConflicts(t *testing.T) {
 	d := testDaemon(t)
 	api := serve(t, d)
-	ex := legacyPeriod(t, d, "easy", at(0), at(60))
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 12, 2, 12, 0) })
+	var ex struct {
+		Period int64 `json:"period"`
+	}
+	assertEq(t, api.do("POST", "/v1/months/2026-11/close", nil, &ex), http.StatusOK)
 
 	corr := Correction{Kind: "project", Target: "me", Start: at(30), End: at(40), Project: "easy"}
 	var conflict struct {
 		Error  string `json:"error"`
 		Period int64  `json:"period"`
+		Month  string `json:"month"`
 	}
 	assertEq(t, api.do("POST", "/v1/corrections", corr, &conflict), http.StatusConflict)
-	assertEq(t, conflict.Error, "closed")
-	assertEq(t, conflict.Period, ex.ID)
+	assertEq(t, fmt.Sprint(conflict.Error, " ", conflict.Period == ex.Period, " ", conflict.Month), "closed true 2026-11")
 	cs, err := d.Store.Corrections()
 	must(t, err)
 	assertEq(t, len(cs), 0)
 
-	assertEq(t, api.do("POST", fmt.Sprintf("/v1/periods/%d/reopen", ex.ID), nil, nil), http.StatusNoContent)
+	assertEq(t, api.do("POST", fmt.Sprintf("/v1/periods/%d/reopen", ex.Period), nil, nil), http.StatusNoContent)
 	var created Correction
 	assertEq(t, api.do("POST", "/v1/corrections", corr, &created), http.StatusCreated)
 	assertEq(t, created.ID, int64(1))
 	assertEq(t, created.Project, "easy")
 
-	// Closing the period again protects the correction from removal too.
-	ex = legacyPeriod(t, d, "easy", at(0), at(60))
+	// Closing the month again protects the correction from removal too.
+	assertEq(t, api.do("POST", "/v1/months/2026-11/close", nil, &ex), http.StatusOK)
 	assertEq(t, api.do("DELETE", "/v1/corrections/1", nil, &conflict), http.StatusConflict)
-	assertEq(t, conflict.Period, ex.ID)
+	assertEq(t, conflict.Period, ex.Period)
 	var list []Correction
 	assertEq(t, api.do("GET", "/v1/corrections", nil, &list), http.StatusOK)
 	assertEq(t, len(list), 1)
@@ -503,7 +507,7 @@ func TestTimelineKeepsSessionsInsideThePastDay(t *testing.T) {
 		swap(t, &nowMs, func() int64 { return at })
 		assertEq(t, api.do("POST", "/v1/session", map[string]string{"action": a}, nil), http.StatusCreated)
 	}
-	act("end", mskAt(2026, 11, 16, 6, 5))   // ends the session after the day's end
+	act("end", mskAt(2026, 11, 16, 6, 5))    // ends the session after the day's end
 	act("start", mskAt(2026, 11, 16, 6, 10)) // a session of the next day, open now
 	var got dayAnswer
 	api.do("GET", "/v1/timeline?day=2026-11-15", nil, &got)

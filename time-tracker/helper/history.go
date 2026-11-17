@@ -11,7 +11,7 @@ import (
 type Change struct {
 	ID     int64  `json:"id"`
 	At     int64  `json:"at"`
-	Kind   string `json:"kind"`             // rule-add | rule-edit | rule-delete | goal-set | pay-set
+	Kind   string `json:"kind"`             // rule-add | rule-edit | rule-delete | goal-set | pay-set | month-close | month-reopen
 	Rule   *Rule  `json:"rule"`             // the rule as the change left it; nil when a delete removed it
 	Prev   *Rule  `json:"prev"`             // the rule before it; nil for an add
 	Index  int    `json:"index"`            // Prev's place in the list, to put a removed rule back
@@ -28,6 +28,10 @@ type Change struct {
 	Pay       *Pay   `json:"pay,omitempty"`        // pay-set, as goal-set
 	Pays      []Pay  `json:"pays,omitempty"`
 	PrevPays  []Pay  `json:"prev_pays,omitempty"`
+
+	Month  string `json:"month,omitempty"`  // month-close, month-reopen: YYYY-MM
+	Period int64  `json:"period,omitempty"` // its record
+	Sent   bool   `json:"sent,omitempty"`   // month-close: the report went to the client
 }
 
 // sameGoals tells whether two lists of versions are equal; nil and empty are.
@@ -179,7 +183,7 @@ func (d *Daemon) getHistory(r *http.Request) (int, any, error) {
 	return http.StatusOK, out, nil
 }
 
-// postUndo undoes a rule, goal or pay change; it stays in history.json marked undone and leaves the list.
+// postUndo undoes a rule, goal, pay or month change; it stays in history.json marked undone and leaves the list.
 func (d *Daemon) postUndo(r *http.Request) (int, any, error) {
 	id, err := intParam(r.PathValue("id"), "id")
 	if err != nil {
@@ -193,14 +197,20 @@ func (d *Daemon) postUndo(r *http.Request) (int, any, error) {
 	if i < 0 {
 		return 0, nil, fail(http.StatusNotFound, "no change %d", id)
 	}
-	if _, err := d.editConfig(func(c *Config) error {
-		if k := changes[i].Kind; k == "goal-set" || k == "pay-set" {
-			return undoVersions(c, changes[i])
-		}
-		rules, err := undoChange(c.Rules, changes[i])
-		c.Rules = rules
-		return err
-	}); err != nil {
+	switch changes[i].Kind {
+	case "month-close", "month-reopen":
+		err = d.undoMonth(changes[i])
+	default:
+		_, err = d.editConfig(func(c *Config) error {
+			if k := changes[i].Kind; k == "goal-set" || k == "pay-set" {
+				return undoVersions(c, changes[i])
+			}
+			rules, err := undoChange(c.Rules, changes[i])
+			c.Rules = rules
+			return err
+		})
+	}
+	if err != nil {
 		return 0, nil, err
 	}
 	return http.StatusNoContent, nil, d.Store.MarkUndone(id, nowMs())
