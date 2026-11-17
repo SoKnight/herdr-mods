@@ -407,7 +407,8 @@ func (d *Daemon) postRulePreview(r *http.Request) (int, any, error) {
 		if i < 0 {
 			return 0, nil, fail(http.StatusNotFound, "no rule %d", req.ID)
 		}
-		rule.ID, rules[i] = req.ID, rule
+		rule.ID = req.ID
+		rules[i] = rule
 	} else {
 		rule.ID = nextRuleID(rules)
 		rules = insertRule(rules, rule)

@@ -194,6 +194,11 @@ func TestRulePreviewMatchesAndOverlap(t *testing.T) {
 	api.do("POST", "/v1/rules/preview", map[string]any{"kind": "process", "value": "herdr-app.exe", "project": "easy"}, &p)
 	assertEq(t, p.Overlap.Rule.ID, int64(1)) // the folder rule above keeps it
 	assertEq(t, len(d.Config.Rules), 3)      // nothing written
+	p = preview{}
+	edit := map[string]any{"id": 3, "kind": "title", "value": "plan", "project": "other"} // rule 3 being edited
+	assertEq(t, api.do("POST", "/v1/rules/preview", edit, &p), http.StatusOK)
+	assertEq(t, p.Ms, int64(15*minMs))
+	assertEq(t, p.Overlap == nil, true)
 }
 
 func TestHintsFromOther(t *testing.T) {
