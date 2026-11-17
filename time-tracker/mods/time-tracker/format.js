@@ -72,6 +72,23 @@ export const midnight = (day, plusDays = 0) => {
   return new Date(y, m - 1, d + plusDays).getTime();
 };
 
+// "9:05" → 545 minutes after midnight; anything else than H:MM / HH:MM within the day is null.
+export function parseClock(s) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
+  return m && +m[1] < 24 && +m[2] < 60 ? +m[1] * 60 + +m[2] : null;
+}
+
+// Two clocks on a day that starts dayStartMs after midnight, as ms; a clock before that start is the
+// night after (the day runs 06:00 → 06:00). null when the end doesn't come after the start.
+export function manualRange(day, dayStartMs, fromMin, toMin) {
+  const at = (min) => midnight(day, min * 60_000 < dayStartMs ? 1 : 0) + min * 60_000;
+  const start = at(fromMin), end = at(toMin);
+  return end > start ? { start, end } : null;
+}
+
+// My recorded time ([{start, end}]) inside [start, end].
+export const overlapMs = (me, start, end) => me.reduce((n, s) => n + Math.max(0, Math.min(s.end, end) - Math.max(s.start, start)), 0);
+
 // Monday to the next Monday, the day starting at dayStartMs after midnight; offset counts weeks back (-) or on.
 export function weekRange(day, dayStartMs, offset = 0) {
   const back = ((new Date(midnight(day)).getDay() + 6) % 7) - 7 * offset;

@@ -14,6 +14,7 @@ import { StretchList, SessionHeader } from "./stretches.js";
 import { Side } from "./side.js";
 import { RuleEdit } from "./ruleedit.js";
 import { NewProject } from "./newproject.js";
+import { ManualEntry } from "./manual.js";
 
 const REFRESH_MS = 60_000;
 
@@ -204,6 +205,17 @@ export class Day {
     NewProject.open(this.showDialog, { projects: this.projects, onCreated, onSaved: (_text, cx) => this.load(cx) }, cx);
   }
 
+  // Time added by hand on the day shown.
+  addManual(cx) {
+    const d = this.data;
+    this.closeMenu(cx);
+    const onAdd = (body, cx) =>
+      this.perform(cx, () => call(["correct", "add", JSON.stringify(body)]), (r) => ({ text: `Добавлено: ${hhmm(body.start)}–${hhmm(body.end)} · ${this.name(body.project)}.`, undo: r.id }));
+    const dialog = new ManualEntry({ day: d.day, dayStartMs: d.from - midnight(d.day), projects: this.projects, activities: this.activities, me: d.timeline?.me ?? [], onAdd, close: (cx) => this.showDialog(null, cx) });
+    this.showDialog(dialog, cx);
+    cx.timer.after(0, () => dialog.closed || dialog.from.focus()); // once the input is drawn
+  }
+
   openNote(cx) {
     this.dropNote();
     this.note = InputState.new({ placeholder: "Заметка" });
@@ -354,6 +366,7 @@ export class Day {
       .when(Boolean(d), (el) =>
         el
           .child(div().text_size(TEXT.small).text_color(t.dim).child(`сутки ${hhmm(d.from)} → ${hhmm(d.from)}`))
+          .child(Button({ id: "day-manual", label: "+ вручную", onClick: (cx) => this.addManual(cx) }))
           .child(IconButton({ id: "day-history", icon: "history", label: "История правок", onClick: (cx) => this.open("history", cx, { day: d.day, dayStartMs: d.from - midnight(d.day) }) }).w(28)),
       );
   }

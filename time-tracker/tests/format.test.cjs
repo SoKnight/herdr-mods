@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/format.js'), 'utf8');
-const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, exportName, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries };`)();
+const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, exportName, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs };`)();
 const rcode = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/rules.js'), 'utf8');
 const R = new Function(`${rcode.replace(/^export /gm, '')}
 return { ruleText, targetName };`)();
@@ -131,4 +131,19 @@ test('history entries', () => {
   assert.equal(F.appliedRange(t(16, 6, 0), t(17, 1, 0), H6), '16 ноя'); // 01:00 is still the 16th's day
   const del = F.historyEntries({ changes: [{ id: 4, kind: 'rule-delete', at: t(17, 2, 0), from: t(1, 6, 0), ms: 0, rule: null, prev: { kind: 'title', value: 'Jira', project: 'u' } }] }, opts);
   assert.deepEqual([del[0].key, del[0].title, del[0].sub], ['h:4', 'Правило Universe: «Jira»', 'удалено']);
+});
+
+test('manual range', () => {
+  const H = 3600_000, M = 60_000;
+  const day0 = new Date(2026, 10, 16).getTime();
+  assert.equal(F.parseClock('14:00'), 840);
+  assert.equal(F.parseClock('9:05'), 545);
+  assert.equal(F.parseClock('24:00'), null);
+  assert.equal(F.parseClock('14.00'), null);
+  assert.deepEqual(F.manualRange('2026-11-16', 6 * H, 840, 930), { start: day0 + 14 * H, end: day0 + 15.5 * H });
+  assert.deepEqual(F.manualRange('2026-11-16', 6 * H, 1410, 30), { start: day0 + 23.5 * H, end: day0 + 24.5 * H }); // past midnight
+  assert.deepEqual(F.manualRange('2026-11-16', 6 * H, 60, 120), { start: day0 + 25 * H, end: day0 + 26 * H }); // before 06:00: the night after
+  assert.equal(F.manualRange('2026-11-16', 6 * H, 930, 840), null);
+  const me = [{ start: day0 + 14 * H, end: day0 + 14 * H + 25 * M }, { start: day0 + 16 * H, end: day0 + 17 * H }];
+  assert.equal(F.overlapMs(me, day0 + 14 * H, day0 + 15.5 * H), 25 * M);
 });
