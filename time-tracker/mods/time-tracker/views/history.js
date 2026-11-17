@@ -7,7 +7,7 @@ import { monthRange, midnight, dayTitle, activityLabel, catalog, stamp, historyE
 import { ruleText, targetName } from "../rules.js";
 import { Button, Icon, Message, Segmented, TEXT } from "../ui.js";
 
-const ICONS = { assign: "arrow-right", excl: "ban", activity: "tag", note: "sticky-note", manual: "plus", rule: "funnel", goal: "target", dayoff: "calendar" };
+const ICONS = { assign: "arrow-right", excl: "ban", activity: "tag", note: "sticky-note", manual: "plus", rule: "funnel", goal: "target", pay: "wallet", dayoff: "calendar" };
 
 export class History {
   // open(tab, cx): shows another tab of the panel.

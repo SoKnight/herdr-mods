@@ -15,7 +15,7 @@ export function plural(n, one, few, many) {
 }
 
 const WEEKDAYS = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
-const MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+export const MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 
 // "2026-11-16" → "пн, 16 ноября".
 export function dayTitle(day) {
@@ -176,6 +176,15 @@ export function parseMoney(s) {
   return /^\d[\d ]*$/.test(t) ? Number(t.replace(/ /g, "")) || null : null;
 }
 
+// The pay version in force in a month ("YYYY-MM"); a `none` one is none.
+export const payOn = (pays, month) => goalOn((pays ?? []).map((p) => ({ ...p, off: p.kind === "none" })), month);
+
+// Проекты's pay line: "100 000 ₽ / мес + премии", "2 000 ₽ / ч"; no pay → null.
+export const payShort = (p) => (p?.kind === "fixed" ? `${money(p.amount)} / мес + премии` : p?.kind === "hourly" ? `${money(p.amount)} / ч` : null);
+
+// "2026-11" → "ноября 2026".
+export const monthOf = (month) => `${MONTHS[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
+
 const monthTitle = (i) => MONTH_NAMES[i][0].toUpperCase() + MONTH_NAMES[i].slice(1);
 
 // The n months up to today's, newest first: [{ id: "2026-11", label: "Ноябрь 2026" }, …].
@@ -252,7 +261,7 @@ export const offReduce = (days, project) => Math.round(days.reduce((n, d) => n +
 
 const ENTRY_KIND = { project: "assign", exclude: "excl", activity: "activity", note: "note", add: "manual" };
 
-// История правок: corrections, rule and goal changes and days off as rows, newest first; change kinds it
+// История правок: corrections, rule, goal and pay changes and days off as rows, newest first; change kinds it
 // doesn't know are left out. opts: name(project id), activity(id), ruleText(rule), dayStartMs.
 export function historyEntries({ corrections = [], changes = [], days_off = [] }, { name, activity, ruleText, dayStartMs }) {
   const span = (c) => `${hhmm(c.start)}–${hhmm(c.end)}`;
@@ -278,8 +287,14 @@ export function historyEntries({ corrections = [], changes = [], days_off = [] }
     const from = `с ${d} ${MONTHS[m - 1]}${y === new Date(h.at).getFullYear() ? "" : ` ${y}`}`;
     return { key: `h:${h.id}`, kind: "goal", title, sub: `${from} · ${was ? `было: ${goalLine(was)}` : "новая"}`, at: h.at, undo: ["history", "undo", String(h.id)] };
   };
+  const fromPay = (h) => {
+    const p = h.pay, was = payOn(h.prev_pays, p.from);
+    const title = p.kind === "none" ? `Оплата ${name(h.project)} снята` : `Оплата ${name(h.project)}: ${payShort(p)}`;
+    return { key: `h:${h.id}`, kind: "pay", title, sub: `с ${monthOf(p.from)} · ${was ? `было: ${payShort(was)}` : "новая"}`, at: h.at, undo: ["history", "undo", String(h.id)] };
+  };
   const fromChange = (h) => {
     if (h.kind === "goal-set") return fromGoal(h);
+    if (h.kind === "pay-set") return fromPay(h);
     if (!h.kind?.startsWith("rule-")) return null;
     const range = `применено к ${appliedRange(h.from, h.at, dayStartMs)}`;
     const ms = (plus) => (h.ms >= 60000 ? ` · ${plus}${formatDuration(h.ms)}` : "");

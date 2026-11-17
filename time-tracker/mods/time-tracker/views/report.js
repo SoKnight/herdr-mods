@@ -11,6 +11,7 @@ import { Button, Check, Dropdown, Icon, IconButton, Message, TEXT } from "../ui.
 import { Link } from "./menu.js";
 import { SideFrame } from "./side.js";
 import { GoalEdit } from "./goal.js";
+import { BonusAdd } from "./bonus.js";
 import { saveCSV } from "./export.js";
 import { panelShown } from "./day.js";
 
@@ -121,7 +122,13 @@ export class Report {
   editGoal(cx) {
     const project = this.projects.find((p) => p.id === this.project);
     if (!project) return;
-    GoalEdit.open(this.showDialog, { project, today: this.today, onSaved: (text, cx) => this.saved(text, cx) }, cx);
+    const rep = this.rep;
+    GoalEdit.open(this.showDialog, { project, today: this.today, month: rep.month, plan: rep.plan, planDays: rep.plan_days, onSaved: (text, cx) => this.saved(text, cx) }, cx);
+  }
+
+  addBonus(cx) {
+    const rep = this.rep;
+    BonusAdd.open(this.showDialog, { project: rep.project, name: this.name(rep.project), month: rep.month, pay: rep.pay, onSaved: (text, cx) => this.saved(text, cx) }, cx);
   }
 
   saved(text, cx) {
@@ -337,12 +344,17 @@ export class Report {
     const closed = Boolean(this.state?.closed);
     const box = v_flex().flex_none().gap(8).child(caption("Оплата"));
     const unset = () => h_flex().gap(8).items_center().child(div().text_color(t.muted).child("Оплата не задана")).when(!closed, (el) => el.child(Link({ id: "report-pay-set", label: "задать", onClick: (cx) => this.editGoal(cx) })));
-    if (!pay) return box.child(unset());
+    const bonuses = h_flex()
+      .gap(8)
+      .items_center()
+      .child(caption("Премии за сроки"))
+      .when(!closed, (el) => el.child(Link({ id: "report-bonus-add", label: "+ добавить", onClick: (cx) => this.addBonus(cx) }).text_size(TEXT.small)));
+    if (!pay) return box.child(unset()).child(bonuses);
     const month = this.rep.month;
     if (pay.kind === "fixed") box.child(line(`Фикс за ${monthName(month)}`, money(pay.base)));
     else if (pay.kind === "hourly") box.child(line(`Почасовая · ${money(pay.amount)}/ч`, money(pay.base)));
     else box.child(unset());
-    box.child(caption("Премии за сроки"));
+    box.child(bonuses);
     for (const b of pay.bonuses ?? []) {
       box.child(
         h_flex()

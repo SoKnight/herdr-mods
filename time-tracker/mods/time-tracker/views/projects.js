@@ -4,7 +4,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex, Input, InputState, Popover } from "gpui-base";
 import { theme, props, layout } from "herdr";
 import { call } from "../client.js";
-import { formatDuration, fmtMin, goalOn, goalShort, goalLine, weeklyTotal } from "../format.js";
+import { formatDuration, fmtMin, goalOn, goalShort, goalLine, weeklyTotal, payOn, payShort } from "../format.js";
 import { projectColor } from "../lanes.js";
 import { RULE_KINDS, COLORS, ruleText, targetName } from "../rules.js";
 import { Button, Icon, IconButton, Message, TEXT } from "../ui.js";
@@ -321,7 +321,7 @@ export class Projects {
           .text_color(t.muted)
           .child(Icon("bot", 14))
           .child("агенты по папке проекта"),
-      ).child(this.goalRow(t, p));
+      ).child(this.goalRow(t, p)).child(this.payRow(t, p));
     return col;
   }
 
@@ -340,6 +340,23 @@ export class Projects {
       .child(g ? goalLine(g) : "цели нет")
       .child(div().flex_1())
       .when(Boolean(this.today), (el) => el.child(IconButton({ id: "projects-goal-edit", icon: "pencil", label: "Изменить цель", onClick: (cx) => this.editGoal(p, cx) })));
+  }
+
+  payRow(t, p) {
+    const pay = this.today ? payOn(p.pay, this.today.slice(0, 7)) : null;
+    return h_flex()
+      .flex_none()
+      .h(40)
+      .gap(10)
+      .items_center()
+      .border_t(1)
+      .border_color(t.border)
+      .text_size(TEXT.small)
+      .text_color(t.muted)
+      .child(Icon("wallet", 14))
+      .child(payShort(pay) ?? "оплата не задана")
+      .child(div().flex_1())
+      .when(Boolean(this.today), (el) => el.child(IconButton({ id: "projects-pay-edit", icon: "pencil", label: "Изменить оплату", onClick: (cx) => this.editGoal(p, cx) })));
   }
 
   // The first run: nothing to show but what Другое could become.

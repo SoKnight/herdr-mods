@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/format.js'), 'utf8');
-const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs, fmtMin, signed, roundRows, parseHours, hoursText, goalOn, goalShort, goalLine, goalVersion, weeklyTotal, progressText, goalBlock, forecastLine, weekDays, weekTitle, weekRelative, mainGoal, dayDiff, weekRows, monthGrid, cellBars, offTitle, workdaysText, offReduce, money, parseMoney, monthOptions, goalStrip, reportFootnote, exportFile };`)();
+const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs, fmtMin, signed, roundRows, parseHours, hoursText, goalOn, goalShort, goalLine, goalVersion, weeklyTotal, progressText, goalBlock, forecastLine, weekDays, weekTitle, weekRelative, mainGoal, dayDiff, weekRows, monthGrid, cellBars, offTitle, workdaysText, offReduce, money, parseMoney, monthOptions, goalStrip, reportFootnote, exportFile, payOn, payShort };`)();
 const rcode = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/rules.js'), 'utf8');
 const R = new Function(`${rcode.replace(/^export /gm, '')}
 return { ruleText, targetName };`)();
@@ -155,7 +155,7 @@ test('goal changes in history', () => {
   const changes = [
     { id: 7, kind: 'goal-set', at: at(20), project: 'easy', goal: { from: '2026-11-20', off: true }, goals: [g, { from: '2026-11-20', off: true }], prev_goals: [g] },
     { id: 6, kind: 'goal-set', at: at(19), project: 'easy', goal: g, goals: [g], prev_goals: [] },
-    { id: 5, kind: 'pay-set', at: at(18) }, // a kind this version doesn't know: left out
+    { id: 5, kind: 'later-kind', at: at(18) }, // a kind this version doesn't know: left out
   ];
   const rows = F.historyEntries({ changes }, { name: () => 'Easy', activity: (x) => x, ruleText: () => '', dayStartMs: 0 });
   assert.deepEqual(rows.map((r) => [r.key, r.kind, r.title, r.sub]), [
@@ -165,6 +165,25 @@ test('goal changes in history', () => {
   assert.deepEqual(rows[0].undo, ['history', 'undo', '7']);
   const dec = F.historyEntries({ changes: [{ id: 8, kind: 'goal-set', at: at(20), project: 'easy', goal: { ...g, from: '2025-12-01' }, prev_goals: [] }] }, { name: () => 'Easy' });
   assert.equal(dec[0].sub, 'с 1 декабря 2025 · новая');
+});
+
+test('pay wording', () => {
+  const pays = [{ from: '2026-10', kind: 'fixed', amount: 90000 }, { from: '2026-12', kind: 'hourly', amount: 2000 }, { from: '2027-02', kind: 'none' }];
+  assert.equal(F.payOn(pays, '2026-09'), null);
+  assert.deepEqual([F.payOn(pays, '2026-11'), F.payOn(pays, '2027-01'), F.payOn(pays, '2027-03')].map(F.payShort), ['90 000 ₽ / мес + премии', '2 000 ₽ / ч', null]);
+  const at = new Date(2026, 10, 18, 12, 0).getTime();
+  const changes = [
+    { id: 9, kind: 'pay-set', at, project: 'uni', pay: { from: '2026-12', kind: 'none' }, prev_pays: pays.slice(0, 2) },
+    { id: 8, kind: 'pay-set', at: at - 1, project: 'uni', pay: { from: '2026-11', kind: 'fixed', amount: 100000 }, prev_pays: pays.slice(0, 1) },
+    { id: 7, kind: 'pay-set', at: at - 2, project: 'uni', pay: { from: '2026-09', kind: 'hourly', amount: 1500 }, prev_pays: [] },
+  ];
+  const rows = F.historyEntries({ changes }, { name: () => 'Universe' });
+  assert.deepEqual(rows.map((r) => [r.key, r.kind, r.title, r.sub]), [
+    ['h:9', 'pay', 'Оплата Universe снята', 'с декабря 2026 · было: 2 000 ₽ / ч'],
+    ['h:8', 'pay', 'Оплата Universe: 100 000 ₽ / мес + премии', 'с ноября 2026 · было: 90 000 ₽ / мес + премии'],
+    ['h:7', 'pay', 'Оплата Universe: 1 500 ₽ / ч', 'с сентября 2026 · новая'],
+  ]);
+  assert.deepEqual(rows[0].undo, ['history', 'undo', '9']);
 });
 
 test('manual range', () => {
