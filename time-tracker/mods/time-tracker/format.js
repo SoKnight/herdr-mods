@@ -88,3 +88,6 @@ export function monthRange(day, dayStartMs = 4 * 3600_000, offset = 0) {
 export function exportName(project, from, to, format, dayStartMs = 0, now = Date.now()) {
   return `${project}_${dayString(from - dayStartMs)}_${dayString(Math.min(to, now) - 1 - dayStartMs)}.${format}`;
 }
+
+// The line under a session's title: how it began and when it ends.
+export const sessionNote = (manual, minutes) => `${manual ? "начата вручную" : "началась сама после простоя"} · закончится после ${minutes} мин без активности`;

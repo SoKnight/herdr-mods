@@ -74,3 +74,13 @@ export function ruleFor(item, project) {
   const exact = (s) => `^${s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`;
   return { project, kind: item.kind, value: item.kind === "path" ? item.value : exact(item.value) };
 }
+
+// The hours a session's strip covers: whole hours around it, three at least, to an end the ticks divide evenly.
+export function sessionWindow(start, end, now, open) {
+  const H = 3600_000;
+  const from = new Date(start).setMinutes(0, 0, 0);
+  const last = open ? Math.max(end, now) : end;
+  let to = Math.max(Math.ceil((last - from) / H), 3) * H + from;
+  while ((to - from) % tickStep(to - from) !== 0) to += H;
+  return { from, to };
+}

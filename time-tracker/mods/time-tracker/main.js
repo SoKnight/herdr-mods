@@ -4,6 +4,7 @@ import { View, div } from "gpui-kit";
 import { props, checking } from "herdr";
 import { Status } from "./views/status.js";
 import { Day } from "./views/day.js";
+import { SessionView } from "./views/session.js";
 import { Table } from "./views/table.js";
 import { Report } from "./views/report.js";
 import { theme } from "herdr";
@@ -22,14 +23,14 @@ export default class TimeTracker extends View {
       if (!checking()) this.status.init(given, cx);
       return;
     }
-    this.tab = "day";
+    this.tab = "session";
     const openDay = (date, cx) => {
       this.tab = "day";
       this.parts.day.show(date === this.parts.day.today ? null : date, cx); // loads once; the tick finds it fresh
       cx.notify();
     };
     const open = (tab, cx) => this.open(tab, cx);
-    this.parts = { session: placeholder(["Сессия", "Появится в следующем обновлении."]), projects: placeholder(PROJECTS), settings: placeholder(SETTINGS), day: new Day(open), week: new Table("week", openDay), month: new Table("month", openDay), report: new Report() };
+    this.parts = { session: new SessionView(open), projects: placeholder(PROJECTS), settings: placeholder(SETTINGS), day: new Day(open), week: new Table("week", openDay), month: new Table("month", openDay), report: new Report() };
     if (checking()) return;
     this.tick(cx);
     cx.timer.every(5000, (cx) => this.tick(cx));

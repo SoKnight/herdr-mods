@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/format.js'), 'utf8');
-const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, exportName, catalog, plural, dayTitle, shareText };`)();
+const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, exportName, sessionNote, catalog, plural, dayTitle, shareText };`)();
 
 test('durations', () => {
   assert.equal(F.formatDuration(18_720_000), '5ч 12м');
@@ -91,3 +91,8 @@ test('export file name', () => {
   assert.equal(F.exportName('easylauncher', at('2026-11-16', 4), at('2026-11-23', 4), 'csv', DAY_START, at('2026-12-01')), 'easylauncher_2026-11-16_2026-11-22.csv');
 });
 
+
+test('session note', () => {
+  assert.equal(F.sessionNote(false, 45), 'началась сама после простоя · закончится после 45 мин без активности');
+  assert.equal(F.sessionNote(true, 30), 'начата вручную · закончится после 30 мин без активности');
+});

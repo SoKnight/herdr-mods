@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/lanes.js'), 'utf8');
-const L = new Function(`${code.replace(/^export /gm, '')}\nreturn { bars, projectColor, rangeFromDrag, correctionIds, shiftDay, ruleFor, stepDay, tickStep, ticks };`)();
+const L = new Function(`${code.replace(/^export /gm, '')}\nreturn { bars, projectColor, rangeFromDrag, correctionIds, shiftDay, ruleFor, stepDay, tickStep, ticks, sessionWindow };`)();
 
 const H = 3600_000;
 const seg = (start, end, extra = {}) => ({ start, end, app: 'idea64.exe', title: 't', project: 'easylauncher', activity: 'development', why: '', corrected: false, ...extra });
@@ -84,4 +84,12 @@ test('ticks split the range evenly', () => {
   assert.equal(day.length, 9);
   assert.equal(day[8], 30 * H);
   assert.deepEqual(L.ticks(22 * H, 28 * H), [22, 23, 24, 25, 26, 27, 28].map((h) => h * H));
+});
+
+test('session window: whole hours, three at least, even ticks', () => {
+  const t = (d, h, m = 0) => new Date(2026, 10, d, h, m).getTime();
+  assert.deepEqual(L.sessionWindow(t(16, 22, 11), t(17, 3, 55), t(17, 3, 56), true), { from: t(16, 22), to: t(17, 4) });
+  assert.deepEqual(L.sessionWindow(t(16, 10, 20), t(16, 10, 40), t(16, 18), false), { from: t(16, 10), to: t(16, 13) });
+  assert.deepEqual(L.sessionWindow(t(16, 9, 30), t(16, 19, 10), t(16, 19, 20), false), { from: t(16, 9), to: t(16, 21) });
+  assert.deepEqual(L.sessionWindow(t(16, 10), t(16, 10, 30), t(16, 13, 30), true), { from: t(16, 10), to: t(16, 14) });
 });
