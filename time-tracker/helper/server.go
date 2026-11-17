@@ -128,6 +128,11 @@ func newServer(d *Daemon) http.Handler {
 		"GET /v1/projects":             read(d.getProjects),
 		"POST /v1/projects":            d.postProject,
 		"PATCH /v1/projects/{id}":      d.patchProject,
+		"PUT /v1/projects/{id}/goal":   d.putGoal,
+		"POST /v1/daysoff":             d.postDayOff,
+		"DELETE /v1/daysoff/{id}":      d.deleteDayOff,
+		"GET /v1/plan":                 read(d.getPlan),
+		"GET /v1/goals":                read(d.getGoals),
 		"POST /v1/periods/{id}/reopen": d.reopenPeriod,
 		"POST /v1/quit":                d.postQuit,
 	}

@@ -190,3 +190,23 @@ func TestUndoneChangesKeepTheirIDs(t *testing.T) {
 	api.do("GET", fmt.Sprintf("/v1/history?from=%d&to=%d", now-minMs, now+minMs), nil, &h)
 	assertEq(t, len(h.Changes), 2) // the undone one left the list
 }
+
+func TestHistoryDaysOff(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	cliHome(t, portOf(t, api.url))
+	now := mskAt(2026, 11, 16, 12, 0)
+	var raw map[string]any
+	api.do("GET", fmt.Sprintf("/v1/history?from=%d&to=%d", now-minMs, now+minMs), nil, &raw)
+	assertEq(t, fmt.Sprint(raw["days_off"]), "[]") // never null
+	for i, made := range []int64{now - 2, now - 1} {
+		_, err := d.Store.AddDayOff(DayOff{From: "2026-11-23", To: "2026-11-27", Kind: []string{"otgul", "sick"}[i], Projects: []string{}, Made: made})
+		must(t, err)
+	}
+	var h history
+	api.do("GET", fmt.Sprintf("/v1/history?from=%d&to=%d", now-minMs, now), nil, &h)
+	assertEq(t, fmt.Sprint(h.DaysOff[0].ID, h.DaysOff[1].ID), "2 1") // newest first
+	var out, errOut bytes.Buffer
+	assertEq(t, runCLI([]string{"history", "--from", strconv.FormatInt(now-minMs, 10), "--to", strconv.FormatInt(now, 10)}, &out, &errOut), 0)
+	assertEq(t, strings.Contains(out.String(), "dayoff rm 2\n"), true)
+}

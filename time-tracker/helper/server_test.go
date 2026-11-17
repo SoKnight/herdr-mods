@@ -352,15 +352,15 @@ func TestProjectsInConfigOrder(t *testing.T) {
 	var list catalog
 	assertEq(t, api.do("GET", "/v1/projects", nil, &list), http.StatusOK)
 	assertEq(t, len(list.Projects), 2)
-	assertEq(t, list.Projects[0], catalogItem{ID: "easy", Name: "Easy", Color: "ansi1"})
+	assertEq(t, fmt.Sprint(list.Projects[0]), fmt.Sprint(catalogItem{ID: "easy", Name: "Easy", Color: "ansi1"}))
 	assertEq(t, list.Projects[1].ID, "other")
 	assertEq(t, len(list.Activities), 5)
-	assertEq(t, list.Activities[1], catalogItem{ID: "architecture", Label: "Проектирование"})
+	assertEq(t, fmt.Sprint(list.Activities[1]), fmt.Sprint(catalogItem{ID: "architecture", Label: "Проектирование"}))
 
 	must(t, d.setConfig(Config{Activities: []string{"review"}}))
 	assertEq(t, api.do("GET", "/v1/projects", nil, &list), http.StatusOK)
 	assertEq(t, len(list.Activities), 1)
-	assertEq(t, list.Activities[0], catalogItem{ID: "review", Label: "review"}) // an edited list, its id as the label
+	assertEq(t, fmt.Sprint(list.Activities[0]), fmt.Sprint(catalogItem{ID: "review", Label: "review"})) // an edited list, its id as the label
 	assertEq(t, len(list.Projects), 0)
 
 	c, err := buildCall(d.S, "projects", nil)

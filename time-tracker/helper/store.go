@@ -301,6 +301,13 @@ func corrID(c *Correction) *int64  { return &c.ID }
 func perID(p *Period) *int64       { return &p.ID }
 func markID(m *SessionMark) *int64 { return &m.ID }
 func changeID(c *Change) *int64    { return &c.ID }
+func dayOffID(o *DayOff) *int64    { return &o.ID }
+
+func (st *Store) DaysOff() ([]DayOff, error) { return listItems[DayOff](st, "daysoff.json") }
+func (st *Store) AddDayOff(o DayOff) (DayOff, error) {
+	return addItem(st, "daysoff.json", o, dayOffID)
+}
+func (st *Store) RemoveDayOff(id int64) error { return removeItem(st, "daysoff.json", id, dayOffID) }
 
 func (st *Store) SessionMarks() ([]SessionMark, error) {
 	return listItems[SessionMark](st, "sessions.json")

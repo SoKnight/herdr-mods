@@ -39,6 +39,10 @@ const usage = `herdr-time <команда> [--json]
   hints [--name X] [--days N]
   history --from --to | undo <id>
   project add <json> | set <id> <json>
+  goal set <project> <json>
+  dayoff add <json> | rm <id>
+  plan --from YYYY-MM-DD --to YYYY-MM-DD   дни, не Unix ms
+  goals [--day YYYY-MM-DD]
   session [start|end]
   periods [--project id]
   reopen <id>
@@ -312,6 +316,31 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 		}
 		body, err := arg(2, "<json>")
 		return apiCall{method: "PATCH", path: "/v1/projects/" + url.PathEscape(id), body: []byte(body)}, err
+	case cmd == "goal" && sub == "set":
+		id, err := arg(1, "<project>")
+		if err != nil {
+			return apiCall{}, err
+		}
+		body, err := arg(2, "<json>")
+		return apiCall{method: "PUT", path: "/v1/projects/" + url.PathEscape(id) + "/goal", body: []byte(body)}, err
+	case cmd == "dayoff" && sub == "add":
+		body, err := arg(1, "<json>")
+		return apiCall{method: "POST", path: "/v1/daysoff", body: []byte(body)}, err
+	case cmd == "dayoff" && sub == "rm":
+		id, err := arg(1, "<id>")
+		return apiCall{method: "DELETE", path: "/v1/daysoff/" + url.PathEscape(id)}, err
+	case cmd == "plan":
+		if *fromArg == "" || *toArg == "" {
+			return apiCall{}, errors.New("--from and --to are required")
+		}
+		q.Set("from", *fromArg)
+		q.Set("to", *toArg)
+		return apiCall{method: "GET", path: "/v1/plan?" + q.Encode(), show: showPlan}, nil
+	case cmd == "goals":
+		if *day != "" {
+			q.Set("day", *day)
+		}
+		return apiCall{method: "GET", path: "/v1/goals?" + q.Encode(), show: showGoals}, nil
 	case cmd == "periods":
 		if *project != "" {
 			q.Set("project", *project)

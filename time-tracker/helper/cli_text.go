@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -19,6 +20,61 @@ func dur(ms int64) string {
 }
 
 func clock(ms int64) string { return time.UnixMilli(ms).Format("2006-01-02 15:04") }
+
+// mins is the panel's duration format over whole minutes: —, Nм, Nч, Nч Mм.
+func mins(m int64) string {
+	switch {
+	case m == 0:
+		return "—"
+	case m < 60:
+		return fmt.Sprintf("%dм", m)
+	case m%60 == 0:
+		return fmt.Sprintf("%dч", m/60)
+	}
+	return fmt.Sprintf("%dч %dм", m/60, m%60)
+}
+
+// signed is mins with + or − (U+2212), 0 for no difference.
+func signed(m int64) string {
+	switch {
+	case m == 0:
+		return "0"
+	case m < 0:
+		return "−" + mins(-m)
+	}
+	return "+" + mins(m)
+}
+
+func goalLine(project string, s goalSum) string {
+	return fmt.Sprintf("%s  %s / %s  баланс %s  прогноз %s", project, mins(s.Fact), mins(s.Plan), signed(s.Balance), mins(s.Forecast))
+}
+
+func showPlan(w io.Writer, resp []byte) error {
+	var v struct {
+		Sums map[string]goalSum `json:"sums"`
+	}
+	if err := json.Unmarshal(resp, &v); err != nil {
+		return err
+	}
+	ids := slices.Sorted(maps.Keys(v.Sums))
+	for _, id := range ids {
+		fmt.Fprintln(w, goalLine(id, v.Sums[id]))
+	}
+	return nil
+}
+
+func showGoals(w io.Writer, resp []byte) error {
+	var v struct {
+		Goals []goalInfo `json:"goals"`
+	}
+	if err := json.Unmarshal(resp, &v); err != nil {
+		return err
+	}
+	for _, g := range v.Goals {
+		fmt.Fprintln(w, goalLine(g.Project, g.Month))
+	}
+	return nil
+}
 
 func showStatus(w io.Writer, resp []byte) error {
 	var st struct {
@@ -201,7 +257,7 @@ func showPreview(w io.Writer, resp []byte) error {
 	return nil
 }
 
-// showHistory prints corrections and rule changes newest first, each with the command that undoes it.
+// showHistory prints corrections, rule changes and days off newest first, each with the command that undoes it.
 func showHistory(w io.Writer, resp []byte) error {
 	var h history
 	if err := json.Unmarshal(resp, &h); err != nil {
@@ -218,6 +274,9 @@ func showHistory(w io.Writer, resp []byte) error {
 	}
 	for _, c := range h.Changes {
 		lines = append(lines, line{c.At, c.Kind, "history undo", c.ID})
+	}
+	for _, o := range h.DaysOff {
+		lines = append(lines, line{o.Made, fmt.Sprintf("dayoff %s %s–%s", o.Kind, o.From, o.To), "dayoff rm", o.ID})
 	}
 	slices.SortStableFunc(lines, func(a, b line) int { return cmp.Compare(b.at, a.at) })
 	for _, l := range lines {

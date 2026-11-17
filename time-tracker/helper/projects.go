@@ -98,13 +98,14 @@ type catalogItem struct {
 	Label    string `json:"label,omitempty"`
 	Color    string `json:"color,omitempty"`
 	Archived bool   `json:"archived,omitempty"`
+	Goals    []Goal `json:"goals,omitempty"`
 }
 
 // getProjects lists the projects and the kinds of activity in config order, for the mod's menus and names.
 func (d *Daemon) getProjects(r *http.Request) (int, any, error) {
 	out := catalog{Projects: []catalogItem{}, Activities: []catalogItem{}}
 	for _, p := range d.Config.Projects {
-		out.Projects = append(out.Projects, catalogItem{ID: p.ID, Name: p.Name, Color: p.Color, Archived: p.Archived})
+		out.Projects = append(out.Projects, catalogItem{ID: p.ID, Name: p.Name, Color: p.Color, Archived: p.Archived, Goals: p.Goals})
 	}
 	for _, a := range d.Config.Activities {
 		label := activityLabels[a]

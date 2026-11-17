@@ -1,7 +1,9 @@
 package main
 
 import (
+	"cmp"
 	"math"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -51,11 +53,11 @@ type goalSum struct {
 	DaysLeft   int   `json:"days_left"`    // planned days after today
 }
 
-// goalOn is the version in force on day; nil when none or Off.
+// goalOn is the version in force on day, the latest From up to it in any order; nil when none or Off.
 func goalOn(goals []Goal, day string) *Goal {
 	var g *Goal
 	for i := range goals {
-		if goals[i].From <= day {
+		if goals[i].From <= day && (g == nil || goals[i].From >= g.From) {
 			g = &goals[i]
 		}
 	}
@@ -186,4 +188,204 @@ func sumGoal(days []planDay, project, today string) goalSum {
 		s.Need = (left + int64(s.DaysLeft) - 1) / int64(s.DaysLeft)
 	}
 	return s
+}
+
+// maxPlanDays caps every range a plan is built over: the timeline behind it is read under d.mu.
+const maxPlanDays = 62
+
+// dayList is the days from first to last, both in; more than maxPlanDays of them is an error.
+func dayList(first, last string) ([]string, error) {
+	a, err1 := time.Parse(time.DateOnly, first)
+	b, err2 := time.Parse(time.DateOnly, last)
+	if err1 != nil || err2 != nil || b.Before(a) || b.Sub(a) >= maxPlanDays*24*time.Hour {
+		return nil, fail(http.StatusBadRequest, "from, to: want days YYYY-MM-DD, from not after to, at most %d days", maxPlanDays)
+	}
+	var days []string
+	for t := a; !t.After(b); t = t.AddDate(0, 0, 1) {
+		days = append(days, t.Format(time.DateOnly))
+	}
+	return days, nil
+}
+
+// planRange is the plan of every day from first to last, both in. Callers hold mu.
+func (d *Daemon) planRange(first, last string) ([]planDay, error) {
+	days, err := dayList(first, last)
+	if err != nil {
+		return nil, err
+	}
+	from, _, err := dayRange(d.S, first)
+	if err != nil {
+		return nil, err
+	}
+	_, to, err := dayRange(d.S, last)
+	if err != nil {
+		return nil, err
+	}
+	tl, _, err := d.timeline(from, to)
+	if err != nil {
+		return nil, err
+	}
+	off, err := d.Store.DaysOff()
+	if err != nil {
+		return nil, err
+	}
+	return planDays(days, d.Cal, d.Config.Projects, off, Summarize(tl, d.S, d.order())), nil
+}
+
+// checkGoal validates g; week and month goals lose the day-goal fields, an Off keeps only From.
+func checkGoal(g Goal) (Goal, error) {
+	if _, err := time.Parse(time.DateOnly, g.From); err != nil {
+		return g, fail(http.StatusBadRequest, "from: want YYYY-MM-DD")
+	}
+	if g.Off {
+		return Goal{From: g.From, Off: true}, nil
+	}
+	if g.Dir != "min" && g.Dir != "max" {
+		return g, fail(http.StatusBadRequest, "dir: want min or max")
+	}
+	limit := map[string]int64{"day": 1440, "week": 7 * 1440, "month": 31 * 1440}[g.Period]
+	if limit == 0 {
+		return g, fail(http.StatusBadRequest, "period: want day, week or month")
+	}
+	// sumGoal rounds half up assuming no plan is negative: minutes stay at least 1.
+	if g.Minutes < 1 || g.Minutes > limit {
+		return g, fail(http.StatusBadRequest, "minutes: want 1..1440 a day, 10080 a week, 44640 a month")
+	}
+	if g.Period != "day" {
+		g.Weekdays, g.Calendar, g.Weekends = nil, false, false
+		return g, nil
+	}
+	if len(g.Weekdays) == 0 || slices.ContainsFunc(g.Weekdays, func(w int) bool { return w < 1 || w > 7 }) {
+		return g, fail(http.StatusBadRequest, "weekdays: want days 1..7")
+	}
+	return g, nil
+}
+
+// putGoal sets a project's goal from g.From on; earlier versions stay.
+func (d *Daemon) putGoal(r *http.Request) (int, any, error) {
+	id := r.PathValue("id")
+	var g Goal
+	if err := decode(r, &g); err != nil {
+		return 0, nil, err
+	}
+	var p Project
+	_, err := d.editConfig(func(c *Config) error {
+		i := slices.IndexFunc(c.Projects, func(x Project) bool { return x.ID == id })
+		if i < 0 {
+			return fail(http.StatusNotFound, "no project %q", id)
+		}
+		g, err := checkGoal(g)
+		if err != nil {
+			return err
+		}
+		c.Projects[i].Goals = setGoal(c.Projects[i].Goals, g)
+		p = c.Projects[i]
+		return nil
+	})
+	return http.StatusOK, p, err
+}
+
+func (d *Daemon) postDayOff(r *http.Request) (int, any, error) {
+	var o DayOff
+	if err := decode(r, &o); err != nil {
+		return 0, nil, err
+	}
+	if _, err := dayList(o.From, o.To); err != nil {
+		return 0, nil, err
+	}
+	if !slices.Contains([]string{"otgul", "vacation", "sick"}, o.Kind) {
+		return 0, nil, fail(http.StatusBadRequest, "kind: want otgul, vacation or sick")
+	}
+	for _, p := range o.Projects {
+		if d.project(p) == nil {
+			return 0, nil, fail(http.StatusBadRequest, "unknown project %q", p)
+		}
+	}
+	o.ID, o.Made, o.Projects = 0, nowMs(), nonNil(o.Projects)
+	created, err := d.Store.AddDayOff(o)
+	return http.StatusCreated, created, err
+}
+
+func (d *Daemon) deleteDayOff(r *http.Request) (int, any, error) {
+	id, err := intParam(r.PathValue("id"), "id")
+	if err != nil {
+		return 0, nil, err
+	}
+	offs, err := d.Store.DaysOff()
+	if err != nil {
+		return 0, nil, err
+	}
+	if !slices.ContainsFunc(offs, func(o DayOff) bool { return o.ID == id }) {
+		return 0, nil, fail(http.StatusNotFound, "no day off %d", id)
+	}
+	return http.StatusNoContent, nil, d.Store.RemoveDayOff(id)
+}
+
+// getPlan gives the days from ?from= to ?to= and, for each project with a goal on the last day (or today
+// when that is earlier), the goal and its sums over the range.
+func (d *Daemon) getPlan(r *http.Request) (int, any, error) {
+	first, last := r.URL.Query().Get("from"), r.URL.Query().Get("to")
+	days, err := d.planRange(first, last)
+	if err != nil {
+		return 0, nil, err
+	}
+	today := d.S.DayOf(nowMs())
+	goals, sums := map[string]Goal{}, map[string]goalSum{}
+	for _, p := range d.Config.Projects {
+		if g := goalOn(p.Goals, min(last, today)); g != nil {
+			goals[p.ID], sums[p.ID] = *g, sumGoal(days, p.ID, today)
+		}
+	}
+	var names []string
+	for _, pd := range days {
+		names = append(names, pd.Day)
+	}
+	return http.StatusOK, map[string]any{"today": today, "days": days, "goals": goals, "sums": sums,
+		"no_calendar": d.Cal.Missing(names)}, nil
+}
+
+type goalInfo struct {
+	Project string  `json:"project"`
+	Goal    Goal    `json:"goal"`
+	Day     goalSum `json:"day"`
+	Week    goalSum `json:"week"`
+	Month   goalSum `json:"month"`
+	Agents  int64   `json:"agents"` // the project's agent minutes that day
+}
+
+// getGoals sums each goal in force on ?day= (default today) over that day, its Monday–Sunday week and
+// its month, in config order.
+func (d *Daemon) getGoals(r *http.Request) (int, any, error) {
+	today := d.S.DayOf(nowMs())
+	day := cmp.Or(r.URL.Query().Get("day"), today)
+	t, err := time.Parse(time.DateOnly, day)
+	if err != nil {
+		return 0, nil, fail(http.StatusBadRequest, "day: want YYYY-MM-DD, got %q", day)
+	}
+	date := func(t time.Time) string { return t.Format(time.DateOnly) }
+	mon := t.AddDate(0, 0, 1-weekday(day))
+	weekFrom, weekTo := date(mon), date(mon.AddDate(0, 0, 6))
+	month := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
+	monthFrom, monthTo := date(month), date(month.AddDate(0, 1, -1))
+	days, err := d.planRange(min(weekFrom, monthFrom), max(weekTo, monthTo)) // at most 37 days
+	if err != nil {
+		return 0, nil, err
+	}
+	in := func(from, to string) []planDay {
+		return slices.DeleteFunc(slices.Clone(days), func(pd planDay) bool { return pd.Day < from || pd.Day > to })
+	}
+	out := []goalInfo{}
+	for _, p := range d.Config.Projects {
+		g := goalOn(p.Goals, day)
+		if g == nil {
+			continue
+		}
+		info := goalInfo{Project: p.ID, Goal: *g, Day: sumGoal(in(day, day), p.ID, today),
+			Week: sumGoal(in(weekFrom, weekTo), p.ID, today), Month: sumGoal(in(monthFrom, monthTo), p.ID, today)}
+		for _, pd := range in(day, day) {
+			info.Agents += pd.Agents[p.ID]
+		}
+		out = append(out, info)
+	}
+	return http.StatusOK, map[string]any{"day": day, "today": today, "goals": out}, nil
 }

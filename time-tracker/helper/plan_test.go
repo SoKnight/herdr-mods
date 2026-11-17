@@ -1,7 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -90,4 +95,148 @@ func TestMonthlyGoalExactHalf(t *testing.T) {
 	projects := []Project{{ID: "m", Goals: []Goal{{From: "2026-11-01", Dir: "min", Minutes: 2401, Period: "month"}}}}
 	s := sumGoal(planDays(novDays(), shipped(t), projects, nil, Report{}), "m", nov(15))
 	assertEq(t, fmt.Sprint(s.PlanToDate, s.Plan, s.Forecast, s.Need), "1201 2401 0 161") // need = ceil(2401 / 15)
+}
+
+// A hand-edited projects.json may list versions out of order: the latest From up to the day still wins.
+func TestGoalOnOutOfOrder(t *testing.T) {
+	gs := []Goal{{From: "2026-12-01", Minutes: 420}, {From: "2026-11-01", Minutes: 390}, {From: "2026-11-15", Minutes: 360}}
+	assertEq(t, fmt.Sprint(goalOn(gs, "2026-11-10").Minutes, goalOn(gs, "2026-11-20").Minutes, goalOn(gs, "2026-12-02").Minutes), "390 360 420")
+	assertEq(t, goalOn(gs, "2026-10-31") == nil, true)
+}
+
+func TestGoalSetKeepsPastVersions(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	set := func(g map[string]any) int { return api.do("PUT", "/v1/projects/easy/goal", g, nil) }
+	day := map[string]any{"from": "2026-11-01", "dir": "min", "minutes": 390, "period": "day", "weekdays": []int{1, 2, 3, 4, 5}, "calendar": true, "weekends": true}
+	assertEq(t, set(day), http.StatusOK)
+	day["from"], day["minutes"] = "2026-12-01", 420
+	set(day)
+	day["from"], day["minutes"] = "2026-11-15", 360
+	set(day)
+	gs := d.project("easy").Goals
+	assertEq(t, fmt.Sprintf("%v %v %v %v %v", gs[0].From, gs[0].Minutes, gs[1].From, gs[1].Minutes, len(gs)), "2026-11-01 390 2026-11-15 360 2")
+	week := map[string]any{"from": "2026-11-01", "dir": "min", "minutes": 480, "period": "week", "weekdays": []int{1}, "calendar": true}
+	assertEq(t, api.do("PUT", "/v1/projects/other/goal", week, nil), http.StatusOK)
+	assertEq(t, d.project("other").Goals[0].Weekdays == nil && !d.project("other").Goals[0].Calendar, true)
+	var cat catalog
+	api.do("GET", "/v1/projects", nil, &cat)
+	assertEq(t, len(cat.Projects[0].Goals), 2)
+}
+
+func TestGoalRequestsChecked(t *testing.T) {
+	api := serve(t, testDaemon(t))
+	for body, want := range map[string]int{
+		`{"from":"1 ноября","dir":"min","minutes":390,"period":"day","weekdays":[1]}`:    http.StatusBadRequest,
+		`{"from":"2026-11-01","dir":"less","minutes":390,"period":"day","weekdays":[1]}`: http.StatusBadRequest,
+		`{"from":"2026-11-01","dir":"min","minutes":1441,"period":"day","weekdays":[1]}`: http.StatusBadRequest,
+		`{"from":"2026-11-01","dir":"min","minutes":390,"period":"day","weekdays":[]}`:   http.StatusBadRequest,
+		`{"from":"2026-11-01","dir":"min","minutes":390,"period":"year"}`:                http.StatusBadRequest,
+		`{"from":"2026-11-01","off":true}`:                                               http.StatusOK,
+	} {
+		assertEq(t, fmt.Sprint(body, api.do("PUT", "/v1/projects/easy/goal", body, nil)), fmt.Sprint(body, want))
+	}
+	assertEq(t, api.do("PUT", "/v1/projects/nope/goal", `{"from":"2026-11-01","off":true}`, nil), http.StatusNotFound)
+}
+
+func TestDaysOffAddAndRemove(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	now := mskAt(2026, 11, 16, 12, 0)
+	swap(t, &nowMs, func() int64 { return now })
+	var off DayOff
+	assertEq(t, api.do("POST", "/v1/daysoff", map[string]any{"from": "2026-11-23", "to": "2026-11-27", "kind": "otgul", "projects": []string{"easy"}}, &off), http.StatusCreated)
+	assertEq(t, fmt.Sprint(off.ID, off.Made), fmt.Sprint(1, now))
+	for _, bad := range []map[string]any{
+		{"from": "2026-11-27", "to": "2026-11-23", "kind": "otgul"},
+		{"from": "2026-11-01", "to": "2027-01-15", "kind": "otgul"},
+		{"from": "2026-11-23", "to": "2026-11-23", "kind": "holiday"},
+		{"from": "2026-11-23", "to": "2026-11-23", "kind": "sick", "projects": []string{"nope"}},
+	} {
+		assertEq(t, api.do("POST", "/v1/daysoff", bad, nil), http.StatusBadRequest)
+	}
+	var h history
+	api.do("GET", fmt.Sprintf("/v1/history?from=%d&to=%d", now-minMs, now+minMs), nil, &h)
+	assertEq(t, len(h.DaysOff), 1)
+	assertEq(t, api.do("DELETE", "/v1/daysoff/1", nil, nil), http.StatusNoContent)
+	assertEq(t, api.do("DELETE", "/v1/daysoff/1", nil, nil), http.StatusNotFound)
+}
+
+type planAnswer struct {
+	Today      string             `json:"today"`
+	Days       []planDay          `json:"days"`
+	Goals      map[string]Goal    `json:"goals"`
+	Sums       map[string]goalSum `json:"sums"`
+	NoCalendar []string           `json:"no_calendar"`
+}
+
+func TestPlanRoute(t *testing.T) {
+	d := testDaemon(t)
+	d.S.CarryMinutes = 0
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 16, 22, 0) })
+	api.do("PUT", "/v1/projects/easy/goal", map[string]any{"from": "2026-11-01", "dir": "min", "minutes": 390, "period": "day", "weekdays": []int{1, 2, 3, 4, 5}, "calendar": true, "weekends": true}, nil)
+	seedWindow(t, d, mskAt(2026, 11, 4, 12, 0), "notepad.exe", "Easy notes", 60) // the holiday
+	seedWindow(t, d, mskAt(2026, 11, 16, 12, 0), "notepad.exe", "Easy notes", 181)
+	var p planAnswer
+	assertEq(t, api.do("GET", "/v1/plan?from=2026-11-01&to=2026-11-30", nil, &p), http.StatusOK)
+	assertEq(t, fmt.Sprintf("%v %v %v %v %v", p.Today, len(p.Days), p.Days[3].Holiday, p.Days[3].Me["easy"], p.Days[3].Fact["easy"]), "2026-11-16 30 true 60 60")
+	assertEq(t, p.Sums["easy"], goalSum{Plan: 7800, PlanToDate: 3900, Fact: 241, Me: 241, Balance: -3659, Forecast: 482, Need: 756, Days: 20, DaysLeft: 10})
+	assertEq(t, len(p.NoCalendar), 0)
+	assertEq(t, api.do("GET", "/v1/plan?from=2026-12-20&to=2027-01-10", nil, &p), http.StatusOK)
+	assertEq(t, fmt.Sprint(p.NoCalendar), "[2027]")
+	assertEq(t, api.do("GET", "/v1/plan?from=2026-10-01&to=2026-12-31", nil, nil), http.StatusBadRequest)
+}
+
+func TestGoalsAtNight(t *testing.T) {
+	d := testDaemon(t)
+	d.S.CarryMinutes = 0
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 17, 3, 0) }) // before 06:00: still the 16th
+	api.do("PUT", "/v1/projects/easy/goal", map[string]any{"from": "2026-11-01", "dir": "min", "minutes": 390, "period": "day", "weekdays": []int{1, 2, 3, 4, 5}, "calendar": true}, nil)
+	api.do("PUT", "/v1/projects/other/goal", map[string]any{"from": "2026-11-01", "dir": "min", "minutes": 480, "period": "week"}, nil)
+	seedWindow(t, d, mskAt(2026, 11, 17, 1, 0), "notepad.exe", "Easy notes", 90)
+	var g struct {
+		Day   string     `json:"day"`
+		Goals []goalInfo `json:"goals"`
+	}
+	assertEq(t, api.do("GET", "/v1/goals", nil, &g), http.StatusOK)
+	assertEq(t, g.Day, "2026-11-16")
+	e := g.Goals[0]
+	assertEq(t, fmt.Sprintf("%v %v %v %v %v %v", e.Project, e.Day.Plan, e.Day.Fact, e.Day.Balance, e.Month.PlanToDate, e.Month.Fact), "easy 390 90 -300 3900 90")
+	assertEq(t, fmt.Sprintf("%v %v %v", g.Goals[1].Project, g.Goals[1].Week.Plan, g.Goals[1].Week.PlanToDate), "other 480 69") // Monday only: 480 / 7
+}
+
+func TestCLIGoalsAndPlan(t *testing.T) {
+	d := testDaemon(t)
+	cliHome(t, portOf(t, serve(t, d).url))
+	var out, errOut bytes.Buffer
+	assertEq(t, runCLI([]string{"goal", "set", "easy", `{"from":"2026-11-01","dir":"min","minutes":390,"period":"day","weekdays":[1,2,3,4,5]}`, "--json"}, &out, &errOut), 0)
+	assertEq(t, runCLI([]string{"dayoff", "add", `{"from":"2026-11-23","to":"2026-11-27","kind":"otgul","projects":["easy"]}`, "--json"}, &out, &errOut), 0)
+	out.Reset()
+	assertEq(t, runCLI([]string{"plan", "--from", "2026-11-01", "--to", "2026-11-30"}, &out, &errOut), 0)
+	assertEq(t, strings.Contains(out.String(), "easy"), true)
+	c, err := buildCall(d.S, "plan", []string{"--from", "2026-11-01", "--to", "2026-11-30"})
+	must(t, err)
+	assertEq(t, c.path, "/v1/plan?from=2026-11-01&to=2026-11-30")
+	assertEq(t, runCLI([]string{"goals", "--day", "2026-11-16", "--json"}, &out, &errOut), 0)
+	assertEq(t, runCLI([]string{"dayoff", "rm", "1", "--json"}, &out, &errOut), 0)
+}
+
+func TestGoalLine(t *testing.T) {
+	assertEq(t, goalLine("universe", goalSum{Fact: 3900, Plan: 7800, Balance: -1449, Forecast: 4901}), "universe  65ч / 130ч  баланс −24ч 9м  прогноз 81ч 41м")
+	assertEq(t, strings.Join([]string{mins(0), mins(59), signed(0), signed(61)}, " "), "— 59м 0 +1ч 1м")
+}
+
+// Plans count working days by the calendar: a bad calendar.json answers as a config error, not with numbers.
+func TestPlanRoutesGateOnConfigError(t *testing.T) {
+	home := t.TempDir()
+	must(t, writeJSON(filepath.Join(home, "projects.json"), serverConfig()))
+	must(t, os.WriteFile(filepath.Join(home, "calendar.json"), []byte(`{"2026": {"holidays": ["4 ноября"]}}`), 0o644))
+	d, err := NewDaemon(home)
+	must(t, err)
+	api := serve(t, d)
+	assertEq(t, api.do("GET", "/v1/plan?from=2026-11-01&to=2026-11-30", nil, nil), http.StatusInternalServerError)
+	assertEq(t, api.do("GET", "/v1/goals", nil, nil), http.StatusInternalServerError)
+	assertEq(t, serve(t, testDaemon(t)).do("GET", "/v1/goals?day=16.11", nil, nil), http.StatusBadRequest)
 }

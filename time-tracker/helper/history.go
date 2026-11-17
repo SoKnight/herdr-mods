@@ -94,9 +94,11 @@ func undoChange(rules []Rule, c Change) ([]Rule, error) {
 type history struct {
 	Corrections []Correction `json:"corrections"`
 	Changes     []Change     `json:"changes"`
+	DaysOff     []DayOff     `json:"days_off"`
 }
 
-// getHistory lists corrections by when they were made (an old one by its start) and rule changes, newest first.
+// getHistory lists corrections by when they were made (an old one by its start), rule changes and days off,
+// newest first.
 func (d *Daemon) getHistory(r *http.Request) (int, any, error) {
 	from, to, err := rangeParams(r)
 	if err != nil {
@@ -104,7 +106,7 @@ func (d *Daemon) getHistory(r *http.Request) (int, any, error) {
 	}
 	in := func(t int64) bool { return from <= t && t < to }
 	made := func(c Correction) int64 { return cmp.Or(c.Made, c.Start) }
-	out := history{Corrections: []Correction{}, Changes: []Change{}}
+	out := history{Corrections: []Correction{}, Changes: []Change{}, DaysOff: []DayOff{}}
 	cs, err := d.Store.Corrections()
 	if err != nil {
 		return 0, nil, err
@@ -126,6 +128,16 @@ func (d *Daemon) getHistory(r *http.Request) (int, any, error) {
 			out.Changes = append(out.Changes, c)
 		}
 	}
+	offs, err := d.Store.DaysOff()
+	if err != nil {
+		return 0, nil, err
+	}
+	for _, o := range offs {
+		if in(o.Made) {
+			out.DaysOff = append(out.DaysOff, o)
+		}
+	}
+	slices.SortStableFunc(out.DaysOff, func(a, b DayOff) int { return cmp.Or(cmp.Compare(b.Made, a.Made), cmp.Compare(b.ID, a.ID)) })
 	return http.StatusOK, out, nil
 }
 
