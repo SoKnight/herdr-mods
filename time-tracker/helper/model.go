@@ -31,14 +31,16 @@ type Raw struct {
 
 // Kind: project|activity|exclude|add|note. Target: me|agents|both.
 type Correction struct {
-	ID       int64  `json:"id"`
-	Kind     string `json:"kind"`
-	Target   string `json:"target"`
-	Start    int64  `json:"start"`
-	End      int64  `json:"end"`
-	Project  string `json:"project"`
-	Activity string `json:"activity"`
-	Note     string `json:"note"`
+	ID       int64   `json:"id"`
+	Kind     string  `json:"kind"`
+	Target   string  `json:"target"`
+	Start    int64   `json:"start"`
+	End      int64   `json:"end"`
+	Project  string  `json:"project"`
+	Activity string  `json:"activity"`
+	Note     string  `json:"note"`
+	Made     int64   `json:"made,omitempty"` // when it was made; 0 for one from before stage 2b
+	Was      []Share `json:"was,omitempty"`  // my time in [Start, End) by project before it, most first
 }
 
 type Segment struct {

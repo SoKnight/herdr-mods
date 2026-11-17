@@ -122,6 +122,8 @@ func newServer(d *Daemon) http.Handler {
 		"DELETE /v1/rules/{id}":        d.deleteRule,
 		"POST /v1/rules/preview":       read(d.postRulePreview),
 		"GET /v1/hints":                read(d.getHints),
+		"GET /v1/history":              d.getHistory,
+		"POST /v1/history/{id}/undo":   d.postUndo,
 		"GET /v1/periods":              d.getPeriods,
 		"GET /v1/projects":             read(d.getProjects),
 		"POST /v1/projects":            d.postProject,
@@ -427,7 +429,22 @@ func (d *Daemon) postCorrection(r *http.Request) (int, any, error) {
 	if p := closedBy(periods, "", c.Start, c.End); p != nil {
 		return 0, nil, closedPeriod(p.ID)
 	}
-	c.ID = 0
+	tl, _, err := d.timeline(c.Start, c.End)
+	if err != nil {
+		return 0, nil, err
+	}
+	was := map[string]int64{}
+	for _, s := range tl.Me {
+		was[s.Project] += s.End - s.Start
+	}
+	c.Was = nil
+	for p, ms := range was {
+		if ms > 0 {
+			c.Was = append(c.Was, Share{p, ms})
+		}
+	}
+	slices.SortFunc(c.Was, func(a, b Share) int { return cmp.Or(cmp.Compare(b.Me, a.Me), cmp.Compare(a.Project, b.Project)) })
+	c.ID, c.Made = 0, now
 	created, err := d.Store.AddCorrection(c)
 	return http.StatusCreated, created, err
 }

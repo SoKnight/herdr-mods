@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 )
@@ -274,6 +275,7 @@ func listItems[T any](st *Store, file string) ([]T, error) {
 func corrID(c *Correction) *int64  { return &c.ID }
 func perID(p *Period) *int64       { return &p.ID }
 func markID(m *SessionMark) *int64 { return &m.ID }
+func changeID(c *Change) *int64    { return &c.ID }
 
 func (st *Store) SessionMarks() ([]SessionMark, error) {
 	return listItems[SessionMark](st, "sessions.json")
@@ -290,6 +292,19 @@ func (st *Store) AddCorrection(c Correction) (Correction, error) {
 }
 func (st *Store) RemoveCorrection(id int64) error {
 	return removeItem(st, "corrections.json", id, corrID)
+}
+
+// Changes lists the rule changes newest first.
+func (st *Store) Changes() ([]Change, error) {
+	cs, err := listItems[Change](st, "history.json")
+	slices.Reverse(cs)
+	return cs, err
+}
+func (st *Store) AddChange(c Change) (Change, error) {
+	return addItem(st, "history.json", c, changeID)
+}
+func (st *Store) RemoveChange(id int64) error {
+	return removeItem(st, "history.json", id, changeID)
 }
 
 func (st *Store) Periods() ([]Period, error) { return listItems[Period](st, "periods.json") }

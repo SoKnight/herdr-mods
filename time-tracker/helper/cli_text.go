@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -177,6 +178,31 @@ func showPreview(w io.Writer, resp []byte) error {
 	}
 	if o := p.Overlap; o != nil {
 		fmt.Fprintf(w, "%s из них оставит за собой #%d  %s\n", dur(o.Ms), o.Rule.ID, o.Rule.why())
+	}
+	return nil
+}
+
+// showHistory prints corrections (undone with correct rm) and rule changes (history undo) newest first.
+func showHistory(w io.Writer, resp []byte) error {
+	var h history
+	if err := json.Unmarshal(resp, &h); err != nil {
+		return err
+	}
+	type line struct {
+		at   int64
+		kind string
+		id   int64
+	}
+	var lines []line
+	for _, c := range h.Corrections {
+		lines = append(lines, line{cmp.Or(c.Made, c.Start), "correct " + c.Kind, c.ID})
+	}
+	for _, c := range h.Changes {
+		lines = append(lines, line{c.At, c.Kind, c.ID})
+	}
+	slices.SortStableFunc(lines, func(a, b line) int { return cmp.Compare(b.at, a.at) })
+	for _, l := range lines {
+		fmt.Fprintf(w, "%s  %s  #%d\n", time.UnixMilli(l.at).Format("02.01 15:04"), l.kind, l.id)
 	}
 	return nil
 }

@@ -36,6 +36,7 @@ const usage = `herdr-time <команда> [--json]
   rules
   rule add <json> | set <id> <json> | rm <id> | preview <json>
   hints [--name X] [--days N]
+  history --from --to | undo <id>
   project add <json> | set <id> <json>
   session [start|end]
   periods [--project id]
@@ -283,6 +284,14 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 	case cmd == "rule" && sub == "preview":
 		body, err := arg(1, "<json>")
 		return apiCall{method: "POST", path: "/v1/rules/preview", body: []byte(body), show: showPreview}, err
+	case cmd == "history" && sub == "undo":
+		id, err := arg(1, "<id>")
+		return apiCall{method: "POST", path: "/v1/history/" + url.PathEscape(id) + "/undo"}, err
+	case cmd == "history":
+		if _, _, err := span(); err != nil {
+			return apiCall{}, err
+		}
+		return apiCall{method: "GET", path: "/v1/history?" + q.Encode(), show: showHistory}, nil
 	case cmd == "hints":
 		q.Set("days", strconv.Itoa(*days))
 		if *name != "" {

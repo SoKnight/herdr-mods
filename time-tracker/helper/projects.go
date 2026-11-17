@@ -258,10 +258,18 @@ func (req ruleRequest) rule(c *Config) (Rule, error) {
 	return r, nil
 }
 
-func nextRuleID(rules []Rule) int64 {
+// nextRuleID is above every rule id in rules and in the history, so an undo never meets a reused id.
+func nextRuleID(rules []Rule, changes []Change) int64 {
 	var id int64
 	for _, r := range rules {
 		id = max(id, r.ID)
+	}
+	for _, c := range changes {
+		for _, r := range []*Rule{c.Rule, c.Prev} {
+			if r != nil {
+				id = max(id, r.ID)
+			}
+		}
 	}
 	return id + 1
 }
@@ -291,6 +299,10 @@ func (d *Daemon) postRule(r *http.Request) (int, any, error) {
 	if err != nil {
 		return 0, nil, err
 	}
+	changes, err := d.Store.Changes()
+	if err != nil {
+		return 0, nil, err
+	}
 	var out Rule
 	same := errors.New("same rule")
 	_, err = d.editConfig(func(c *Config) error {
@@ -305,13 +317,16 @@ func (d *Daemon) postRule(r *http.Request) (int, any, error) {
 			out = c.Rules[i]
 			return same
 		}
-		rule.ID, rule.From = nextRuleID(c.Rules), from
+		rule.ID, rule.From = nextRuleID(c.Rules, changes), from
 		c.Rules = moveBefore(insertRule(c.Rules, rule), rule.ID, req.Before)
 		out = rule
 		return nil
 	})
 	if err == same {
 		return http.StatusOK, out, nil
+	}
+	if err == nil {
+		err = d.logChange(Change{Kind: "rule-add", Rule: &out, From: from})
 	}
 	return http.StatusCreated, out, err
 }
@@ -323,7 +338,12 @@ func (d *Daemon) putRule(r *http.Request) (int, any, error) {
 	if err != nil {
 		return 0, nil, err
 	}
-	var out Rule
+	changes, err := d.Store.Changes()
+	if err != nil {
+		return 0, nil, err
+	}
+	var out, prev Rule
+	var index int
 	_, err = d.editConfig(func(c *Config) error {
 		i := openRule(c.Rules, id)
 		if i < 0 {
@@ -333,19 +353,23 @@ func (d *Daemon) putRule(r *http.Request) (int, any, error) {
 		if err != nil {
 			return err
 		}
+		prev, index = c.Rules[i], i
 		rule.From = from
 		if c.Rules[i].From >= from {
 			rule.ID = id
 			c.Rules[i] = rule
 		} else {
 			c.Rules[i].To = from
-			rule.ID = nextRuleID(c.Rules)
+			rule.ID = nextRuleID(c.Rules, changes)
 			c.Rules = slices.Insert(c.Rules, i+1, rule)
 		}
 		c.Rules = moveBefore(c.Rules, rule.ID, req.Before)
 		out = rule
 		return nil
 	})
+	if err == nil {
+		err = d.logChange(Change{Kind: "rule-edit", Rule: &out, Prev: &prev, Index: index, From: from})
+	}
 	return http.StatusOK, out, err
 }
 
@@ -359,18 +383,26 @@ func (d *Daemon) deleteRule(r *http.Request) (int, any, error) {
 	if err != nil {
 		return 0, nil, err
 	}
+	ch := Change{Kind: "rule-delete", From: month}
 	_, err = d.editConfig(func(c *Config) error {
 		i := openRule(c.Rules, id)
-		switch {
-		case i < 0:
+		if i < 0 {
 			return fail(http.StatusNotFound, "no rule %d", id)
-		case c.Rules[i].From >= month:
+		}
+		prev := c.Rules[i]
+		ch.Prev, ch.Index = &prev, i
+		if prev.From >= month {
 			c.Rules = slices.Delete(c.Rules, i, i+1)
-		default:
+		} else {
 			c.Rules[i].To = month
+			closed := c.Rules[i]
+			ch.Rule = &closed
 		}
 		return nil
 	})
+	if err == nil {
+		err = d.logChange(ch)
+	}
 	return http.StatusNoContent, nil, err
 }
 
@@ -413,7 +445,7 @@ func (d *Daemon) postRulePreview(r *http.Request) (int, any, error) {
 		rule.ID = req.ID
 		rules[i] = rule
 	} else {
-		rule.ID = nextRuleID(rules)
+		rule.ID = nextRuleID(rules, nil) // only places it; nothing is written
 		rules = insertRule(rules, rule)
 	}
 	rules = moveBefore(rules, rule.ID, req.Before)
