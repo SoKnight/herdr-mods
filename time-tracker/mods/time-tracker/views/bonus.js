@@ -35,7 +35,7 @@ export class BonusAdd {
     const title = this.title.value().trim();
     const amount = parseMoney(this.sum.value());
     const day = /^\d{1,2}$/.test(this.day.value().trim()) ? Number(this.day.value().trim()) : 0;
-    this.error = !title ? "За что: напишите, за что премия" : amount === null ? "Сумма: целое число рублей" : day < 1 || day > this.days ? `День: число от 1 до ${this.days}` : null;
+    this.error = !title ? "За что: напишите, за что премия" : [...title].length > 200 ? "За что: не длиннее 200 символов" : amount === null ? "Сумма: целое число рублей" : day < 1 || day > this.days ? `День: число от 1 до ${this.days}` : null;
     if (this.error) return cx.notify();
     this.busy = true;
     cx.spawn(async (cx) => {

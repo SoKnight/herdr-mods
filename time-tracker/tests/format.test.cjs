@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/format.js'), 'utf8');
-const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs, fmtMin, signed, roundRows, parseHours, hoursText, goalOn, goalShort, goalLine, goalVersion, weeklyTotal, progressText, goalBlock, forecastLine, weekDays, weekTitle, weekRelative, mainGoal, dayDiff, weekRows, monthGrid, cellBars, offTitle, workdaysText, offReduce, money, parseMoney, monthOptions, goalStrip, reportFootnote, exportFile, payOn, payShort };`)();
+const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs, fmtMin, signed, roundRows, parseHours, hoursText, goalOn, goalShort, goalLine, goalVersion, weeklyTotal, progressText, goalBlock, forecastLine, weekDays, weekTitle, weekRelative, mainGoal, dayDiff, weekRows, monthGrid, cellBars, offTitle, workdaysText, offReduce, money, parseMoney, monthOptions, goalStrip, reportFootnote, exportFile, payOn, payShort, dialogWrites };`)();
 const rcode = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/rules.js'), 'utf8');
 const R = new Function(`${rcode.replace(/^export /gm, '')}
 return { ruleText, targetName };`)();
@@ -85,6 +85,7 @@ test('ranges step back and on by an offset', () => {
 test('report wording', () => {
   assert.deepEqual([0, 769, 15000, 100000, 1234567].map(F.money), ['0 ₽', '769 ₽', '15 000 ₽', '100 000 ₽', '1 234 567 ₽']);
   assert.deepEqual(['100 000', '15000', ' 7 ', '0', '1,5', 'abc', ''].map(F.parseMoney), [100000, 15000, 7, null, null, null, null]);
+  assert.deepEqual(['100\u00a0000', '1\u202f000', '100 000 000', '100 000 001', '9'.repeat(22)].map(F.parseMoney), [100000, 1000, 100000000, null, null]);
   assert.deepEqual(F.monthOptions('2026-11-16', 3), [{ id: '2026-11', label: 'Ноябрь 2026' }, { id: '2026-10', label: 'Октябрь 2026' }, { id: '2026-09', label: 'Сентябрь 2026' }]);
   assert.equal(F.monthOptions('2026-01-05', 2)[1].id, '2025-12');
   const u = { dir: 'min', minutes: 390, period: 'day', weekdays: [1, 2, 3, 4, 5], calendar: true, weekends: true };
@@ -184,6 +185,15 @@ test('pay wording', () => {
     ['h:7', 'pay', 'Оплата Universe: 1 500 ₽ / ч', 'с сентября 2026 · новая'],
   ]);
   assert.deepEqual(rows[0].undo, ['history', 'undo', '9']);
+  const off = F.historyEntries({ changes: [{ id: 10, kind: 'pay-set', at, project: 'uni', pay: { from: '2026-11', kind: 'none' }, prev_pays: [] }] }, { name: () => 'Universe' });
+  assert.deepEqual([off[0].title, off[0].sub], ['Оплата Universe снята', 'с ноября 2026']);
+});
+
+test('the goal dialog writes what was touched', () => {
+  const week = { goal: ['min', '8', 'week', [1, 2, 3, 4, 5], true, true, '2026-11-01'], pay: ['none', ''] };
+  assert.deepEqual(F.dialogWrites(week, { ...week, pay: ['fixed', '100 000'] }), { goal: false, pay: true });
+  assert.deepEqual(F.dialogWrites(week, { ...week, goal: ['min', '8', 'week', [1, 2, 3, 4, 5], true, true, '2026-12-01'] }), { goal: true, pay: false });
+  assert.deepEqual(F.dialogWrites(week, week), { goal: false, pay: false });
 });
 
 test('manual range', () => {

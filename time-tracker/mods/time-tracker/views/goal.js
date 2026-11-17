@@ -4,7 +4,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex, Input, InputState } from "gpui-base";
 import { theme } from "herdr";
 import { call } from "../client.js";
-import { parseHours, hoursText, goalOn, goalVersion, dayTitle, dayString, fmtMin, money, parseMoney, payOn, monthOf, MONTH_NAMES } from "../format.js";
+import { parseHours, hoursText, goalOn, goalVersion, dayTitle, dayString, fmtMin, money, parseMoney, payOn, monthOf, dialogWrites, MONTH_NAMES } from "../format.js";
 import { projectColor } from "../lanes.js";
 import { monthStartTitle } from "../rules.js";
 import { Dialog, Dropdown, Check, Button, Icon, Message, Segmented, TEXT } from "../ui.js";
@@ -27,9 +27,9 @@ export class GoalEdit {
   constructor({ project, today, month, plan = null, planDays = 0, onSaved, close }) {
     Object.assign(this, { project, today, plan, planDays, onSaved, closeDialog: close });
     this.month = month ?? today.slice(0, 7);
-    this.pay = payOn(project.pay, this.month);
-    this.payKind = this.pay?.kind ?? "none";
-    this.sum = InputState.new({ placeholder: "100 000", value: this.pay ? money(this.pay.amount).slice(0, -2) : "" });
+    const pay = payOn(project.pay, this.month);
+    this.payKind = pay?.kind ?? "none";
+    this.sum = InputState.new({ placeholder: "100 000", value: pay ? money(pay.amount).slice(0, -2) : "" });
     this.sum.on("change", (_e, cx) => cx.notify());
     this.sum.on("submit", (_e, cx) => this.save(cx));
     this.current = goalOn(project.goals ?? [], today);
@@ -54,30 +54,39 @@ export class GoalEdit {
     this.error = null;
     this.busy = false;
     this.closed = false; // close() ran: an answer still on its way must not close again
+    this.opened = this.controls(); // what the controls showed: a side left as it was is not sent
   }
 
-  // Sends `goal set` when the goal changed and `pay set` when the pay did; no goal and no hours is no goal.
+  controls() {
+    return {
+      goal: [this.dir, this.hours.value().trim(), this.period, [...this.weekdays].sort((a, b) => a - b), this.calendar, this.weekends, this.from],
+      pay: [this.payKind, this.sum.value().trim()],
+    };
+  }
+
+  // Sends `goal set` when the goal's controls were changed and `pay set` when the pay's were.
   save(cx) {
-    const steps = [];
-    if (this.current || this.hours.value().trim()) {
+    const now = this.controls(), writes = dialogWrites(this.opened, now), steps = [];
+    if (writes.goal) {
       const minutes = parseHours(this.hours.value());
       if (minutes === null) {
         this.error = "Часы: число больше нуля, например 6,5";
         return cx.notify();
       }
       const goal = { from: this.from, dir: this.dir, minutes, period: this.period, weekdays: [...this.weekdays].sort((a, b) => a - b), calendar: this.calendar, weekends: this.weekends };
-      const key = (g) => JSON.stringify([g.dir, g.minutes, g.period, g.weekdays ?? [], Boolean(g.calendar), Boolean(g.weekends)]);
-      if (!this.current || key(this.current) !== key(goal)) steps.push({ args: ["goal", "set", this.project.id, JSON.stringify(goal)], done: () => (this.current = goal) });
+      steps.push({ args: ["goal", "set", this.project.id, JSON.stringify(goal)], done: () => (this.opened.goal = now.goal) });
     }
-    const pay = { from: this.month, kind: this.payKind };
-    if (pay.kind !== "none") {
-      pay.amount = parseMoney(this.sum.value());
-      if (pay.amount === null) {
-        this.error = "Сумма: целое число рублей, например 100 000";
-        return cx.notify();
+    if (writes.pay) {
+      const pay = { from: this.month, kind: this.payKind };
+      if (pay.kind !== "none") {
+        pay.amount = parseMoney(this.sum.value());
+        if (pay.amount === null) {
+          this.error = "Сумма: целое число рублей, например 100 000";
+          return cx.notify();
+        }
       }
+      steps.push({ args: ["pay", "set", this.project.id, JSON.stringify(pay)], done: () => (this.opened.pay = now.pay) });
     }
-    if (pay.kind !== (this.pay?.kind ?? "none") || (pay.kind !== "none" && pay.amount !== this.pay.amount)) steps.push({ args: ["pay", "set", this.project.id, JSON.stringify(pay)] });
     const text = steps.length === 2 ? "Цель и оплата сохранены." : steps[0]?.args[0] === "pay" ? "Оплата сохранена." : "Цель сохранена.";
     if (!steps.length) return this.close(cx);
     this.finish(cx, steps, text);
@@ -87,8 +96,8 @@ export class GoalEdit {
     this.finish(cx, [{ args: ["goal", "set", this.project.id, JSON.stringify({ from: this.from, off: true })] }], "Цель убрана.");
   }
 
-  // Writes the steps one after the other; a refusal stops there and stays open with its reason (the steps
-  // before it are done). Closed meanwhile, it only lets the panel read again.
+  // Writes the steps one after the other; a refusal stops there and stays open with its reason, the panel
+  // reading again when the goal before it went through. Closed meanwhile, it only lets the panel read again.
   finish(cx, steps, text) {
     if (this.busy || this.closed) return;
     this.busy = true;
@@ -107,7 +116,9 @@ export class GoalEdit {
         return;
       }
       if (!ok) {
-        this.error = r.down ? "Сборщик не запущен" : r.error;
+        const why = r.down ? "Сборщик не запущен" : r.error;
+        this.error = wrote ? `Цель сохранена, оплата — нет: ${why}` : why; // only goal then pay is two steps
+        if (wrote) this.onSaved(null, cx);
         return cx.notify();
       }
       this.close(cx);

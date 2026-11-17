@@ -170,10 +170,12 @@ export const forecastLine = (info, name, day) => `прогноз ${MONTHS[Number
 // Whole rubles as "100 000 ₽", plain spaces so it pastes cleanly.
 export const money = (rub) => `${String(rub).replace(/\B(?=(\d{3})+$)/g, " ")} ₽`;
 
-// "100 000" / "15000" → whole rubles; anything else, or 0, → null.
+// "100 000" / "15000" (a no-break or narrow space between groups too) → whole rubles 1..100 000 000, as the
+// collector takes them; anything else → null.
 export function parseMoney(s) {
-  const t = String(s).trim();
-  return /^\d[\d ]*$/.test(t) ? Number(t.replace(/ /g, "")) || null : null;
+  const t = String(s).replace(/[\u00a0\u202f]/g, " ").trim();
+  const n = /^\d[\d ]*$/.test(t) ? Number(t.replace(/ /g, "")) : 0;
+  return n >= 1 && n <= 100_000_000 ? n : null;
 }
 
 // The pay version in force in a month ("YYYY-MM"); a `none` one is none.
@@ -181,6 +183,13 @@ export const payOn = (pays, month) => goalOn((pays ?? []).map((p) => ({ ...p, of
 
 // Проекты's pay line: "100 000 ₽ / мес + премии", "2 000 ₽ / ч"; no pay → null.
 export const payShort = (p) => (p?.kind === "fixed" ? `${money(p.amount)} / мес + премии` : p?.kind === "hourly" ? `${money(p.amount)} / ч` : null);
+
+// The goal dialog's writes: `goal set` when its goal controls differ from when it opened, `pay set` when its
+// pay controls do. opened, now: { goal: [dir, hours, period, weekdays, calendar, weekends, from], pay: [kind, sum] }.
+export function dialogWrites(opened, now) {
+  const differ = (k) => JSON.stringify(opened[k]) !== JSON.stringify(now[k]);
+  return { goal: differ("goal"), pay: differ("pay") };
+}
 
 // "2026-11" → "ноября 2026".
 export const monthOf = (month) => `${MONTHS[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
@@ -290,7 +299,7 @@ export function historyEntries({ corrections = [], changes = [], days_off = [] }
   const fromPay = (h) => {
     const p = h.pay, was = payOn(h.prev_pays, p.from);
     const title = p.kind === "none" ? `Оплата ${name(h.project)} снята` : `Оплата ${name(h.project)}: ${payShort(p)}`;
-    return { key: `h:${h.id}`, kind: "pay", title, sub: `с ${monthOf(p.from)} · ${was ? `было: ${payShort(was)}` : "новая"}`, at: h.at, undo: ["history", "undo", String(h.id)] };
+    return { key: `h:${h.id}`, kind: "pay", title, sub: `с ${monthOf(p.from)}${was ? ` · было: ${payShort(was)}` : p.kind === "none" ? "" : " · новая"}`, at: h.at, undo: ["history", "undo", String(h.id)] };
   };
   const fromChange = (h) => {
     if (h.kind === "goal-set") return fromGoal(h);
