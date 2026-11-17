@@ -182,27 +182,27 @@ func showPreview(w io.Writer, resp []byte) error {
 	return nil
 }
 
-// showHistory prints corrections (undone with correct rm) and rule changes (history undo) newest first.
+// showHistory prints corrections and rule changes newest first, each with the command that undoes it.
 func showHistory(w io.Writer, resp []byte) error {
 	var h history
 	if err := json.Unmarshal(resp, &h); err != nil {
 		return err
 	}
 	type line struct {
-		at   int64
-		kind string
-		id   int64
+		at         int64
+		kind, undo string
+		id         int64
 	}
 	var lines []line
 	for _, c := range h.Corrections {
-		lines = append(lines, line{cmp.Or(c.Made, c.Start), "correct " + c.Kind, c.ID})
+		lines = append(lines, line{cmp.Or(c.Made, c.Start), "correct " + c.Kind, "correct rm", c.ID})
 	}
 	for _, c := range h.Changes {
-		lines = append(lines, line{c.At, c.Kind, c.ID})
+		lines = append(lines, line{c.At, c.Kind, "history undo", c.ID})
 	}
 	slices.SortStableFunc(lines, func(a, b line) int { return cmp.Compare(b.at, a.at) })
 	for _, l := range lines {
-		fmt.Fprintf(w, "%s  %s  #%d\n", time.UnixMilli(l.at).Format("02.01 15:04"), l.kind, l.id)
+		fmt.Fprintf(w, "%s  %s  %s %d\n", time.UnixMilli(l.at).Format("02.01 15:04"), l.kind, l.undo, l.id)
 	}
 	return nil
 }

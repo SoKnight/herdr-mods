@@ -2,6 +2,7 @@ package main
 
 import (
 	"cmp"
+	"log"
 	"net/http"
 	"slices"
 )
@@ -14,9 +15,19 @@ type Change struct {
 	Rule   *Rule  `json:"rule"`             // the rule as the change left it; nil when a delete removed it
 	Prev   *Rule  `json:"prev"`             // the rule before it; nil for an add
 	Index  int    `json:"index"`            // Prev's place in the list, to put a removed rule back
+	Next   int64  `json:"next,omitempty"`   // the rule that followed Prev, to put it back before it
 	From   int64  `json:"from"`             // the time it applies from
 	Ms     int64  `json:"ms"`               // my time and Досуг the rule had over [From, At) right after
 	Source string `json:"source,omitempty"` // "inbox" for rules made in Разбор
+	Undone int64  `json:"undone,omitempty"` // when it was undone; kept so its ids are never handed out again
+}
+
+// nextAfter is the id of the rule after rules[i], 0 for the last.
+func nextAfter(rules []Rule, i int) int64 {
+	if i+1 < len(rules) {
+		return rules[i+1].ID
+	}
+	return 0
 }
 
 // ruleTime sums my time and Досуг over [from, to) by the rule that matched it.
@@ -35,17 +46,19 @@ func (d *Daemon) ruleTime(ids []int64, from, to int64) (map[int64]int64, error) 
 }
 
 // logChange stores a rule change made now; an add or edit gets the time its rule has from c.From on.
-func (d *Daemon) logChange(c Change) error {
+// The change is already in projects.json, so a failure here is only logged.
+func (d *Daemon) logChange(c Change) {
 	c.At = nowMs()
 	if c.Rule != nil && c.Kind != "rule-delete" {
 		ms, err := d.ruleTime([]int64{c.Rule.ID}, c.From, c.At)
 		if err != nil {
-			return err
+			log.Printf("history: %s #%d: %v", c.Kind, c.Rule.ID, err)
 		}
 		c.Ms = ms[c.Rule.ID]
 	}
-	_, err := d.Store.AddChange(c)
-	return err
+	if _, err := d.Store.AddChange(c); err != nil {
+		log.Printf("history: %s: %v", c.Kind, err)
+	}
 }
 
 // undoChange puts the rules back as they were before c. It refuses when the rule c left changed since,
@@ -59,21 +72,23 @@ func undoChange(rules []Rule, c Change) ([]Rule, error) {
 		if i < 0 || rules[i] != *c.Rule {
 			return nil, changed
 		}
-		if c.Prev == nil || c.Rule.ID != c.Prev.ID {
-			rules = slices.Delete(rules, i, i+1)
-		}
+		rules = slices.Delete(rules, i, i+1) // under Prev's id it comes back below, where it was
 	}
-	if c.Prev != nil {
-		if i := find(c.Prev.ID); i >= 0 {
-			if c.Rule == nil {
-				return nil, changed
-			}
-			rules[i] = *c.Prev
-		} else {
-			rules = slices.Insert(rules, min(max(c.Index, 0), len(rules)), *c.Prev)
-		}
+	if c.Prev == nil {
+		return rules, nil
 	}
-	return rules, nil
+	if i := find(c.Prev.ID); i >= 0 { // the version an edit closed: reopened where it stands
+		if c.Rule == nil {
+			return nil, changed
+		}
+		rules[i] = *c.Prev
+		return rules, nil
+	}
+	at := min(max(c.Index, 0), len(rules))
+	if j := find(c.Next); j >= 0 {
+		at = j
+	}
+	return slices.Insert(rules, at, *c.Prev), nil
 }
 
 type history struct {
@@ -107,14 +122,14 @@ func (d *Daemon) getHistory(r *http.Request) (int, any, error) {
 		return 0, nil, err
 	}
 	for _, c := range changes {
-		if in(c.At) {
+		if c.Undone == 0 && in(c.At) {
 			out.Changes = append(out.Changes, c)
 		}
 	}
 	return http.StatusOK, out, nil
 }
 
-// postUndo undoes a rule change and drops it from the history.
+// postUndo undoes a rule change; it stays in history.json marked undone and leaves the list.
 func (d *Daemon) postUndo(r *http.Request) (int, any, error) {
 	id, err := intParam(r.PathValue("id"), "id")
 	if err != nil {
@@ -124,7 +139,7 @@ func (d *Daemon) postUndo(r *http.Request) (int, any, error) {
 	if err != nil {
 		return 0, nil, err
 	}
-	i := slices.IndexFunc(changes, func(c Change) bool { return c.ID == id })
+	i := slices.IndexFunc(changes, func(c Change) bool { return c.ID == id && c.Undone == 0 })
 	if i < 0 {
 		return 0, nil, fail(http.StatusNotFound, "no change %d", id)
 	}
@@ -135,5 +150,5 @@ func (d *Daemon) postUndo(r *http.Request) (int, any, error) {
 	}); err != nil {
 		return 0, nil, err
 	}
-	return http.StatusNoContent, nil, d.Store.RemoveChange(id)
+	return http.StatusNoContent, nil, d.Store.MarkUndone(id, nowMs())
 }

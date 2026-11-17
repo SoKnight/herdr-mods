@@ -294,7 +294,7 @@ func (st *Store) RemoveCorrection(id int64) error {
 	return removeItem(st, "corrections.json", id, corrID)
 }
 
-// Changes lists the rule changes newest first.
+// Changes lists the rule changes newest first, undone ones included.
 func (st *Store) Changes() ([]Change, error) {
 	cs, err := listItems[Change](st, "history.json")
 	slices.Reverse(cs)
@@ -303,8 +303,22 @@ func (st *Store) Changes() ([]Change, error) {
 func (st *Store) AddChange(c Change) (Change, error) {
 	return addItem(st, "history.json", c, changeID)
 }
-func (st *Store) RemoveChange(id int64) error {
-	return removeItem(st, "history.json", id, changeID)
+
+// MarkUndone marks a change undone at at; it stays, so neither its id nor its rules' ids come back.
+func (st *Store) MarkUndone(id, at int64) error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	path := filepath.Join(st.Dir, "history.json")
+	var all []Change
+	if err := readJSON(path, &all); err != nil {
+		return err
+	}
+	for i := range all {
+		if all[i].ID == id {
+			all[i].Undone = at
+		}
+	}
+	return writeJSON(path, all)
 }
 
 func (st *Store) Periods() ([]Period, error) { return listItems[Period](st, "periods.json") }

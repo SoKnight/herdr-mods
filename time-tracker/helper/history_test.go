@@ -126,9 +126,67 @@ func TestCLIHistory(t *testing.T) {
 	assertEq(t, runCLI([]string{"rule", "add", `{"kind":"title","value":"site","project":"easy"}`, "--json"}, &out, &errOut), 0)
 	out.Reset()
 	assertEq(t, runCLI([]string{"history", "--from", strconv.FormatInt(now-minMs, 10), "--to", strconv.FormatInt(now+minMs, 10)}, &out, &errOut), 0)
-	assertEq(t, strings.HasSuffix(strings.TrimSpace(out.String()), "  rule-add  #1"), true)
+	assertEq(t, strings.HasSuffix(strings.TrimSpace(out.String()), "  rule-add  history undo 1"), true)
 	assertEq(t, runCLI([]string{"history", "undo", "1"}, &out, &errOut), 0)
 	cs, err := d.Store.Changes()
 	must(t, err)
-	assertEq(t, len(cs), 0)
+	assertEq(t, cs[0].Undone, now)
+}
+
+func TestUndoPutsRulesBackInOrder(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 16, 12, 0) })
+	newest := func() Change { cs, err := d.Store.Changes(); must(t, err); return cs[0] }
+	undo := func() int { return api.do("POST", fmt.Sprintf("/v1/history/%d/undo", newest().ID), nil, nil) }
+	add := func(value string) Rule {
+		var r Rule
+		api.do("POST", "/v1/rules", map[string]any{"kind": "title", "value": value, "project": "other"}, &r)
+		return r
+	}
+	x, a, y := add("X"), add("A"), add("Y")
+	order := fmt.Sprint(ruleIDs(d.Config.Rules))
+
+	// an in-place edit raised above rule 1 («Поднять выше») goes back to its place
+	assertEq(t, api.do("PUT", fmt.Sprintf("/v1/rules/%d", a.ID), map[string]any{"kind": "title", "value": "A2", "project": "other", "before": 1}, nil), http.StatusOK)
+	assertEq(t, undo(), http.StatusNoContent)
+	assertEq(t, fmt.Sprint(ruleIDs(d.Config.Rules)), order)
+	assertEq(t, slices.Contains(d.Config.Rules, a), true)
+
+	// a delete that closed an older rule reopens it where it was
+	assertEq(t, api.do("DELETE", "/v1/rules/3", nil, nil), http.StatusNoContent)
+	assertEq(t, undo(), http.StatusNoContent)
+	assertEq(t, fmt.Sprint(ruleIDs(d.Config.Rules)), order)
+	assertEq(t, d.Config.Rules[2].To, int64(0))
+
+	// [X, A, Y]: delete A, delete X, undo A's delete → A sits before Y
+	api.do("DELETE", fmt.Sprintf("/v1/rules/%d", a.ID), nil, nil)
+	delA := newest()
+	api.do("DELETE", fmt.Sprintf("/v1/rules/%d", x.ID), nil, nil)
+	assertEq(t, api.do("POST", fmt.Sprintf("/v1/history/%d/undo", delA.ID), nil, nil), http.StatusNoContent)
+	ids := ruleIDs(d.Config.Rules)
+	assertEq(t, slices.Index(ids, a.ID)+1, slices.Index(ids, y.ID))
+}
+
+func TestUndoneChangesKeepTheirIDs(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 16, 12, 0) })
+	newest := func() Change { cs, err := d.Store.Changes(); must(t, err); return cs[0] }
+	var a, b Rule
+	api.do("POST", "/v1/rules", map[string]any{"kind": "title", "value": "A", "project": "other"}, &a)
+	api.do("POST", "/v1/rules", map[string]any{"kind": "title", "value": "B", "project": "other"}, &b)
+	second := newest()
+	assertEq(t, api.do("POST", fmt.Sprintf("/v1/history/%d/undo", second.ID), nil, nil), http.StatusNoContent) // undoes B's add
+	assertEq(t, api.do("POST", fmt.Sprintf("/v1/history/%d/undo", second.ID), nil, nil), http.StatusNotFound)
+	var c Rule
+	api.do("POST", "/v1/rules", map[string]any{"kind": "title", "value": "C", "project": "other"}, &c)
+	assertEq(t, newest().ID != second.ID, true)
+	assertEq(t, c.ID != b.ID, true)
+	var h struct {
+		Changes []Change `json:"changes"`
+	}
+	now := nowMs()
+	api.do("GET", fmt.Sprintf("/v1/history?from=%d&to=%d", now-minMs, now+minMs), nil, &h)
+	assertEq(t, len(h.Changes), 2) // the undone one left the list
 }

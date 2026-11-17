@@ -326,7 +326,7 @@ func (d *Daemon) postRule(r *http.Request) (int, any, error) {
 		return http.StatusOK, out, nil
 	}
 	if err == nil {
-		err = d.logChange(Change{Kind: "rule-add", Rule: &out, From: from})
+		d.logChange(Change{Kind: "rule-add", Rule: &out, From: from})
 	}
 	return http.StatusCreated, out, err
 }
@@ -344,6 +344,7 @@ func (d *Daemon) putRule(r *http.Request) (int, any, error) {
 	}
 	var out, prev Rule
 	var index int
+	var next int64
 	_, err = d.editConfig(func(c *Config) error {
 		i := openRule(c.Rules, id)
 		if i < 0 {
@@ -353,7 +354,7 @@ func (d *Daemon) putRule(r *http.Request) (int, any, error) {
 		if err != nil {
 			return err
 		}
-		prev, index = c.Rules[i], i
+		prev, index, next = c.Rules[i], i, nextAfter(c.Rules, i)
 		rule.From = from
 		if c.Rules[i].From >= from {
 			rule.ID = id
@@ -368,7 +369,7 @@ func (d *Daemon) putRule(r *http.Request) (int, any, error) {
 		return nil
 	})
 	if err == nil {
-		err = d.logChange(Change{Kind: "rule-edit", Rule: &out, Prev: &prev, Index: index, From: from})
+		d.logChange(Change{Kind: "rule-edit", Rule: &out, Prev: &prev, Index: index, Next: next, From: from})
 	}
 	return http.StatusOK, out, err
 }
@@ -390,7 +391,7 @@ func (d *Daemon) deleteRule(r *http.Request) (int, any, error) {
 			return fail(http.StatusNotFound, "no rule %d", id)
 		}
 		prev := c.Rules[i]
-		ch.Prev, ch.Index = &prev, i
+		ch.Prev, ch.Index, ch.Next = &prev, i, nextAfter(c.Rules, i)
 		if prev.From >= month {
 			c.Rules = slices.Delete(c.Rules, i, i+1)
 		} else {
@@ -401,7 +402,7 @@ func (d *Daemon) deleteRule(r *http.Request) (int, any, error) {
 		return nil
 	})
 	if err == nil {
-		err = d.logChange(ch)
+		d.logChange(ch)
 	}
 	return http.StatusNoContent, nil, err
 }

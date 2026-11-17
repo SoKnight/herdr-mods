@@ -429,13 +429,15 @@ func (d *Daemon) postCorrection(r *http.Request) (int, any, error) {
 	if p := closedBy(periods, "", c.Start, c.End); p != nil {
 		return 0, nil, closedPeriod(p.ID)
 	}
-	tl, _, err := d.timeline(c.Start, c.End)
-	if err != nil {
-		return 0, nil, err
-	}
 	was := map[string]int64{}
-	for _, s := range tl.Me {
-		was[s.Project] += s.End - s.Start
+	if c.End-c.Start <= 62*24*60*60_000 { // a longer one would hold the lock over a long timeline
+		tl, _, err := d.timeline(c.Start, c.End)
+		if err != nil {
+			return 0, nil, err
+		}
+		for _, s := range tl.Me {
+			was[s.Project] += s.End - s.Start
+		}
 	}
 	c.Was = nil
 	for p, ms := range was {
