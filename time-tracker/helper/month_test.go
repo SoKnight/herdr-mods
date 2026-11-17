@@ -58,7 +58,16 @@ func TestMonthReportRoute(t *testing.T) {
 	assertEq(t, api.do("GET", "/v1/months/2026-11/report?project=easy&rows=year", nil, nil), http.StatusBadRequest)
 	assertEq(t, api.do("GET", "/v1/months/ноябрь/report?project=easy", nil, nil), http.StatusBadRequest)
 	assertEq(t, api.do("GET", "/v1/months/2026-11/report?project=nope", nil, nil), http.StatusBadRequest)
-	assertEq(t, fmt.Sprint(m.PlanDays, m.Activities, m.DaysOff, m.NoCalendar), "20 map[:301] [] []")
+	assertEq(t, fmt.Sprint(m.PlanDays, m.Activities), "20 map[:301]")
+	shape, _ := json.Marshal(m)
+	for _, want := range []string{`"holidays":["2026-11-04"]`, `"days_off":[]`, `"no_calendar":[]`, `"bonuses":[]`, `"notes":[]`} {
+		assertEq(t, strings.Contains(string(shape), want), true)
+	}
+	var other map[string]json.RawMessage // a project with no goal, pay or time
+	assertEq(t, api.do("GET", "/v1/months/2026-11/report?project=other", nil, &other), http.StatusOK)
+	assertEq(t, fmt.Sprintf("%s %s %s %s", other["goal"], other["pay"], other["activities"], other["days_off"]), "null null {} []")
+	shape, _ = json.Marshal(buildMonth("u", "2026-12", "week", nov(16), nil, nil, tsettings())) // nothing before today
+	assertEq(t, strings.Contains(string(shape), `"rows":[]`), true)
 
 	resp, _ := json.Marshal(m)
 	var out bytes.Buffer
@@ -76,6 +85,40 @@ func TestMonthReportRoute(t *testing.T) {
 	out.Reset()
 	must(t, showMonth(&out, resp))
 	assertEq(t, strings.Split(out.String(), "\n")[1], "2 – 8 ноя  моё 2ч  агенты —")
+}
+
+func TestMonthGoalAgreesWithRows(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 25, 12, 0) })
+	day := map[string]any{"dir": "min", "minutes": 390, "period": "day", "weekdays": []int{1, 2, 3, 4, 5}}
+	put := func(project string, goal map[string]any) {
+		assertEq(t, api.do("PUT", "/v1/projects/"+project+"/goal", goal, nil), http.StatusOK)
+	}
+	day["from"] = "2026-11-01"
+	put("easy", day)
+	put("easy", map[string]any{"from": "2026-11-20", "off": true})
+	day["from"] = "2026-11-16"
+	put("other", day)
+	var m monthReport
+	assertEq(t, api.do("GET", "/v1/months/2026-11/report?project=easy", nil, &m), http.StatusOK)
+	assertEq(t, fmt.Sprint(m.Goal != nil, m.Rows[1].Plan, m.Rows[3].Plan, m.Rows[len(m.Rows)-1].Plan), "true 1950 1560 0") // 2–8 ноя has 5 weekdays without the calendar; 16–19
+	assertEq(t, api.do("GET", "/v1/months/2026-11/report?project=other", nil, &m), http.StatusOK)
+	assertEq(t, fmt.Sprintf("%t %s", m.Goal != nil, m.Goal.From), "true 2026-11-16")
+}
+
+func TestPastMonthReport(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 12, 2, 12, 0) })
+	var m monthReport
+	assertEq(t, api.do("GET", "/v1/months/2026-11/report?project=easy", nil, &m), http.StatusOK)
+	current := false
+	for _, r := range m.Rows {
+		current = current || r.Current
+	}
+	last := m.Rows[len(m.Rows)-1]
+	assertEq(t, fmt.Sprintf("%t %t %d %s %s %s", m.Running, current, len(m.Rows), last.Label, last.Text, last.To), "false false 6 30 ноя 30 ноя 2026-11-30")
 }
 
 func TestMonthCLIReadsFlagsAfterTheMonth(t *testing.T) {

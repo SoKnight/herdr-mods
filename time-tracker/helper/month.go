@@ -31,7 +31,7 @@ type monthReport struct {
 	Running    bool             `json:"running"` // today is in the month
 	Rows       []monthRow       `json:"rows"`
 	Total      monthRow         `json:"total"`      // field by field the sum of Rows (Label, Text, Notes empty)
-	Goal       *Goal            `json:"goal"`       // in force on the last row's day
+	Goal       *Goal            `json:"goal"`       // the latest in force on a day of the month up to today
 	Plan       int64            `json:"plan"`       // the whole month's plan minutes (rate, forecast)
 	PlanDays   int              `json:"plan_days"`  // the whole month's planned days
 	Activities map[string]int64 `json:"activities"` // my minutes by kind of work
@@ -142,7 +142,11 @@ func (d *Daemon) monthReport(project, month, rows string) (monthReport, error) {
 		return monthReport{}, err
 	}
 	m := buildMonth(project, month, rows, today, days, tl.Me, d.S)
-	m.Goal = goalOn(p.Goals, m.Rows[len(m.Rows)-1].To)
+	for _, pd := range days { // as getPlan: the latest version in force on a day of the month up to today
+		if g := goalOn(p.Goals, pd.Day); g != nil && pd.Day <= today {
+			m.Goal = g
+		}
+	}
 	m.Activities = map[string]int64{}
 	for _, pt := range Summarize(tl, d.S, nil).Projects {
 		if pt.Project != project {
