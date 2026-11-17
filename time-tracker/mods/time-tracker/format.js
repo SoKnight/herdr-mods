@@ -151,7 +151,7 @@ export function goalVersion(g) {
 }
 
 // A week's worth of goals, minutes: month goals as 12 / 52 of a month.
-export const weeklyTotal = (goals) => goals.reduce((n, g) => n + (g.period === "day" ? g.minutes * g.weekdays.length : g.period === "week" ? g.minutes : Math.round((g.minutes * 12) / 52)), 0);
+export const weeklyTotal = (goals) => goals.reduce((n, g) => n + (g.period === "day" ? g.minutes * (g.weekdays ?? []).length : g.period === "week" ? g.minutes : Math.round((g.minutes * 12) / 52)), 0);
 
 export function progressText(goal, fact, plan) {
   if (goal.dir === "max") return fact <= plan ? "в пределах цели" : `сверх цели на ${fmtMin(fact - plan)}`;
@@ -179,7 +179,7 @@ export function roundRows(rows) {
   return { rows: out, total: out.reduce((n, r) => n + r.me, 0) };
 }
 
-const SHORT_MONTHS =["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+const SHORT_MONTHS = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 const dayMonth = (ms) => [new Date(ms).getDate(), SHORT_MONTHS[new Date(ms).getMonth()]];
 
 // "17 ноя, 00:40".

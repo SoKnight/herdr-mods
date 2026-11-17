@@ -166,6 +166,7 @@ test('goal wording', () => {
   assert.equal(F.goalVersion(u), 'с 1 ноября 2026 — не меньше 6,5ч в день');
   assert.equal(F.goalVersion({ from: '2026-12-01', off: true }), 'с 1 декабря 2026 — цели нет');
   assert.equal(F.weeklyTotal([u, t, { ...t, minutes: 300 }]), 2730);
+  assert.equal(F.weeklyTotal([{ from: '2026-11-01', dir: 'min', minutes: 390, period: 'day' }, t]), 480); // hand-edited, no weekdays
   assert.deepEqual([[t, 480, 480], [t, 360, 480], [{ ...t, dir: 'max' }, 300, 480], [{ ...t, dir: 'max' }, 540, 480]].map((a) => F.progressText(...a)), ['цель выполнена', 'не хватает 2ч', 'в пределах цели', 'сверх цели на 1ч']);
 });
 
