@@ -87,6 +87,8 @@ func TestStatusCountsOpenSpans(t *testing.T) {
 		Project  string `json:"project"`
 		Name     string `json:"project_name"`
 		Activity string `json:"activity"`
+
+		LastSample int64 `json:"last_sample"`
 	}
 	assertEq(t, api.do("GET", "/v1/status", nil, &st), http.StatusOK)
 	assertEq(t, st.Version, version)
@@ -95,6 +97,7 @@ func TestStatusCountsOpenSpans(t *testing.T) {
 	assertEq(t, st.Project, "easy")
 	assertEq(t, st.Name, "Easy")
 	assertEq(t, st.Activity, "development")
+	assertEq(t, st.LastSample, at(1))
 }
 
 func TestQuitStopsRun(t *testing.T) {

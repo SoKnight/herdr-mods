@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func serverConfig() Config {
@@ -591,4 +592,132 @@ func TestCLISession(t *testing.T) {
 	assertEq(t, runCLI([]string{"session", "--json"}, &out, &errOut), 0)
 	assertEq(t, strings.Contains(out.String(), `"manual":true`), true)
 	assertEq(t, runCLI([]string{"session", "stop"}, &out, &errOut), 2)
+}
+
+type dayAnswer struct {
+	Sessions   []Session `json:"sessions"`
+	Stats      DayStats  `json:"stats"`
+	LastSample int64     `json:"last_sample"`
+}
+
+func TestTimelineGivesSessionsAndStats(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return at(61) })
+	seed(t, d, power(0, 61), inp(0, 20), inp(40, 60), win("idea64.exe", "Easy – Main.kt", 0, 60))
+	assertEq(t, api.do("POST", "/v1/corrections", Correction{Kind: "project", Project: "other", Start: at(40), End: at(60)}, nil), http.StatusCreated)
+	var got dayAnswer
+	assertEq(t, api.do("GET", "/v1/timeline", nil, &got), http.StatusOK)
+	assertEq(t, len(got.Sessions), 1)
+	s := got.Sessions[0]
+	assertEq(t, len(s.Stretches), 2)
+	assertEq(t, s.Stretches[1].Project, "other")
+	assertEq(t, s.Stretches[1].GapBefore, int64(20*minMs))
+	assertEq(t, s.Breaks, int64(20*minMs))
+	assertEq(t, got.Stats, DayStats{Switches: 1, Focus: 20 * minMs, Breaks: 20 * minMs})
+	assertEq(t, got.LastSample, int64(0))
+}
+
+func TestTimelineSessionsFollowCorrections(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return at(200) })
+	seed(t, d, power(0, 200), inp(0, 60), win("idea64.exe", "Easy – Main.kt", 0, 60))
+	api.do("POST", "/v1/corrections", Correction{Kind: "exclude", Start: at(20), End: at(40)}, nil)
+	var got dayAnswer
+	api.do("GET", "/v1/timeline", nil, &got)
+	assertEq(t, len(got.Sessions[0].Stretches), 2)
+	assertEq(t, got.Sessions[0].Breaks, int64(20*minMs))
+}
+
+func TestTimelineCutsSessionsAtDayStart(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	start, end := mskAt(2026, 11, 16, 5, 30), mskAt(2026, 11, 16, 6, 30)
+	swap(t, &nowMs, func() int64 { return end + minMs })
+	seed(t, d, Span{Kind: "power", Start: start, End: end}, Span{Kind: "input", Start: start, End: end},
+		Span{Kind: "window", Start: start, End: end, Exe: "idea64.exe", Title: "Easy – Main.kt"})
+	var got dayAnswer
+	api.do("GET", "/v1/timeline?day=2026-11-16", nil, &got)
+	assertEq(t, got.Sessions[0].Start, mskAt(2026, 11, 16, 6, 0))
+}
+
+func TestTimelineEmptyDayGivesEmptyLists(t *testing.T) {
+	api := serve(t, testDaemon(t))
+	var raw map[string]json.RawMessage
+	api.do("GET", "/v1/timeline?day=2026-11-16", nil, &raw)
+	assertEq(t, string(raw["sessions"]), "[]")
+	assertEq(t, string(raw["stats"]), `{"switches":0,"focus":0,"breaks":0}`)
+}
+
+func TestStatusStates(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	seed(t, d, power(-60, 10), inp(-30, 10), win("idea64.exe", "Easy – Main.kt", -30, 10))
+	var st struct {
+		State        string `json:"state"`
+		SessionStart int64  `json:"session_start"`
+		LastActive   int64  `json:"last_active"`
+	}
+	state := func(minute int) string {
+		swap(t, &nowMs, func() int64 { return at(minute) })
+		st.State, st.SessionStart, st.LastActive = "", -1, -1
+		api.do("GET", "/v1/status", nil, &st)
+		return st.State
+	}
+	assertEq(t, state(11), "working")
+	assertEq(t, st.SessionStart, at(-30))
+	assertEq(t, st.LastActive, at(10))
+	assertEq(t, state(20), "away")
+	assertEq(t, state(56), "none")
+	assertEq(t, state(2), "working") // the input still runs at 2
+	assertEq(t, api.do("POST", "/v1/session", map[string]string{"action": "end"}, nil), http.StatusCreated)
+	assertEq(t, state(4), "none") // the input 2–4 after Завершить opens nothing
+	assertEq(t, st.SessionStart, int64(0))
+}
+
+func TestRestartStopsThenStarts(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	must(t, err)
+	addr := ln.Addr().String()
+	cliHome(t, ln.Addr().(*net.TCPAddr).Port)
+	// fake answers like a collector; /v1/quit stops it.
+	fake := func(ln net.Listener) {
+		srv := &http.Server{}
+		srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, `{"version":"1.0.0"}`)
+			if r.URL.Path == "/v1/quit" {
+				go srv.Close()
+			}
+		})
+		t.Cleanup(func() { srv.Close() })
+		go srv.Serve(ln)
+	}
+	fake(ln)
+	launched := false
+	swap(t, &launch, func(string) error {
+		launched = true
+		again, err := net.Listen("tcp", addr) // only free once the old one stopped
+		if err == nil {
+			fake(again)
+		}
+		return err
+	})
+	var out, errOut bytes.Buffer
+	assertEq(t, runCLI([]string{"restart", "--json"}, &out, &errOut), 0)
+	assertEq(t, launched, true)
+	assertEq(t, strings.TrimSpace(out.String()), "{}")
+}
+
+func TestRestartReportsWhenNothingStarts(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	must(t, err)
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+	cliHome(t, port)
+	swap(t, &launch, func(string) error { return nil })
+	swap(t, &restartWait, 300*time.Millisecond)
+	var out, errOut bytes.Buffer
+	assertEq(t, runCLI([]string{"restart", "--json"}, &out, &errOut), 1)
+	assertEq(t, strings.TrimSpace(out.String()), `{"error":"сборщик не запустился"}`)
 }

@@ -216,6 +216,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 }
 
+// lastSample is the time of the last poll, 0 before the first. Callers hold mu.
+func (d *Daemon) lastSample() int64 {
+	if d.tracker.prev == nil {
+		return 0
+	}
+	return d.tracker.prev.At
+}
+
 func (d *Daemon) stop() { d.quitOnce.Do(func() { close(d.quit) }) }
 
 func (d *Daemon) poll() {

@@ -189,12 +189,28 @@ func (d *Daemon) getStatus(r *http.Request) (int, any, error) {
 	if err != nil {
 		return 0, nil, err
 	}
-	tl, _, err := d.timeline(from, now)
+	tl, _, err := d.timeline(now-24*60*60_000, now)
 	if err != nil {
 		return 0, nil, err
 	}
-	rep := Summarize(tl, d.S, d.order())
+	rep := Summarize(clipTimeline(tl, from, now), d.S, d.order())
+	ss, err := d.sessions(tl.Me, now)
+	if err != nil {
+		return 0, nil, err
+	}
 	var project, name, activity string
+	var lastActive, sessionStart int64
+	state := "none"
+	if n := len(tl.Me); n > 0 {
+		lastActive = tl.Me[n-1].End
+	}
+	if n := len(ss); n > 0 && ss[n-1].Open {
+		sessionStart = ss[n-1].Start
+		state = "away"
+		if now-lastActive < int64(d.S.IdleMinutes)*60_000 {
+			state = "working"
+		}
+	}
 	// I am still on the last segment unless I have been away for the idle threshold.
 	if n := len(tl.Me); n > 0 && tl.Me[n-1].End >= now-int64(d.S.IdleMinutes)*60_000 {
 		last := tl.Me[n-1]
@@ -204,7 +220,8 @@ func (d *Daemon) getStatus(r *http.Request) (int, any, error) {
 		}
 	}
 	return http.StatusOK, map[string]any{"version": version, "today_me_ms": rep.Me, "today_agents_ms": rep.Agents,
-		"project": project, "project_name": name, "activity": activity}, nil
+		"project": project, "project_name": name, "activity": activity, "state": state,
+		"session_start": sessionStart, "last_active": lastActive, "last_sample": d.lastSample()}, nil
 }
 
 // listed gives empty lists as [] instead of null, so the mod can iterate them as is.
@@ -246,8 +263,17 @@ func (d *Daemon) getTimeline(r *http.Request) (int, any, error) {
 	}
 	rep := Summarize(tl, d.S, d.order())
 	rep.Projects = nonNil(rep.Projects)
+	ss, err := d.sessions(tl.Me, nowMs())
+	if err != nil {
+		return 0, nil, err
+	}
+	// Over the day's own timeline, so a session from before the day starts at day_start.
+	for i := range ss {
+		ss[i].Start = max(ss[i].Start, from)
+	}
 	return http.StatusOK, map[string]any{"day": day, "from": from, "to": to, "timeline": listed(tl),
-		"report": rep, "divergences": nonNil(div)}, nil
+		"report": rep, "divergences": nonNil(div), "sessions": nonNil(ss),
+		"stats": dayStats(tl.Me, ss, int64(d.S.PauseMinutes)*60_000), "last_sample": d.lastSample()}, nil
 }
 
 // sessions are the sessions in me (sorted by start), each described. Callers hold mu.
@@ -293,7 +319,7 @@ func (d *Daemon) getSession(r *http.Request) (int, any, error) {
 		rep.Projects = nonNil(rep.Projects)
 	}
 	return http.StatusOK, map[string]any{"session": cur, "timeline": listed(tl), "report": rep,
-		"last_sample": int64(0), "session_idle_minutes": d.S.SessionIdleMinutes}, nil
+		"last_sample": d.lastSample(), "session_idle_minutes": d.S.SessionIdleMinutes}, nil
 }
 
 func (d *Daemon) postSession(r *http.Request) (int, any, error) {

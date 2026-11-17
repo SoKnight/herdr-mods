@@ -24,6 +24,7 @@ import (
 const usage = `herdr-time <команда> [--json]
   run                        запустить сборщик
   probe                      один опрос Windows, без сборщика
+  restart                    перезапустить сборщик
   status
   timeline [--day YYYY-MM-DD] [--fresh]   --fresh: без снимков закрытых периодов
   projects
@@ -37,6 +38,12 @@ const usage = `herdr-time <команда> [--json]
   periods [--project id]
   reopen <id>
 --from и --to: Unix ms или YYYY-MM-DD (день в --to входит в диапазон).`
+
+// Seams for tests.
+var (
+	launch      = launchCollector
+	restartWait = 5 * time.Second
+)
 
 var httpClient = &http.Client{Timeout: 30 * time.Second}
 
@@ -65,6 +72,8 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 		return runCollector(s, stdout, stderr)
 	case "probe":
 		return probe(stdout, stderr)
+	case "restart":
+		return restart(s, asJSON, stdout, stderr)
 	}
 	c, err := buildCall(s, args[0], args[1:])
 	if err != nil {
@@ -322,6 +331,47 @@ func openLog(home string) *os.File {
 	}
 	log.SetOutput(f)
 	return f
+}
+
+// restart stops the collector (a down one is fine), starts this exe's, and waits for each step.
+func restart(s Settings, asJSON bool, stdout, stderr io.Writer) int {
+	fail := func(msg string) int {
+		if asJSON {
+			b, _ := json.Marshal(map[string]string{"error": msg})
+			fmt.Fprintln(stdout, string(b))
+		} else {
+			fmt.Fprintln(stderr, msg)
+		}
+		return 1
+	}
+	wait := func(answers bool) bool {
+		for end := time.Now().Add(restartWait); ; time.Sleep(100 * time.Millisecond) {
+			if _, _, err := send(s, "GET", "/v1/status", nil); (err == nil) == answers {
+				return true
+			}
+			if time.Now().After(end) {
+				return false
+			}
+		}
+	}
+	send(s, "POST", "/v1/quit", nil)
+	if !wait(false) {
+		return fail("сборщик не остановился")
+	}
+	exe, err := os.Executable()
+	if err == nil {
+		err = launch(exe)
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+	}
+	if err != nil || !wait(true) {
+		return fail("сборщик не запустился")
+	}
+	if asJSON {
+		fmt.Fprintln(stdout, "{}")
+	}
+	return 0
 }
 
 func probe(stdout, stderr io.Writer) int {
