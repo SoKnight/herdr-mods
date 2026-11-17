@@ -6,7 +6,8 @@ import { theme, props, layout } from "herdr";
 import { call } from "../client.js";
 import { formatDuration, activityLabel, catalog, hhmm, dayTitle, plural, ACTIVITIES } from "../format.js";
 import { rangeFromDrag, stepDay, ruleFor } from "../lanes.js";
-import { Message, TEXT } from "../ui.js";
+import { silence } from "../chip.js";
+import { Button, Icon, Message, TEXT } from "../ui.js";
 import { Link } from "./menu.js";
 import { Unassigned } from "./totals.js";
 import { Strip, AgentsStrip, HourLabels, Legend, DragArea } from "./strip.js";
@@ -80,9 +81,10 @@ export class Day {
         const [r, projects] = await Promise.all([call(args), call(["projects"])]);
         if (seq !== this.seq) return;
         Object.assign(this, catalog(projects));
-        this.error = r.down ? "Сборщик не запущен: go -C helper run ./deploy" : (r.error ?? null);
-        if (!this.error) {
-          this.took(r);
+        this.error = r.down ? null : (r.error ?? null); // a collector that is down is the notice's business; the last data stays
+        if (!r.down && !r.error) this.took(r);
+        this.silentSince = this.want ? null : (silence(Boolean(r.down), this.lastSample, Date.now())?.since ?? null);
+        if (!r.down && !r.error) {
           if (this.unassignedOpen) await this.loadUnassigned(seq);
         }
       } finally {
@@ -93,6 +95,16 @@ export class Day {
         }
         cx.notify();
       }
+    });
+  }
+
+  // Starts the collector again, then reads.
+  restart(cx) {
+    this.message = null;
+    cx.spawn(async (cx) => {
+      const r = await call(["restart"], 20000);
+      if (r.error) this.message = { text: r.error, error: true };
+      this.load(cx);
     });
   }
 
@@ -330,11 +342,39 @@ export class Day {
   // Above the strip: an error, a reopen to confirm, closed exports the rules would change, the last message.
   notices(t) {
     return [
+      this.silentSince !== null && this.silentView(t),
       this.error && Message(this.error, true),
       this.pending && this.confirmView(t),
       ...this.divergences.map((v) => this.divergenceView(v, t)),
       this.message && this.messageView(t),
     ].filter(Boolean);
+  }
+
+  // The collector isn't answering or sampling: nothing is being counted.
+  silentView(t) {
+    return v_flex()
+      .id("day-silent")
+      .flex_none()
+      .px(12)
+      .py(10)
+      .gap(8)
+      .rounded(8)
+      .bg(t.chrome)
+      .child(
+        h_flex()
+          .gap(8)
+          .items_center()
+          .child(div().text_color(t.ansi3).child(Icon("triangle-alert", 14)))
+          .child(div().font_medium().child(this.silentSince ? `Нет данных с ${hhmm(this.silentSince)}` : "Нет данных")),
+      )
+      .child(div().text_size(TEXT.small).text_color(t.muted).child("Сборщик не отвечает — время сейчас не считается."))
+      .child(
+        h_flex()
+          .gap(12)
+          .items_center()
+          .child(Button({ id: "day-restart", label: "Перезапустить", primary: true, onClick: (cx) => this.restart(cx) }))
+          .child(Link({ id: "day-silent-settings", label: "Настройки", onClick: (cx) => this.open("settings", cx) })),
+      );
   }
 
   strip(id, t, text, links) {

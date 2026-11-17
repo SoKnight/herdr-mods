@@ -41,6 +41,11 @@ export function Strip(view, t, { from, to, h, radius }) {
     })
     .child(track);
 
+  // The silent stretch, boxed from the last sample to now.
+  const gap = view.silentSince;
+  if (gap > 0 && from <= gap && now < to)
+    strip.child(div().absolute().top(0).h(h).left(`${((gap - from) / (to - from)) * 100}%`).w(`${((now - gap) / (to - from)) * 100}%`).rounded(radius).border_1().border_dashed().border_color(t.ansi3));
+
   const g = view.drag;
   const range = (el, x, w) => el.absolute().top(0).h(h).left(view.pct(x)).w(view.pct(w)).bg(t.selection).border_l(2).border_r(2).border_color(t.foreground);
   if (g) strip.child(range(div(), Math.min(g.x0, g.x1), Math.abs(g.x1 - g.x0)));

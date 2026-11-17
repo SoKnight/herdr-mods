@@ -1,42 +1,13 @@
-// The day's totals by project in the chip's card, and "Другое" opened up to assign. Rows are drawn as
-// Usage Limits draws its own: name, bar, numbers in columns.
+// "Другое" opened up to assign.
 import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { formatDuration } from "../format.js";
-import { projectColor } from "../lanes.js";
 import { Message, TEXT } from "../ui.js";
 import { Link } from "./menu.js";
 
-const BAR_W = 110;
 const ME_W = 56;
-const AGENTS_W = 64;
-
-export function ShareBar(fill, color, t, width = BAR_W) {
-  return div().relative().w(width).h(4).rounded(2).bg(t.border).flex_none()
-    .child(div().absolute().left(0).top(0).h(4).rounded(2).w(Math.round(width * Math.min(1, Math.max(0, fill)))).bg(color));
-}
 
 const num = (w, text, color) => div().w(w).flex_none().flex().justify_end().whitespace_nowrap().text_color(color).child(text);
-
-// The column heads over the rows.
-export function TotalsHead(t) {
-  return h_flex().gap(8).items_center().text_size(TEXT.caption).text_color(t.dim)
-    .child(div().flex_1())
-    .child(num(ME_W, "моё", t.dim))
-    .child(num(AGENTS_W, "агенты", t.dim));
-}
-
-// p: a report project; total: my time across all of them, for the bar; extra: what goes after the name.
-export function ProjectRow(p, name, order, total, t, extra = null) {
-  const color = t[projectColor(p.project, order)] ?? t.muted;
-  return h_flex().gap(8).items_center()
-    .child(div().size(8).rounded(4).flex_none().bg(color))
-    .child(div().flex_1().min_w(0).truncate().text_color(p.project ? t.foreground : t.muted).child(name))
-    .when(Boolean(extra), (el) => el.child(extra))
-    .child(ShareBar(total > 0 ? p.me / total : 0, color, t))
-    .child(num(ME_W, formatDuration(p.me), p.me > 0 ? t.foreground : t.dim))
-    .child(num(AGENTS_W, p.agents > 0 ? formatDuration(p.agents) : "—", t.dim));
-}
 
 // My time without a project by what a rule could match; picking a project writes that rule.
 export function Unassigned(day, t) {
