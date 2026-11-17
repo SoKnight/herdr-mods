@@ -42,8 +42,8 @@ Keep the chip shown all the time: it is what passes Herdr's signals to the colle
 ## Using it
 
 - Сессия: the current session, its stretches, switches and longest focus; "Завершить" / "Начать сессию" end or start it (`herdr-time session [start|end]`).
-- День (06:00 to 06:00): sessions with their stretches, and lanes for power, me, app, project, activity and agents. Drag over a range for "Правка отрезка": project, activity, leave out, add time, note. A saved correction says "Правка #n сохранена." with "Отменить".
-- Chip: session time and project, отошёл, сессии нет, нет данных. With no data, "Перезапустить" (or `herdr-time restart`) starts the collector detached.
+- День (06:00 to 06:00): one strip with an agents strip under it, then the sessions with their stretches. Drag over a range up to now for its menu: project (or "Без проекта"), kind of work, "Исключить — не работа", note, a rule from the window. A saved correction says "Правка #n сохранена." with "Отменить" for that last one.
+- Chip: today's time and the project in focus, отошёл, a play icon when no session runs, нет данных; a card on hover, the panel on click. With no data, "Перезапустить" (or `herdr-time restart`) starts the collector detached.
 - Неделя, Месяц: projects by activity with "Моё" and "Агенты", and days below; a day opens in День.
 - Отчёт: project, period, rounding (15 by default), "Показать время агентов (для справки)" (off), preview. "Сохранить CSV" / "Сохранить Markdown" first warns "Период по проекту закроется". Closed periods are listed with "Переоткрыть".
 
@@ -59,6 +59,6 @@ Keep the chip shown all the time: it is what passes Herdr's signals to the colle
 
 - Node tests, Go tests and vet (the installer's included), and `herdr-app check` pass.
 - With the collector stopped, the panel and chip say it isn't running and how to start it.
-- After a day of use, День shows lanes that match what you did, and a correction changes the totals at once.
+- After a day of use, День shows a strip that matches what you did, and a correction changes the totals at once.
 - Exporting a project for a week as Markdown with agents on writes a file with minutes rounded to the step, the agents' line apart and not in the total.
 - A rule that moves part of that week to another project shows a difference on the period in Отчёт, and "Переоткрыть" removes it.
