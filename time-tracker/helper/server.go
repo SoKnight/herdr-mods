@@ -532,6 +532,9 @@ func (d *Daemon) postRule(r *http.Request) (int, any, error) {
 		return http.StatusNoContent, nil, nil
 	}
 	*list = append(slices.Clone(*list), req.Value)
+	if c, _, err = migrate(c); err != nil {
+		return 0, nil, fail(http.StatusBadRequest, "%v", err)
+	}
 	if _, err := c.Compile(); err != nil {
 		return 0, nil, fail(http.StatusBadRequest, "%v", err)
 	}

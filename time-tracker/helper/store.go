@@ -53,6 +53,11 @@ func writeJSON(path string, v any) error {
 	if err != nil {
 		return err
 	}
+	return writeFile(path, b)
+}
+
+// writeFile replaces path with b through a synced temp file, so a crash leaves the old or the new file.
+func writeFile(path string, b []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}

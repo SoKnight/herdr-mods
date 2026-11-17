@@ -141,10 +141,15 @@ func Attribute(raw Raw, rules *Rules, corr []Correction, s Settings, from, to in
 			app := rules.App(seg.App)
 			hb := beats.fresh(app, t)
 
-			project, why := projectOf(rules, seg.App, seg.Title, hb)
+			w := window{exe: seg.App, title: seg.Title, at: t}
+			if hb != nil {
+				w.path = hb.ProjectPath
+			}
+			project, why, rule := projectOf(rules, w, hb)
 			switch {
 			case project != "":
 				lastProject, lastWhy, lastEnd = project, why, end
+				seg.Rule = rule
 			case lastProject != "" && t < lastEnd+carry:
 				project = lastProject
 				why = fmt.Sprintf("перенос до %d мин: %s", s.CarryMinutes, lastWhy)
@@ -266,7 +271,7 @@ func agentPieces(rules *Rules, spans []Span, from, to int64) []AgentSeg {
 		if s >= e {
 			continue
 		}
-		id, why := rules.ProjectByPath(sp.Cwd)
+		id, why := rules.FolderProject(sp.Cwd, sp.Start)
 		if id == "" {
 			why = "папка " + sp.Cwd + " → без проекта"
 		}
@@ -322,25 +327,22 @@ func unionAgents(pieces []AgentSeg) []AgentSeg {
 	return out
 }
 
-// projectOf applies the rules after manual corrections: the focused app's own fresh signal,
-// then the app rule, then the window title. Carry-over is the caller's.
-func projectOf(rules *Rules, exe, title string, hb *Heartbeat) (id, why string) {
+// projectOf applies the rules after manual corrections: the first rule that matches the window (its
+// folder comes from the focused app's fresh signal), then the signal's project name. Carry-over is the caller's.
+func projectOf(rules *Rules, w window, hb *Heartbeat) (id, why string, rule int64) {
+	if r, ok := rules.Match(w); ok {
+		why = r.why()
+		if r.Kind == "folder" && hb != nil {
+			why = "сигнал " + hb.Source + ": " + why
+		}
+		return r.Project, why, r.ID
+	}
 	if hb != nil {
-		id, why = rules.ProjectByPath(hb.ProjectPath)
-		if id == "" && hb.URL != "" {
-			id, why = rules.ProjectByURL(hb.URL)
-		}
-		if id == "" {
-			id, why = rules.ProjectByName(hb.ProjectName)
-		}
-		if id != "" {
-			return id, "сигнал " + hb.Source + ": " + why
+		if id, why = rules.ProjectByName(hb.ProjectName); id != "" {
+			return id, "сигнал " + hb.Source + ": " + why, 0
 		}
 	}
-	if id, why = rules.ProjectByApp(exe); id != "" {
-		return id, why
-	}
-	return rules.ProjectByTitle(exe, title)
+	return "", "", 0
 }
 
 func activityOf(rules *Rules, app *AppRule, hb *Heartbeat) (activity, why string) {
@@ -363,7 +365,7 @@ func appendSegment(me []Segment, seg Segment) []Segment {
 	if n := len(me); n > 0 {
 		p := &me[n-1]
 		if p.End == seg.Start && p.App == seg.App && p.Title == seg.Title && p.Path == seg.Path &&
-			p.Project == seg.Project && p.Activity == seg.Activity && p.Why == seg.Why {
+			p.Project == seg.Project && p.Activity == seg.Activity && p.Why == seg.Why && p.Rule == seg.Rule {
 			p.End = seg.End
 			return me
 		}

@@ -57,7 +57,6 @@ func testRules(t *testing.T) *Rules {
 		Projects: []Project{
 			{ID: "easylauncher", Name: "EasyLauncher", Paths: []string{`C:\Dev\easyx`}},
 			{ID: "tricky", Name: "Tricky Network", Titles: []string{"Tricky"}},
-			{ID: "site", Name: "Site", URLs: []string{`^https://site\.example/`}},
 			{ID: "study", Name: "Учёба", Apps: []string{"telemost.exe"}},
 			{ID: "universe", Name: "Universe", Paths: []string{`C:\Dev\starmc`}},
 		},
@@ -218,13 +217,11 @@ func TestBeatBeatsTitleOnlyForMatchingApp(t *testing.T) {
 	assertWhyHas(t, s, "сигнал herdr")
 }
 
-func TestBeatProjectByURLAndName(t *testing.T) {
-	byURL := Heartbeat{Source: "firefox", Time: at(0), URL: "https://site.example/page"}
-	byName := Heartbeat{Source: "firefox", Time: at(1), ProjectName: "easylauncher"}
-	tl := attr(t, spans(win("firefox.exe", "x", 0, 2), inp(0, 2)).with(byURL, byName))
-	assertEq(t, segAt(t, tl, 0, 30).Project, "site")
-	assertEq(t, segAt(t, tl, 1, 30).Project, "easylauncher")
-	assertWhyHas(t, segAt(t, tl, 1, 30), "имя проекта")
+func TestBeatProjectByName(t *testing.T) {
+	byName := Heartbeat{Source: "firefox", Time: at(0), ProjectName: "easylauncher"}
+	tl := attr(t, spans(win("firefox.exe", "x", 0, 1), inp(0, 1)).with(byName))
+	assertEq(t, segAt(t, tl, 0, 30).Project, "easylauncher")
+	assertWhyHas(t, segAt(t, tl, 0, 30), "имя проекта")
 }
 
 func TestBeatExpiresAfter120s(t *testing.T) {

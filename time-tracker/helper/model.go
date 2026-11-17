@@ -52,6 +52,7 @@ type Segment struct {
 	Why       string `json:"why"`
 	Corrected bool   `json:"corrected"`
 	Manual    bool   `json:"manual"`
+	Rule      int64  `json:"rule,omitempty"` // the rule that matched; 0 for carry, a signal's name, added time
 }
 
 type AgentSeg struct {

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -93,7 +94,9 @@ func (d *Daemon) loadConfig() error {
 	return d.setConfig(c)
 }
 
-// readConfig reads projects.json as it is now; unlike LoadConfig it never creates it.
+// readConfig reads projects.json as it is now; unlike LoadConfig it never creates it. A v1 file is
+// migrated and written back, its original bytes kept once in projects.v1.json; a file that cannot be
+// migrated is left as it is.
 func readConfig(home string) (Config, error) {
 	path := filepath.Join(home, "projects.json")
 	data, err := os.ReadFile(path)
@@ -104,10 +107,30 @@ func readConfig(home string) (Config, error) {
 	if err := json.Unmarshal(data, &c); err != nil {
 		return Config{}, fmt.Errorf("%s: %w", path, err)
 	}
-	return c, nil
+	c, changed, err := migrate(c)
+	if err != nil {
+		return Config{}, fmt.Errorf("%s: %w", path, err)
+	}
+	if !changed {
+		return c, nil
+	}
+	backup := filepath.Join(home, "projects.v1.json")
+	if _, err := os.Stat(backup); errors.Is(err, os.ErrNotExist) {
+		if err := writeFile(backup, data); err != nil {
+			return Config{}, err
+		}
+	} else if err != nil {
+		return Config{}, err
+	}
+	return c, writeJSON(path, c)
 }
 
+// setConfig migrates in memory too: configs built in code (defaults, tests) may still use v1's lists.
 func (d *Daemon) setConfig(c Config) error {
+	c, _, err := migrate(c)
+	if err != nil {
+		return err
+	}
 	r, err := c.Compile()
 	if err != nil {
 		return err

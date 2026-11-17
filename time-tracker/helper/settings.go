@@ -34,25 +34,14 @@ func Home() string {
 	return filepath.Join(os.Getenv("LOCALAPPDATA"), "herdr-time")
 }
 
+// LoadConfig is readConfig, writing the default projects.json first when there is none.
 func LoadConfig(home string) (Config, error) {
 	path := filepath.Join(home, "projects.json")
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		c := DefaultConfig()
-		data, _ = json.MarshalIndent(c, "", "  ")
-		if err := os.MkdirAll(home, 0o755); err != nil {
-			return c, err
-		}
-		return c, os.WriteFile(path, data, 0o644)
+		return c, writeJSON(path, c)
 	}
-	if err != nil {
-		return Config{}, err
-	}
-	var c Config
-	if err := json.Unmarshal(data, &c); err != nil {
-		return Config{}, fmt.Errorf("%s: %w", path, err)
-	}
-	return c, nil
+	return readConfig(home)
 }
 
 // LoadSettings overlays settings.json on the defaults; a missing file is not an error.

@@ -156,7 +156,7 @@ func TestReloadConfigByMtime(t *testing.T) {
 		stamp = stamp.Add(time.Minute)
 		must(t, os.Chtimes(file, stamp, stamp))
 	}
-	byTitle := func() string { id, _ := d.Rules.ProjectByTitle("x", "Other window"); return id }
+	byTitle := func() string { r, _ := d.Rules.Match(window{exe: "x", title: "Other window"}); return r.Project }
 	assertEq(t, byTitle(), "")
 
 	c := serverConfig()
@@ -226,7 +226,8 @@ func TestBadProjectsStillCollects(t *testing.T) {
 		Version string `json:"version"`
 	}
 	assertEq(t, api.do("GET", "/v1/status", nil, &e), http.StatusInternalServerError)
-	assertEq(t, strings.HasPrefix(e.Error, "config: project easy: bad regex"), true)
+	assertEq(t, strings.HasPrefix(e.Error, "config: "), true)
+	assertEq(t, strings.Contains(e.Error, "project easy"), true)
 	assertEq(t, e.Version, version)
 	assertEq(t, api.do("GET", "/v1/projects", nil, nil), http.StatusInternalServerError)
 	assertEq(t, api.do("POST", "/v1/heartbeat", fmt.Sprintf(`{"source":"herdr","time":%d}`, now), nil), http.StatusNoContent)

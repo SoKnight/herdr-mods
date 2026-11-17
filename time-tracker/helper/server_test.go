@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -394,7 +395,7 @@ func TestRuleAddRewritesUnassigned(t *testing.T) {
 
 	c, err := LoadConfig(d.Home)
 	must(t, err)
-	assertEq(t, c.Projects[0].Paths[1], `C:\Dev\new`)
+	assertEq(t, slices.ContainsFunc(c.Rules, func(r Rule) bool { return r.Kind == "folder" && r.Value == `C:\Dev\new` && r.Project == "easy" }), true)
 }
 
 // cliHome points the CLI at a temp home whose settings.json names the port.
@@ -475,8 +476,8 @@ func TestRuleAddReadsFileFresh(t *testing.T) {
 	assertEq(t, api.do("POST", "/v1/rules", rule, nil), http.StatusNoContent)
 	got, err := readConfig(d.Home)
 	must(t, err)
-	assertEq(t, got.Projects[1].Titles[0], "UserEdit")
-	assertEq(t, got.Projects[0].Paths[1], `C:\Dev\new`)
+	assertEq(t, slices.ContainsFunc(got.Rules, func(r Rule) bool { return r.Kind == "title" && r.Value == "UserEdit" && r.Project == "other" }), true)
+	assertEq(t, slices.ContainsFunc(got.Rules, func(r Rule) bool { return r.Kind == "folder" && r.Value == `C:\Dev\new` && r.Project == "easy" }), true)
 
 	must(t, os.WriteFile(file, []byte("{"), 0o644))
 	var e struct {
