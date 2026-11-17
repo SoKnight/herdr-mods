@@ -27,7 +27,7 @@ export function Panel({ id }) {
 
 export function PanelHeader() {
   const t = theme();
-  return h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border);
+  return h_flex().flex_none().px(14).py(10).gap(4).items_center().border_b(1).border_color(t.border);
 }
 
 export function Badge(text, color) {
@@ -35,29 +35,29 @@ export function Badge(text, color) {
   return div().flex_none().px(5).py(1).rounded(4).border_1().border_color(color ?? t.border).text_size(TEXT.badge).text_color(color ?? t.muted).child(String(text));
 }
 
-// A panel title that doubles as a tab, the same pill as Herdr's tab bar.
-export function HeaderTab({ id, label, count, active, onClick }) {
+// A panel title that doubles as a tab, the same pill as Herdr's tab bar; `dot` is a colour.
+export function HeaderTab({ id, label, active, onClick, dot }) {
   const t = theme();
   return h_flex()
     .id(id)
-    .h(29)
     .min_w(0)
-    .px(10)
-    .gap(7)
+    .px(12)
+    .py(6)
+    .gap(6)
     .items_center()
     .rounded(7)
     .border(1)
     .border_color(active ? t.border : t.background)
     .bg(active ? t.raised : t.background)
-    .text_size(TEXT.tab)
+    .text_size(13)
     .text_color(active ? t.foreground : t.muted)
     .role("tab")
     .aria_selected(Boolean(active))
     .cursor_pointer()
     .hover((s) => s.bg(t.hover))
     .on_click((_e, cx) => onClick(cx))
-    .child(div().min_w(0).truncate().child(label))
-    .when(count !== undefined && count !== null, (el) => el.child(Badge(count)));
+    .when(dot, (el) => el.child(div().size(6).flex_none().rounded(3).bg(dot)))
+    .child(div().min_w(0).truncate().child(label));
 }
 
 export function IconButton({ id, icon, label, onClick, spinning = false }) {
@@ -85,4 +85,36 @@ export function IconButton({ id, icon, label, onClick, spinning = false }) {
 export function Message(text, error = false) {
   const t = theme();
   return div().flex_none().p(8).text_size(TEXT.small).whitespace_normal().text_color(error ? t.ansi1 : t.dim).child(text);
+}
+
+export function Button({ id, label, icon, primary, onClick }) {
+  const t = theme();
+  return h_flex()
+    .id(id)
+    .flex_none()
+    .px(10)
+    .py(4)
+    .gap(6)
+    .items_center()
+    .rounded(6)
+    .text_size(12)
+    .cursor_pointer()
+    .on_click((_e, cx) => onClick(cx))
+    .when(primary, (el) => el.bg(t.solid).text_color(t.solid_foreground).font_medium())
+    .when(!primary, (el) => el.bg(t.raised).text_color(t.foreground).border_1().border_color(t.border))
+    .when(icon, (el) => el.child(Icon(icon, 12)))
+    .child(label);
+}
+
+export function Placeholder(title, text) {
+  const t = theme();
+  return v_flex()
+    .flex_1()
+    .min_h(0)
+    .items_center()
+    .justify_center()
+    .gap(6)
+    .p(24)
+    .child(div().text_size(15).font_semibold().child(title))
+    .child(div().max_w(420).text_size(12).text_center().whitespace_normal().text_color(t.dim).child(text));
 }

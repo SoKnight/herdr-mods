@@ -34,3 +34,11 @@ test('every name imported from another file of the mod is exported there', () =>
     }
   }
 });
+
+test('the panel has the v2 tabs and icons', () => {
+  const main = fs.readFileSync(path.join(runtime, 'main.js'), 'utf8');
+  const order = ['"Сессия"', '"День"', '"Неделя"', '"Месяц"', '"Отчёт"', '"Проекты"', '"Настройки"'].map((l) => main.indexOf(l));
+  assert.ok(order.every((i, k) => i > 0 && (k === 0 || i > order[k - 1])), String(order));
+  for (const icon of ['clock', 'refresh', 'panel', 'settings', 'settings-2', 'play', 'triangle-alert'])
+    assert.ok(fs.existsSync(path.join(runtime, 'icons', `${icon}.svg`)), icon);
+});
