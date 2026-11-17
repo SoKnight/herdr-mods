@@ -19,7 +19,7 @@ export function Link({ id, label, onClick, color }) {
     .child(label);
 }
 
-function Item(id, onClick, open) {
+export function Item(id, onClick, open) {
   const t = theme();
   return h_flex()
     .id(id)
@@ -40,7 +40,7 @@ const DIVIDER = 9; // its height with margins
 const Divider = () => div().flex_none().h(1).my(4).bg(theme().border);
 
 // The popover look of the menu and its submenus.
-function Panel(id, width) {
+export function MenuPanel(id, width) {
   const t = theme();
   return v_flex()
     .id(id)
@@ -79,7 +79,7 @@ export function MarkupMenu(view) {
 
   const total = comp.reduce((n, c) => n + c.ms, 0);
   const summary = comp.map((c) => `${c.project ? view.name(c.project) : "другое"} ${formatDuration(c.ms)}`).join(" · ");
-  const menu = Panel("day-menu", 264)
+  const menu = MenuPanel("day-menu", 264)
     .child(
       v_flex().flex_none().gap(2).px(8).pt(6).pb(8).mb(4).border_b_1().border_color(t.border)
         .child(div().font_semibold().child(`${hhmm(sel.start)} – ${hhmm(sel.end)} · ${formatDuration(total)}`))
@@ -129,5 +129,5 @@ export function MarkupMenu(view) {
     .gap(4)
     .on_mouse_down_out((_e, cx) => view.closeMenu(cx))
     .child(menu)
-    .when(Boolean(submenu), (el) => el.child(Panel("day-submenu", 200).mt(HEADER + (SUB_TOP[step] ?? 0)).children(submenu)));
+    .when(Boolean(submenu), (el) => el.child(MenuPanel("day-submenu", 200).mt(HEADER + (SUB_TOP[step] ?? 0)).children(submenu)));
 }

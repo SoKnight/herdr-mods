@@ -7,11 +7,11 @@ import { Day } from "./views/day.js";
 import { SessionView } from "./views/session.js";
 import { Table } from "./views/table.js";
 import { Report } from "./views/report.js";
+import { Projects } from "./views/projects.js";
 import { theme } from "herdr";
 import { Panel, PanelHeader, HeaderTab, Icon, Placeholder } from "./ui.js";
 
 const TABS = [["session", "Сессия"], ["day", "День"], ["week", "Неделя"], ["month", "Месяц"], ["report", "Отчёт"]];
-const PROJECTS = ["Проекты", "Список проектов, правила и цвета появятся здесь в следующем обновлении. Пока проекты и правила задаются в projects.json (%LOCALAPPDATA%\\herdr-time\\projects.json), сборщик перечитывает его сам."];
 const SETTINGS = ["Настройки", "Экран настроек появится позже. Пока они в settings.json рядом с projects.json: session_idle_minutes (45), pause_minutes (15), day_start (\"06:00\")."];
 const placeholder = ([title, text]) => ({ tick() {}, render: () => Placeholder(title, text) });
 
@@ -30,7 +30,7 @@ export default class TimeTracker extends View {
       cx.notify();
     };
     const open = (tab, cx) => this.open(tab, cx);
-    this.parts = { session: new SessionView(open), projects: placeholder(PROJECTS), settings: placeholder(SETTINGS), day: new Day(open), week: new Table("week", openDay), month: new Table("month", openDay), report: new Report() };
+    this.parts = { session: new SessionView(open), projects: new Projects(open), settings: placeholder(SETTINGS), day: new Day(open), week: new Table("week", openDay), month: new Table("month", openDay), report: new Report() };
     if (checking()) return;
     this.tick(cx);
     cx.timer.every(5000, (cx) => this.tick(cx));
