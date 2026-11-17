@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"testing"
 )
 
@@ -82,6 +83,53 @@ func TestInboxApplyRefusesClosedPeriod(t *testing.T) {
 	assertEq(t, len(d.Config.Rules), before)
 	cs, _ := d.Store.Corrections()
 	assertEq(t, len(cs), 0)
+	ch, _ := d.Store.Changes()
+	assertEq(t, len(ch), 0)
+}
+
+func TestInboxApplyRefusedOnConfigError(t *testing.T) {
+	home := t.TempDir()
+	c := serverConfig()
+	c.Projects[0].Titles = []string{"("} // projects.json fails: the defaults collect, and their timeline is not mine
+	must(t, writeJSON(filepath.Join(home, "projects.json"), c))
+	d, err := NewDaemon(home)
+	must(t, err)
+	d.S.Loc, d.Store.S.Loc = msk, msk
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 16, 12, 0) })
+	seedWindow(t, d, mskAt(2026, 11, 10, 12, 0), "Telegram.exe", "chat", 5)
+	body := map[string]any{"day": "2026-11-10", "decisions": []map[string]any{{"app": "Telegram.exe", "title": "chat", "project": "exclude"}}}
+	assertEq(t, api.do("POST", "/v1/inbox", body, nil), http.StatusInternalServerError)
+	cs, _ := d.Store.Corrections()
+	assertEq(t, len(cs), 0)
+	ch, _ := d.Store.Changes()
+	assertEq(t, len(ch), 0)
+}
+
+func TestInboxCorrectsOnlyTheOtherParts(t *testing.T) {
+	d := testDaemon(t)
+	d.S.CarryMinutes = 0
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 16, 12, 0) })
+	day := mskAt(2026, 11, 10, 12, 0)
+	for m := 0; m < 30; m += 10 { // a rule decides a span by its start, so the window comes in three
+		seedWindow(t, d, day+int64(m)*minMs, "notepad.exe", "Spec draft", 10)
+	}
+	c := serverConfig() // a rule took 10–20 of the window to another project
+	c.Rules = []Rule{{ID: 100, Kind: "title", Value: "Spec", Project: "other", From: day + 10*minMs, To: day + 20*minMs}}
+	must(t, d.setConfig(c))
+	body := map[string]any{"day": "2026-11-10", "decisions": []map[string]any{{"app": "notepad.exe", "title": "Spec draft", "project": "easy"}}}
+	var res struct{ Rules, Corrections int }
+	assertEq(t, api.do("POST", "/v1/inbox", body, &res), http.StatusOK)
+	assertEq(t, fmt.Sprint(res.Rules, res.Corrections), "0 2")
+	cs, err := d.Store.Corrections()
+	must(t, err)
+	got := ""
+	for _, c := range cs {
+		got += fmt.Sprintln(c.Start, c.End, c.Was)
+	}
+	want := fmt.Sprintln(day, day+10*minMs, []Share{{"", 10 * minMs}}) + fmt.Sprintln(day+20*minMs, day+30*minMs, []Share{{"", 10 * minMs}})
+	assertEq(t, got, want)
 }
 
 func TestInboxApplyWritesNothingWhenRefused(t *testing.T) {

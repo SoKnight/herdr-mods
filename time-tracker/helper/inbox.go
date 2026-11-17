@@ -222,6 +222,7 @@ func (d *Daemon) postInbox(r *http.Request) (int, any, error) {
 		}); err != nil {
 			return 0, nil, err
 		}
+		d.logInboxRules(added, ruleFrom, now) // before the corrections: rules kept by a failed write stay undoable
 	}
 	// ponytail: projects.json and corrections.json are two files; a disk error between them keeps the rules
 	if len(cs) > 0 {
@@ -229,7 +230,6 @@ func (d *Daemon) postInbox(r *http.Request) (int, any, error) {
 			return 0, nil, err
 		}
 	}
-	d.logInboxRules(added, ruleFrom, now)
 	return http.StatusOK, map[string]int{"rules": len(added), "corrections": len(cs)}, nil
 }
 

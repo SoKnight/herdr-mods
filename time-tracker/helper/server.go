@@ -115,7 +115,7 @@ func newServer(d *Daemon) http.Handler {
 		"POST /v1/corrections":         d.postCorrection,
 		"DELETE /v1/corrections/{id}":  d.deleteCorrection,
 		"GET /v1/inbox":                read(d.getInbox),
-		"POST /v1/inbox":               d.postInbox,
+		"POST /v1/inbox":               read(d.postInbox), // its corrections follow the timeline: not the defaults'
 		"GET /v1/rules":                read(d.getRules),
 		"POST /v1/rules":               d.postRule,
 		"PUT /v1/rules/{id}":           d.putRule,
