@@ -36,6 +36,7 @@ function Item(id, onClick, open) {
     .on_click((_e, cx) => onClick(cx));
 }
 
+const DIVIDER = 9; // its height with margins
 const Divider = () => div().flex_none().h(1).my(4).bg(theme().border);
 
 // The popover look of the menu and its submenus.
@@ -55,10 +56,10 @@ function Panel(id, width) {
     .on_mouse_down("left", (_e, cx) => cx.stop_propagation());
 }
 
-// Rows above the submenu's: the header and the items before the one that opened it.
+// What sits above the item a submenu opens from: the header, the items before it, the divider.
 const HEADER = 56;
 const ROW = 31;
-const SUB_ROW = { project: 0, activity: 1, note: 3, rule: 4 };
+const SUB_TOP = { project: 0, activity: ROW, note: 3 * ROW, rule: 4 * ROW + DIVIDER };
 
 // view: the Day view (or Session view), which holds the selection (sel), the step and the actions.
 export function MarkupMenu(view) {
@@ -79,7 +80,6 @@ export function MarkupMenu(view) {
   const total = comp.reduce((n, c) => n + c.ms, 0);
   const summary = comp.map((c) => `${c.project ? view.name(c.project) : "другое"} ${formatDuration(c.ms)}`).join(" · ");
   const menu = Panel("day-menu", 264)
-    .on_mouse_down_out((_e, cx) => view.closeMenu(cx))
     .child(
       v_flex().flex_none().gap(2).px(8).pt(6).pb(8).mb(4).border_b_1().border_color(t.border)
         .child(div().font_semibold().child(`${hhmm(sel.start)} – ${hhmm(sel.end)} · ${formatDuration(total)}`))
@@ -107,8 +107,14 @@ export function MarkupMenu(view) {
         .child(div().min_w(0).truncate().child(p.name || p.id)),
     );
   let submenu = null;
-  if (step === "project") submenu = projects("menu-p", (project, cx) => view.correct({ kind: "project", project }, cx));
-  else if (step === "rule") submenu = projects("menu-r", (project, cx) => view.addRule(rule, project, cx));
+  if (step === "project") {
+    const pick = (project, cx) => view.correct({ kind: "project", project }, cx);
+    submenu = [
+      ...projects("menu-p", pick),
+      Divider(),
+      Item("menu-p-none", (cx) => pick("", cx), top === "").child(div().flex_none().size(8).rounded(4).bg(t.dim)).child("Без проекта"),
+    ];
+  } else if (step === "rule") submenu = projects("menu-r", (project, cx) => view.addRule(rule, project, cx));
   else if (step === "activity") submenu = view.activities.map((a) => Item(`menu-a-${a.id}`, (cx) => view.correct({ kind: "activity", activity: a.id }, cx)).child(a.label || a.id));
   else if (step === "note")
     submenu = [
@@ -117,9 +123,11 @@ export function MarkupMenu(view) {
         .child(Link({ id: "menu-note-save", label: "Сохранить", onClick: (cx) => view.saveNote(cx) })),
     ];
 
+  // Outside both panels closes the menu: on one of them, a press in the other would count as outside.
   return h_flex()
     .items_start()
     .gap(4)
+    .on_mouse_down_out((_e, cx) => view.closeMenu(cx))
     .child(menu)
-    .when(Boolean(submenu), (el) => el.child(Panel("day-submenu", 200).mt(HEADER + (SUB_ROW[step] ?? 0) * ROW).children(submenu)));
+    .when(Boolean(submenu), (el) => el.child(Panel("day-submenu", 200).mt(HEADER + (SUB_TOP[step] ?? 0)).children(submenu)));
 }

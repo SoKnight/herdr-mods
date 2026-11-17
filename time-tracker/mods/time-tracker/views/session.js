@@ -9,6 +9,7 @@ import { theme } from "herdr";
 import { Day } from "./day.js";
 import { Strip, AgentsStrip, HourLabels, DragArea } from "./strip.js";
 import { StretchList } from "./stretches.js";
+import { Unassigned } from "./totals.js";
 import { Side } from "./side.js";
 
 export class SessionView extends Day {
@@ -75,7 +76,8 @@ export class SessionView extends Day {
           .gap(4)
           .child(DragArea(this).gap(4).child(Strip(this, t, { from, to, h: 26, radius: 5 })).child(AgentsStrip(this, t, { from, to })).child(HourLabels(t, from, to))),
       )
-      .child(StretchList(this, t, s.stretches, { row: 32, gap: 18 }));
+      .child(StretchList(this, t, s.stretches, { row: 32, gap: 18 }))
+      .when(this.unassignedOpen, (el) => el.child(Unassigned(this, t)));
   }
 
   empty(t, last) {
