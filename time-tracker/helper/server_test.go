@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -193,6 +194,24 @@ func TestCorrectionInClosedPeriodConflicts(t *testing.T) {
 	var list []Correction
 	assertEq(t, api.do("GET", "/v1/corrections", nil, &list), http.StatusOK)
 	assertEq(t, len(list), 1)
+}
+
+// A start near the beginning of int64 time must not overflow the 62-day guard into a timeline from year −292M.
+func TestCorrectionFromTheDawnOfTimeAnswers(t *testing.T) {
+	d := testDaemon(t)
+	d.S.CarryMinutes = 0 // with a carry, from−carry wraps past to and hides the walk
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return at(30) })
+	done := make(chan int, 1)
+	go func() {
+		done <- api.do("POST", "/v1/corrections", Correction{Kind: "exclude", Start: math.MinInt64 + 1, End: at(20)}, nil)
+	}()
+	select {
+	case code := <-done:
+		assertEq(t, code, http.StatusCreated)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the correction did not answer in 5 s")
+	}
 }
 
 func TestCorrectionNeverReachesTheFuture(t *testing.T) {

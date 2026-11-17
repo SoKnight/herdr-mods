@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -59,6 +60,12 @@ func TestInboxApply(t *testing.T) {
 	ch, err := d.Store.Changes()
 	must(t, err)
 	assertEq(t, ch[0].Source, "inbox")
+	// History undoes the rule alone; the corrections made in the same call stay.
+	assertEq(t, api.do("POST", fmt.Sprintf("/v1/history/%d/undo", ch[0].ID), nil, nil), http.StatusNoContent)
+	assertEq(t, slices.ContainsFunc(d.Config.Rules, func(x Rule) bool { return x.ID == r.ID }), false)
+	cs, err = d.Store.Corrections()
+	must(t, err)
+	assertEq(t, len(cs), 1)
 
 	body["day"], body["past"] = "2026-11-16", true
 	body["decisions"] = []map[string]any{{"app": "notepad.exe", "title": "x", "project": "easy", "rule": map[string]string{"kind": "title", "value": "Plan"}}}
@@ -150,11 +157,16 @@ func TestInboxApplyWritesNothingWhenRefused(t *testing.T) {
 		{"2026-11-10", []map[string]any{good, {"app": "b.exe", "project": "other", "rule": map[string]string{"kind": "title"}}}, http.StatusBadRequest},
 		{"10.11.2026", []map[string]any{rule, good}, http.StatusBadRequest},
 		{"2026-11-17", []map[string]any{rule, good}, http.StatusBadRequest}, // not yet begun
+		{"2025-11-14", []map[string]any{rule, good}, http.StatusBadRequest}, // more than 366 days back
+		{"0001-01-01", []map[string]any{rule, good}, http.StatusBadRequest},
 	} {
 		assertEq(t, api.do("POST", "/v1/inbox", map[string]any{"day": c.day, "decisions": c.decs}, nil), c.code)
 	}
 	assertEq(t, api.do("POST", "/v1/inbox", `{"decisions":[{"rule":null`, nil), http.StatusBadRequest)
 	assertEq(t, api.do("GET", "/v1/inbox?day=x", nil, nil), http.StatusBadRequest)
+	assertEq(t, api.do("GET", "/v1/inbox?day=0001-01-01", nil, nil), http.StatusBadRequest)
+	assertEq(t, api.do("GET", "/v1/inbox?day=2025-11-14", nil, nil), http.StatusBadRequest)
+	assertEq(t, api.do("GET", "/v1/inbox?day=2025-11-15", nil, nil), http.StatusOK) // 366 days back
 	assertEq(t, len(d.Config.Rules), before)
 	cs, _ := d.Store.Corrections()
 	assertEq(t, len(cs), 0)

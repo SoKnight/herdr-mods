@@ -430,7 +430,7 @@ func (d *Daemon) postCorrection(r *http.Request) (int, any, error) {
 		return 0, nil, closedPeriod(p.ID)
 	}
 	was := map[string]int64{}
-	if c.End-c.Start <= 62*24*60*60_000 { // a longer one would hold the lock over a long timeline
+	if c.Start >= c.End-62*24*60*60_000 { // a longer one would hold the lock over a long timeline; End-Start can overflow
 		tl, _, err := d.timeline(c.Start, c.End)
 		if err != nil {
 			return 0, nil, err

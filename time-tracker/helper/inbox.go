@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -64,13 +65,19 @@ func suggest(it inboxItem, projects []Project) *suggestion {
 
 func windowOf(app, title, path, server string) [4]string { return [4]string{app, title, path, server} }
 
-// inboxDay is the day's [from, to), today when day is ""; a day that has not begun is refused.
+// inboxDay is the day's [from, to), today when day is ""; a day that has not begun, or more than
+// 366 days back (its timeline would be read under the lock), is refused.
 func (d *Daemon) inboxDay(day string) (string, int64, int64, error) {
 	now := nowMs()
-	day = cmp.Or(day, d.S.DayOf(now))
+	today := d.S.DayOf(now)
+	day = cmp.Or(day, today)
 	from, to, err := dayRange(d.S, day)
 	if err != nil {
 		return "", 0, 0, fail(http.StatusBadRequest, "day: want YYYY-MM-DD, got %q", day)
+	}
+	t, _ := time.Parse("2006-01-02", today)
+	if day < t.AddDate(0, 0, -366).Format("2006-01-02") {
+		return "", 0, 0, fail(http.StatusBadRequest, "day %s is more than 366 days back", day)
 	}
 	if from >= now {
 		return "", 0, 0, fail(http.StatusBadRequest, "day %s has not begun", day)
