@@ -3,5 +3,5 @@
   "version": "1.0.0",
   "place": "none",
   "title": "Time",
-  "overlay": { "width": 960, "height": 640 }
+  "overlay": { "width": 920, "height": 580 }
 }

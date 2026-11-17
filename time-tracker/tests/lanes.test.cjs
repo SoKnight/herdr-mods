@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/lanes.js'), 'utf8');
-const L = new Function(`${code.replace(/^export /gm, '')}\nreturn { lanes, projectColor, targetFor, rangeFromDrag, correctionIds, shiftDay, ruleFor, stepDay, laneSpan };`)();
+const L = new Function(`${code.replace(/^export /gm, '')}\nreturn { lanes, projectColor, targetFor, rangeFromDrag, correctionIds, shiftDay, ruleFor, stepDay, laneSpan, viewRange, axisStep };`)();
 
 const H = 3600_000;
 const day = { from: 0, to: 24 * H };
@@ -96,4 +96,18 @@ test('a drag covers whole lanes, clamped to the lanes', () => {
   assert.deepEqual(L.laneSpan(30, 5, 5, 22), { top: 0, bottom: 1 });
   assert.deepEqual(L.laneSpan(50, 200, 5, 22), { top: 2, bottom: 4 });
   assert.deepEqual(L.laneSpan(-10, 3, 5, 22), { top: 0, bottom: 0 });
+});
+
+test('the drawn range hugs the counted time, in whole hours, three at least', () => {
+  const day = { from: 4 * H, to: 28 * H };
+  assert.deepEqual(L.viewRange({ me: [], agents: [] }, day.from, day.to, 22 * H), day);
+  const short = { me: [{ start: 21.5 * H, end: 21.7 * H }], agents: [{ start: 21.6 * H, end: 21.9 * H }] };
+  assert.deepEqual(L.viewRange(short, day.from, day.to, 22.2 * H), { from: 20 * H, to: 23 * H });
+  const long = { me: [{ start: 9.25 * H, end: 18.5 * H }], agents: [] };
+  assert.deepEqual(L.viewRange(long, day.from, day.to, 30 * H), { from: 9 * H, to: 28 * H });
+  const early = { me: [{ start: 4.2 * H, end: 4.4 * H }], agents: [] };
+  assert.deepEqual(L.viewRange(early, day.from, day.to, 4.5 * H), { from: 4 * H, to: 7 * H });
+  assert.equal(L.axisStep(3 * H), H);
+  assert.equal(L.axisStep(10 * H), 2 * H);
+  assert.equal(L.axisStep(24 * H), 3 * H);
 });

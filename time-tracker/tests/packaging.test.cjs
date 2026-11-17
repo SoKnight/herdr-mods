@@ -9,7 +9,7 @@ const js = (dir = '') => fs.readdirSync(path.join(runtime, dir)).filter((f) => f
 test('the mod stands alone and opens as an overlay', () => {
   const code = [...js(), ...js('views')].map((f) => fs.readFileSync(path.join(runtime, f), 'utf8')).join('\n');
   assert.doesNotMatch(code, /better-|branch-|panel-body|estro|claude-threads/);
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(runtime, 'mod.json'))), { $schema: './mod.schema.json', version: '1.0.0', place: 'none', title: 'Time', overlay: { width: 960, height: 640 } });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(runtime, 'mod.json'))), { $schema: './mod.schema.json', version: '1.0.0', place: 'none', title: 'Time', overlay: { width: 920, height: 580 } });
   for (const file of ['sync.sh', 'sync.ps1', 'mods/time-tracker/icons/clock.svg']) assert.ok(fs.existsSync(path.join(root, file)), file);
 });
 

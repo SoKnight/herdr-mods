@@ -4,7 +4,7 @@ import { h_flex, v_flex, InputState, Popup } from "gpui-base";
 import { theme, props, layout } from "herdr";
 import { call } from "../client.js";
 import { formatDuration, activityLabel, catalog, hhmm, ACTIVITIES } from "../format.js";
-import { lanes, targetFor, rangeFromDrag, correctionIds, stepDay, laneSpan, ruleFor } from "../lanes.js";
+import { lanes, targetFor, rangeFromDrag, correctionIds, stepDay, laneSpan, ruleFor, viewRange, axisStep } from "../lanes.js";
 import { IconButton, Message, TEXT } from "../ui.js";
 import { SelectionMenu, Link } from "./menu.js";
 import { Totals } from "./totals.js";
@@ -197,9 +197,16 @@ export class Day {
     return this.projects.find((p) => p.id === id)?.name || id;
   }
 
+  // The part of the day drawn: around the counted time, not the whole 24 hours.
+  range() {
+    const d = this.data;
+    return viewRange(d.timeline, d.from, d.to, Date.now());
+  }
+
   shownLanes() {
     const d = this.data;
-    const all = d && this.width > 0 ? lanes(d.timeline, d.from, d.to, this.width, this.projects.map((p) => p.id), this.activities.map((a) => a.id)) : [];
+    const r = d && this.range();
+    const all = d && this.width > 0 ? lanes(d.timeline, r.from, r.to, this.width, this.projects.map((p) => p.id), this.activities.map((a) => a.id)) : [];
     return all.filter((l) => l.id !== "app" || this.appOpen);
   }
 
@@ -207,6 +214,11 @@ export class Day {
   point(e) {
     const p = e.local_position ?? { x: 0, y: 0 };
     return { x: e.bounds?.width ? (p.x / e.bounds.width) * this.width : p.x, y: p.y };
+  }
+
+  // An x in those px as a share of the tracks: sizes reach us scaled by zoom, so pixels would overshoot.
+  pct(x) {
+    return `${(x / this.width) * 100}%`;
   }
 
   finishDrag(ids, cx) {
@@ -217,7 +229,8 @@ export class Day {
     const picked = ids.slice(top, bottom + 1);
     const x = Math.max(0, Math.min(g.x0, g.x1));
     const w = Math.min(this.width, Math.max(g.x0, g.x1)) - x;
-    this.sel = { ...rangeFromDrag(g.x0, g.x1, this.data.from, this.data.to, this.width), target: targetFor(picked), x, w, top: top * ROW, h: picked.length * ROW };
+    const r = this.range();
+    this.sel = { ...rangeFromDrag(g.x0, g.x1, r.from, r.to, this.width), target: targetFor(picked), x, w, top: top * ROW, h: picked.length * ROW };
     this.step = "root";
     cx.notify();
   }
@@ -324,14 +337,14 @@ export class Day {
   laneRow(lane, i, t) {
     const row = div().relative().h(ROW).w_full();
     lane.bars.forEach((bar, j) => {
-      row.child(div().id(`bar-${lane.id}-${j}`).absolute().left(bar.x).top(4).w(bar.w).h(ROW - 8).rounded(2).bg(t[bar.color] ?? t.muted).tooltip(this.tip(lane.id, bar)));
+      row.child(div().id(`bar-${lane.id}-${j}`).absolute().left(this.pct(bar.x)).top(4).w(this.pct(bar.w)).h(ROW - 8).rounded(2).bg(t[bar.color] ?? t.muted).tooltip(this.tip(lane.id, bar)));
       const ids = [...new Set(bar.segs.filter((s) => s.corrected).flatMap((s) => correctionIds(s.why)))];
       if (ids.length)
         row.child(
           div()
             .id(`mark-${lane.id}-${j}`)
             .absolute()
-            .left(bar.x)
+            .left(this.pct(bar.x))
             .top(0)
             .size(7)
             .rounded(4)
@@ -350,7 +363,6 @@ export class Day {
   }
 
   lanesView(t) {
-    const d = this.data;
     const shown = this.shownLanes();
     const ids = shown.map((l) => l.id);
     const labels = (this.appOpen ? Object.keys(LABELS) : Object.keys(LABELS).filter((id) => id !== "app")).map((id) =>
@@ -393,19 +405,19 @@ export class Day {
       .on_mouse_up("left", (_e, cx) => this.finishDrag(ids, cx))
       .on_hover((hovered, cx) => !hovered && this.drag && this.finishDrag(ids, cx))
       .children(shown.map((lane, i) => this.laneRow(lane, i, t)))
-      .child(this.axis(d, t));
+      .child(this.axis(t));
 
     if (g) {
       const { top, bottom } = laneSpan(g.y0, g.y1, ids.length, ROW);
-      tracks.child(div().absolute().left(Math.min(g.x0, g.x1)).top(top * ROW).w(Math.abs(g.x1 - g.x0)).h((bottom - top + 1) * ROW).bg(t.selection));
+      tracks.child(div().absolute().left(this.pct(Math.min(g.x0, g.x1))).top(top * ROW).w(this.pct(Math.abs(g.x1 - g.x0))).h((bottom - top + 1) * ROW).bg(t.selection));
     } else if (this.sel) {
       const s = this.sel;
       tracks.child(
         Popup.new("day-sel", div().size_full())
           .absolute()
-          .left(s.x)
+          .left(this.pct(s.x))
           .top(s.top)
-          .w(s.w)
+          .w(this.pct(s.w))
           .h(s.h)
           .bg(s.undo ? t.background : t.selection)
           .anchor("top_left")
@@ -415,12 +427,13 @@ export class Day {
     return h_flex().px(14).pt(4).gap(10).items_start().child(v_flex().w(96).flex_none().children(labels)).child(tracks);
   }
 
-  // Hours under the lanes, every three from the day's start.
-  axis(d, t) {
+  // Hours under the lanes, spaced to the range drawn.
+  axis(t) {
     const row = div().relative().h(16).w_full().text_size(TEXT.badge).text_color(t.dim);
     if (!this.width) return row;
-    for (let ms = d.from; ms < d.to; ms += 3 * 3600_000)
-      row.child(div().absolute().top(2).left(((ms - d.from) / (d.to - d.from)) * this.width).child(hhmm(ms)));
+    const { from, to } = this.range();
+    for (let ms = from; ms < to; ms += axisStep(to - from))
+      row.child(div().absolute().top(2).left(`${((ms - from) / (to - from)) * 100}%`).child(hhmm(ms)));
     return row;
   }
 

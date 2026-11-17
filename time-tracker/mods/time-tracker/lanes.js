@@ -44,6 +44,24 @@ export function lanes(timeline, from, to, width, order = [], activities = []) {
   ];
 }
 
+// The part of the day worth drawing: whole hours around my and the agents' time (and now, for today),
+// at least three hours wide. With nothing counted yet, the whole day.
+export function viewRange(timeline, from, to, now) {
+  const H = 3600_000;
+  const segs = [...(timeline?.me ?? []), ...(timeline?.agents ?? [])];
+  if (!segs.length) return { from, to };
+  const first = Math.min(...segs.map((s) => s.start));
+  const last = Math.max(Math.min(now, to), ...segs.map((s) => s.end));
+  let a = Math.max(from, from + Math.floor((first - from) / H) * H);
+  let b = Math.min(to, from + Math.ceil((last - from) / H) * H);
+  if (b - a < 3 * H) a = Math.max(from, b - 3 * H);
+  if (b - a < 3 * H) b = Math.min(to, a + 3 * H);
+  return { from: a, to: b };
+}
+
+// Hours between axis labels for a range: about six labels at most.
+export const axisStep = (span) => (span <= 6 * 3600_000 ? 1 : span <= 12 * 3600_000 ? 2 : 3) * 3600_000;
+
 // Whose time a selection over these lanes corrects; the power lane belongs to no one.
 export function targetFor(laneIds) {
   const ids = laneIds.filter((id) => id !== "power");
