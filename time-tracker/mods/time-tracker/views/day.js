@@ -220,7 +220,7 @@ export class Day {
       this.sel = sel;
       this.correct({ kind: "project", project: id }, cx);
     };
-    NewProject.open(this.showDialog, { projects: this.projects, onCreated }, cx);
+    NewProject.open(this.showDialog, { projects: this.projects, onCreated, onSaved: (_text, cx) => this.load(cx) }, cx);
   }
 
   openNote(cx) {

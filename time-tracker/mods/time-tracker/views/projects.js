@@ -60,6 +60,7 @@ export class Projects {
     this.error = null;
     this.message = null; // { text, error? }
     this.loading = false;
+    this.loaded = false; // read once: the empty state waits for it
     this.wasShown = false;
     this.seq = 0;
     this.nameInput = InputState.new({ placeholder: "Название проекта" });
@@ -96,7 +97,7 @@ export class Projects {
           if (seq === this.seq && Array.isArray(h)) this.suggestions = h;
         }
       } finally {
-        if (seq === this.seq) this.loading = false;
+        if (seq === this.seq) (this.loading = false), (this.loaded = true);
         cx.notify();
       }
     });
@@ -173,7 +174,7 @@ export class Projects {
       this.selected = id;
       this.load(cx);
     };
-    NewProject.open(this.showDialog, { projects: this.projects, hint, onCreated }, cx);
+    NewProject.open(this.showDialog, { projects: this.projects, hint, onCreated, onSaved: (_text, cx) => this.load(cx) }, cx);
   }
 
   deleteRule(id, cx) {
@@ -269,7 +270,7 @@ export class Projects {
     const col = v_flex().id("projects-detail").flex_1().min_w(0).overflow_y_scroll().pt(14).px(22).gap(18);
     if (this.error) col.child(Message(this.error, true));
     if (this.message) col.child(div().flex_none().text_size(TEXT.small).whitespace_normal().text_color(this.message.error ? t.ansi1 : t.muted).child(this.message.text));
-    if (!this.projects.length && !this.loading && !this.error) return col.child(this.empty(t));
+    if (!this.projects.length && this.loaded && !this.loading && !this.error) return col.child(this.empty(t));
     if (!this.selected) return col.child(Message(this.loading ? "Загрузка…" : ""));
     col.child(p ? this.title(t, p) : div().flex_none().text_size(17).font_semibold().child(targetName(this.selected, this.projects)));
     col.child(this.ruleList(t));
