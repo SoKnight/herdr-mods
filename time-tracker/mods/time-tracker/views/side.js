@@ -1,7 +1,7 @@
 // The right panel: my time in big, a few lines about it, and the projects.
 import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { formatDuration, goalBlock, roundRows } from "../format.js";
+import { formatDuration, fmtMin, goalBlock, roundRows } from "../format.js";
 import { projectColor } from "../lanes.js";
 import { TEXT } from "../ui.js";
 import { Link } from "./menu.js";
@@ -45,6 +45,46 @@ export function Side(view, t, { caption, lines, session = false }) {
         .children(idle.map((g) => against(g)))
         .when(projects.some((p) => !p.project), (el) =>
           el.child(Link({ id: "day-inbox", label: "разобрать «Другое» →", color: t.muted, onClick: (cx) => view.open("inbox", cx, view.want ?? null) }).text_size(TEXT.small)),
+        ),
+    );
+}
+
+// Неделя's and Месяц's right panel over the `plan` days up to today (view.plan, projects, name, open): the
+// caption, total and lines, then a block per project with time in config order (ids the config doesn't
+// know, then Другое). A project with a planned goal is drawn against it, goal(goal, sums, id, sum) giving
+// the block's goal, fill and sub; the rest show a share of the longest. extra rows follow the projects.
+export function PlanSide(view, t, { id, caption, total, lines, goal, extra = [] }) {
+  const plan = view.plan;
+  const past = plan.days.filter((d) => d.day <= plan.today);
+  const sum = (key, p) => past.reduce((n, d) => n + (d[key]?.[p] ?? 0), 0);
+  const ids = [...new Set(past.flatMap((d) => Object.keys(d.me ?? {})))].filter((p) => sum("me", p) > 0);
+  const rank = (p) => (p === "" ? Infinity : view.projects.findIndex((x) => x.id === p) + 1 || view.projects.length + 1);
+  ids.sort((a, b) => rank(a) - rank(b));
+  const max = Math.max(...ids.map((p) => sum("me", p)));
+  const block = (p) => {
+    const me = sum("me", p);
+    const base = { name: view.name(p), color: t[projectColor(p, view.projects)] ?? t.muted, other: !p, value: fmtMin(me), fill: (me / max) * 100 };
+    const g = p && plan.goals?.[p], s = p && plan.sums?.[p];
+    return ProjectBlock(t, g && s?.plan ? { ...base, ...goal(g, s, p, sum) } : base);
+  };
+  const other = [...past].reverse().find((d) => d.me?.[""] > 0)?.day;
+  return SideFrame(t, `${id}-side`)
+    .pb(18)
+    .child(
+      v_flex()
+        .gap(2)
+        .child(div().text_size(TEXT.small).text_color(t.dim).child(caption))
+        .child(div().text_size(26).font_semibold().child(fmtMin(total)))
+        .children(lines.map((line) => div().text_size(TEXT.small).text_color(t.dim).child(line))),
+    )
+    .child(div().h(1).flex_none().bg(t.border))
+    .child(
+      v_flex()
+        .gap(12)
+        .children(ids.map(block))
+        .children(extra)
+        .when(Boolean(other), (el) =>
+          el.child(Link({ id: `${id}-inbox`, label: "разобрать «Другое» →", color: t.muted, onClick: (cx) => view.open("inbox", cx, other === plan.today ? null : other) }).text_size(TEXT.small)),
         ),
     );
 }

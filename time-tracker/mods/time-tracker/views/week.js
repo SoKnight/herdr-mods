@@ -7,9 +7,8 @@ import { call } from "../client.js";
 import { formatDuration, fmtMin, signed, plural, progressText, hhmm, catalog, weekDays, weekTitle, weekRelative, mainGoal, weekRows } from "../format.js";
 import { bars, projectColor, shiftDay } from "../lanes.js";
 import { Icon, Message, TEXT } from "../ui.js";
-import { Link } from "./menu.js";
 import { Legend } from "./strip.js";
-import { SideFrame, ProjectBlock } from "./side.js";
+import { PlanSide } from "./side.js";
 import { panelShown } from "./day.js";
 
 const REFRESH_MS = 60_000;
@@ -220,7 +219,6 @@ export class Week {
     const plan = this.plan;
     const past = plan.days.filter((d) => d.day <= plan.today);
     const { totals } = weekRows(plan, null);
-    const sum = (key, id) => past.reduce((n, d) => n + (d[key]?.[id] ?? 0), 0);
     const tls = past.map((d) => this.timelines[d.day]).filter(Boolean);
     const worked = past.filter((d) => Object.values(d.me ?? {}).some((m) => m > 0)).map((d) => this.timelines[d.day]?.stats).filter(Boolean);
     const lines = [`агенты ${fmtMin(totals.agents)} · в среднем ${fmtMin(Math.floor(totals.me / Math.max(1, past.length)))} в день`];
@@ -228,44 +226,13 @@ export class Week {
       const n = Math.round(worked.reduce((s, x) => s + x.switches, 0) / worked.length);
       lines.push(`${plural(n, "переключение", "переключения", "переключений")} в день · фокус до ${formatDuration(Math.max(...worked.map((x) => x.focus)))}`);
     }
-    // Config order, then ids the config doesn't know, then Другое.
-    const ids = [...new Set(past.flatMap((d) => Object.keys(d.me ?? {})))].filter((id) => sum("me", id) > 0);
-    const rank = (id) => (id === "" ? Infinity : this.projects.findIndex((p) => p.id === id) + 1 || this.projects.length + 1);
-    ids.sort((a, b) => rank(a) - rank(b));
-    const max = Math.max(...ids.map((id) => sum("me", id)));
-    const block = (id) => {
-      const me = sum("me", id);
-      const base = { name: this.name(id), color: t[projectColor(id, this.projects)] ?? t.muted, other: !id, value: fmtMin(me), fill: (me / max) * 100 };
-      const goal = id && plan.goals?.[id], s = id && plan.sums?.[id];
-      if (!goal || !s?.plan) return ProjectBlock(t, base);
+    const goal = (g, s, id, sum) => {
       const agents = sum("agents", id);
-      const sub = goal.period === "day" ? [signed(s.balance), agents >= 1 && `агенты ${fmtMin(agents)}`].filter(Boolean).join(" · ") : progressText(goal, s.fact, s.plan_to_date);
-      return ProjectBlock(t, { ...base, goal: fmtMin(s.plan), fill: Math.min(100, (s.fact / s.plan) * 100), sub });
+      const sub = g.period === "day" ? [signed(s.balance), agents >= 1 && `агенты ${fmtMin(agents)}`].filter(Boolean).join(" · ") : progressText(g, s.fact, s.plan_to_date);
+      return { goal: fmtMin(s.plan), fill: Math.min(100, (s.fact / s.plan) * 100), sub };
     };
     const leisure = tls.reduce((n, d) => n + roundMs(d.report?.leisure ?? 0), 0);
-    const other = [...past].reverse().find((d) => d.me?.[""] > 0)?.day;
-    return SideFrame(t, "week-side")
-      .pb(18)
-      .child(
-        v_flex()
-          .gap(2)
-          .child(div().text_size(TEXT.small).text_color(t.dim).child("Моё время за неделю"))
-          .child(div().text_size(26).font_semibold().child(fmtMin(totals.me)))
-          .children(lines.map((line) => div().text_size(TEXT.small).text_color(t.dim).child(line))),
-      )
-      .child(div().h(1).flex_none().bg(t.border))
-      .child(
-        v_flex()
-          .gap(12)
-          .children(ids.map(block))
-          .when(leisure > 0, (el) =>
-            el.child(
-              h_flex().pt(10).gap(8).items_center().border_t(1).border_color(t.border).child(div().text_color(t.muted).child(Icon("gamepad-2", 14))).child("Досуг").child(div().flex_1()).child(div().font_medium().child(fmtMin(leisure))),
-            ),
-          )
-          .when(Boolean(other), (el) =>
-            el.child(Link({ id: "week-inbox", label: "разобрать «Другое» →", color: t.muted, onClick: (cx) => this.open("inbox", cx, other === plan.today ? null : other) }).text_size(TEXT.small)),
-          ),
-      );
+    const extra = leisure > 0 ? [h_flex().pt(10).gap(8).items_center().border_t(1).border_color(t.border).child(div().text_color(t.muted).child(Icon("gamepad-2", 14))).child("Досуг").child(div().flex_1()).child(div().font_medium().child(fmtMin(leisure)))] : [];
+    return PlanSide(this, t, { id: "week", caption: "Моё время за неделю", total: totals.me, lines, goal, extra });
   }
 }

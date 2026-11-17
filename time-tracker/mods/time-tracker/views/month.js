@@ -7,8 +7,7 @@ import { call } from "../client.js";
 import { fmtMin, signed, progressText, catalog, mainGoal, dayString, sumOf, monthGrid, cellBars, OFF_KINDS, offLabel, offTitle, workdaysText, offReduce, MONTH_NAMES } from "../format.js";
 import { projectColor } from "../lanes.js";
 import { Button, Check, Message, Segmented, TEXT } from "../ui.js";
-import { Link } from "./menu.js";
-import { SideFrame, ProjectBlock } from "./side.js";
+import { PlanSide } from "./side.js";
 import { panelShown } from "./day.js";
 
 const REFRESH_MS = 60_000;
@@ -31,6 +30,7 @@ export class Month {
     this.loadedAt = 0;
     this.wasShown = false;
     this.drag = null; // { from, to }: the day pressed and the day under the pointer
+    this.closedAt = null; // where the press that closed the popup was
     this.sel = null; // { from, to }, ordered: the days the popup marks
     this.offKind = "otgul";
     this.offProjects = new Set();
@@ -93,8 +93,11 @@ export class Month {
   }
 
   // Selection (rulings): press on a day and release on another selects the days between; shift-click
-  // selects one day; a plain click opens the day.
+  // selects one day; a plain click opens the day. A press that closed the popup does nothing else.
   press(day, e, cx) {
+    const closed = this.closedAt;
+    this.closedAt = null;
+    if (closed && closed.x === e.position?.x && closed.y === e.position?.y) return;
     if (e.modifiers?.shift) return this.select(day, day, cx);
     this.drag = { from: day, to: day };
     cx.notify();
@@ -124,8 +127,10 @@ export class Month {
     cx.notify();
   }
 
-  clearSel(cx) {
+  // e: the press outside the popup that closed it, which the day pressed then has to ignore.
+  clearSel(cx, e) {
     this.sel = null;
+    this.closedAt = e?.position ?? null;
     cx.notify();
   }
 
@@ -302,7 +307,7 @@ export class Month {
       .bg(t.popover)
       .shadow_lg()
       .text_color(t.foreground)
-      .on_mouse_down_out((_e, cx) => this.clearSel(cx))
+      .on_mouse_down_out((e, cx) => this.clearSel(cx, e))
       .child(
         v_flex()
           .gap(2)
@@ -323,47 +328,20 @@ export class Month {
   side(t) {
     const plan = this.plan;
     const past = plan.days.filter((d) => d.day <= plan.today);
-    const sum = (key, id) => past.reduce((n, d) => n + (d[key]?.[id] ?? 0), 0);
     const me = past.reduce((n, d) => n + sumOf(d.me), 0);
     const worked = past.filter((d) => sumOf(d.me) > 0).length;
     const lines = [`агенты ${fmtMin(past.reduce((n, d) => n + sumOf(d.agents), 0))} · ${worked} дн. с работой · ср. ${fmtMin(worked ? Math.floor(me / worked) : 0)}`];
     const fc = !this.anchor && this.goalIds().find((id) => plan.goals[id].dir === "min" && plan.sums?.[id]);
     if (fc) lines.push(`прогноз ${this.name(fc)} ≈ ${fmtMin(plan.sums[fc].forecast)} из ${fmtMin(plan.sums[fc].plan)}`);
-    // Config order, then ids the config doesn't know, then Другое.
-    const ids = [...new Set(past.flatMap((d) => Object.keys(d.me ?? {})))].filter((id) => sum("me", id) > 0);
-    const rank = (id) => (id === "" ? Infinity : this.projects.findIndex((p) => p.id === id) + 1 || this.projects.length + 1);
-    ids.sort((a, b) => rank(a) - rank(b));
-    const max = Math.max(...ids.map((id) => sum("me", id)));
-    const block = (id) => {
-      const mine = sum("me", id);
-      const base = { name: this.name(id), color: t[projectColor(id, this.projects)] ?? t.muted, other: !id, value: fmtMin(mine), fill: (mine / max) * 100 };
-      const goal = id && plan.goals?.[id], s = id && plan.sums?.[id];
-      if (!goal || !s?.plan) return ProjectBlock(t, base);
-      const sub =
-        goal.period === "day"
-          ? `${signed(s.balance)}${s.need > 0 ? ` · дальше ${fmtMin(s.need)} в раб. день` : ""}`
-          : `цель ${fmtMin(goal.minutes)} в ${goal.period === "week" ? "нед." : "мес."} · ${progressText(goal, s.fact, s.plan_to_date).replace(/^цель /, "")}`;
-      return ProjectBlock(t, { ...base, goal: fmtMin(s.plan_to_date), fill: s.plan_to_date > 0 ? Math.min(100, (s.fact / s.plan_to_date) * 100) : 0, sub });
-    };
-    const other = [...past].reverse().find((d) => d.me?.[""] > 0)?.day;
+    const goal = (g, s) => ({
+      goal: fmtMin(s.plan_to_date),
+      fill: s.plan_to_date > 0 ? Math.min(100, (s.fact / s.plan_to_date) * 100) : 0,
+      sub:
+        g.period === "day"
+          ? `${signed(s.balance)}${s.need > 0 && g.dir !== "max" ? ` · дальше ${fmtMin(s.need)} в раб. день` : ""}`
+          : `цель ${fmtMin(g.minutes)} в ${g.period === "week" ? "нед." : "мес."} · ${progressText(g, s.fact, s.plan_to_date).replace(/^цель /, "")}`,
+    });
     const month = MONTH_NAMES[Number(plan.days[0].day.slice(5, 7)) - 1];
-    return SideFrame(t, "month-side")
-      .pb(18)
-      .child(
-        v_flex()
-          .gap(2)
-          .child(div().text_size(TEXT.small).text_color(t.dim).child(`Моё время за ${month}`))
-          .child(div().text_size(26).font_semibold().child(fmtMin(me)))
-          .children(lines.map((line) => div().text_size(TEXT.small).text_color(t.dim).child(line))),
-      )
-      .child(div().h(1).flex_none().bg(t.border))
-      .child(
-        v_flex()
-          .gap(12)
-          .children(ids.map(block))
-          .when(Boolean(other), (el) =>
-            el.child(Link({ id: "month-inbox", label: "разобрать «Другое» →", color: t.muted, onClick: (cx) => this.open("inbox", cx, other === plan.today ? null : other) }).text_size(TEXT.small)),
-          ),
-      );
+    return PlanSide(this, t, { id: "month", caption: `Моё время за ${month}`, total: me, lines, goal });
   }
 }

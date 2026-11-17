@@ -235,3 +235,18 @@ test('days off', () => {
   const e = F.historyEntries({ days_off: [{ id: 4, from: '2026-11-23', to: '2026-11-27', kind: 'otgul', projects: ['u', 't'], made: new Date(2026, 10, 17, 1, 0).getTime() }] }, { name: (id) => ({ u: 'Universe', t: 'Tricky Network' })[id], activity: () => '', ruleText: () => '', dayStartMs: 6 * 3600_000 });
   assert.deepEqual([e[0].kind, e[0].title, e[0].sub, e[0].undo], ['dayoff', '23–27 ноя · отгул', 'план снижен: Universe, Tricky Network', ['dayoff', 'rm', '4']]);
 });
+
+test('month edges', () => {
+  const g = F.monthGrid('2026-06-10'); // June 2026 starts on a Monday
+  assert.deepEqual([g[0], g[29], g[30]], ['2026-06-01', '2026-06-30', null]);
+  const b = F.cellBars({ day: '2026-11-10', me: { universe: 10, old: 5, '': 3 }, plan: {} }, ['universe'], null, null, '2026-11-16');
+  assert.deepEqual(b.parts.map((p) => p.project), ['universe', 'old', '']);
+  assert.deepEqual([b.tick, b.forecast], [null, null]);
+  assert.equal(F.offTitle('2026-11-23', '2026-11-23'), '23 ноября');
+  const opts = { name: (id) => id, activity: () => '', ruleText: () => '', dayStartMs: 0 };
+  const e = F.historyEntries({ days_off: [
+    { id: 1, from: '2026-11-23', to: '2026-11-23', kind: 'otgul', projects: ['u'], made: 3 },
+    { id: 2, from: '2026-11-30', to: '2026-12-02', kind: 'vacation', projects: [], made: 2 },
+  ] }, opts);
+  assert.deepEqual(e.map((x) => [x.title, x.sub]), [['23 ноя · отгул', 'план снижен: u'], ['30 ноя – 2 дек · отпуск', 'план не менялся']]);
+});
