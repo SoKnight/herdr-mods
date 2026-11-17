@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -334,7 +333,7 @@ func TestProjectsInConfigOrder(t *testing.T) {
 	var list catalog
 	assertEq(t, api.do("GET", "/v1/projects", nil, &list), http.StatusOK)
 	assertEq(t, len(list.Projects), 2)
-	assertEq(t, list.Projects[0], catalogItem{ID: "easy", Name: "Easy"})
+	assertEq(t, list.Projects[0], catalogItem{ID: "easy", Name: "Easy", Color: "ansi1"})
 	assertEq(t, list.Projects[1].ID, "other")
 	assertEq(t, len(list.Activities), 5)
 	assertEq(t, list.Activities[1], catalogItem{ID: "architecture", Label: "Проектирование"})
@@ -348,54 +347,6 @@ func TestProjectsInConfigOrder(t *testing.T) {
 	c, err := buildCall(d.S, "projects", nil)
 	must(t, err)
 	assertEq(t, c.path, "/v1/projects")
-}
-
-func TestRuleAddRewritesUnassigned(t *testing.T) {
-	d := testDaemon(t)
-	api := serve(t, d)
-	seed(t, d, power(0, 60), inp(0, 30), win("herdr-app.exe", "shell", 0, 30))
-	for i := 0; i < 30; i++ {
-		must(t, d.Store.AppendBeat(Heartbeat{Source: "herdr", Time: at(i), ProjectPath: `C:\Dev\new`}))
-	}
-	q := fmt.Sprintf("/v1/unassigned?from=%d&to=%d", at(0), at(60))
-	var un []struct {
-		Kind  string `json:"kind"`
-		Value string `json:"value"`
-		Exe   string `json:"exe"`
-		Ms    int64  `json:"ms"`
-	}
-	assertEq(t, api.do("GET", q, nil, &un), http.StatusOK)
-	assertEq(t, len(un), 1)
-	assertEq(t, un[0].Kind, "path")
-	assertEq(t, un[0].Value, `C:\Dev\new`)
-	assertEq(t, un[0].Ms, int64(30*minMs))
-
-	file := filepath.Join(d.Home, "projects.json")
-	before, err := os.ReadFile(file)
-	must(t, err)
-	assertEq(t, api.do("POST", "/v1/rules", map[string]string{"project": "easy", "kind": "title", "value": "("}, nil), http.StatusBadRequest)
-	after, err := os.ReadFile(file)
-	must(t, err)
-	assertEq(t, string(after), string(before))
-
-	assertEq(t, api.do("POST", "/v1/rules", map[string]string{"project": "easy", "kind": "path", "value": `C:\Dev\new`}, nil), http.StatusNoContent)
-	assertEq(t, api.do("GET", q, nil, &un), http.StatusOK)
-	assertEq(t, len(un), 0)
-
-	var day struct {
-		Timeline Timeline `json:"timeline"`
-	}
-	assertEq(t, api.do("GET", "/v1/timeline?day=2026-11-16", nil, &day), http.StatusOK)
-	var total int64
-	for _, s := range day.Timeline.Me {
-		assertEq(t, s.Project, "easy")
-		total += s.End - s.Start
-	}
-	assertEq(t, total, int64(30*minMs))
-
-	c, err := LoadConfig(d.Home)
-	must(t, err)
-	assertEq(t, slices.ContainsFunc(c.Rules, func(r Rule) bool { return r.Kind == "folder" && r.Value == `C:\Dev\new` && r.Project == "easy" }), true)
 }
 
 // cliHome points the CLI at a temp home whose settings.json names the port.
@@ -463,31 +414,6 @@ func TestCLITalksToServer(t *testing.T) {
 	out.Reset()
 	assertEq(t, runCLI(append(args, "--json"), &out, &errOut), 1)
 	assertEq(t, strings.Contains(out.String(), `"error":"closed"`), true)
-}
-
-func TestRuleAddReadsFileFresh(t *testing.T) {
-	d := testDaemon(t)
-	api := serve(t, d)
-	file := filepath.Join(d.Home, "projects.json")
-	c := serverConfig()
-	c.Projects[1].Titles = []string{"UserEdit"} // edited after the last reload
-	must(t, writeJSON(file, c))
-	rule := map[string]string{"project": "easy", "kind": "path", "value": `C:\Dev\new`}
-	assertEq(t, api.do("POST", "/v1/rules", rule, nil), http.StatusNoContent)
-	got, err := readConfig(d.Home)
-	must(t, err)
-	assertEq(t, slices.ContainsFunc(got.Rules, func(r Rule) bool { return r.Kind == "title" && r.Value == "UserEdit" && r.Project == "other" }), true)
-	assertEq(t, slices.ContainsFunc(got.Rules, func(r Rule) bool { return r.Kind == "folder" && r.Value == `C:\Dev\new` && r.Project == "easy" }), true)
-
-	must(t, os.WriteFile(file, []byte("{"), 0o644))
-	var e struct {
-		Error string `json:"error"`
-	}
-	assertEq(t, api.do("POST", "/v1/rules", rule, &e), http.StatusConflict)
-	assertEq(t, strings.HasPrefix(e.Error, "projects.json не читается"), true)
-	data, err := os.ReadFile(file)
-	must(t, err)
-	assertEq(t, string(data), "{")
 }
 
 func TestExportNeverClosesTheFuture(t *testing.T) {

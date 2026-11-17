@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -115,9 +114,14 @@ func newServer(d *Daemon) http.Handler {
 		"POST /v1/corrections":         d.postCorrection,
 		"DELETE /v1/corrections/{id}":  d.deleteCorrection,
 		"GET /v1/unassigned":           read(d.getUnassigned),
+		"GET /v1/rules":                read(d.getRules),
 		"POST /v1/rules":               d.postRule,
+		"PUT /v1/rules/{id}":           d.putRule,
+		"DELETE /v1/rules/{id}":        d.deleteRule,
 		"GET /v1/periods":              d.getPeriods,
 		"GET /v1/projects":             read(d.getProjects),
+		"POST /v1/projects":            d.postProject,
+		"PATCH /v1/projects/{id}":      d.patchProject,
 		"POST /v1/periods/{id}/reopen": d.reopenPeriod,
 		"POST /v1/quit":                d.postQuit,
 	}
@@ -491,86 +495,6 @@ func (d *Daemon) getUnassigned(r *http.Request) (int, any, error) {
 		}
 		return out[i].Kind+out[i].Value < out[j].Kind+out[j].Value
 	})
-	return http.StatusOK, out, nil
-}
-
-func (d *Daemon) postRule(r *http.Request) (int, any, error) {
-	var req struct {
-		Project string `json:"project"`
-		Kind    string `json:"kind"`
-		Value   string `json:"value"`
-	}
-	if err := decode(r, &req); err != nil {
-		return 0, nil, err
-	}
-	// Build on the file as it is now, not on what was loaded: it may have been edited since.
-	c, err := readConfig(d.Home)
-	if err != nil {
-		return 0, nil, fail(http.StatusConflict, "projects.json не читается: %v", err)
-	}
-	i := slices.IndexFunc(c.Projects, func(p Project) bool { return p.ID == req.Project })
-	if i < 0 {
-		return 0, nil, fail(http.StatusBadRequest, "unknown project %q", req.Project)
-	}
-	if req.Value == "" {
-		return 0, nil, fail(http.StatusBadRequest, "value is required")
-	}
-	p := &c.Projects[i]
-	var list *[]string
-	switch req.Kind {
-	case "path":
-		list = &p.Paths
-	case "title":
-		list = &p.Titles
-	case "figma":
-		list = &p.Figma
-	case "url":
-		list = &p.URLs
-	default:
-		return 0, nil, fail(http.StatusBadRequest, "kind: want path, title, figma or url")
-	}
-	if slices.Contains(*list, req.Value) {
-		return http.StatusNoContent, nil, nil
-	}
-	*list = append(slices.Clone(*list), req.Value)
-	if c, _, err = migrate(c); err != nil {
-		return 0, nil, fail(http.StatusBadRequest, "%v", err)
-	}
-	if _, err := c.Compile(); err != nil {
-		return 0, nil, fail(http.StatusBadRequest, "%v", err)
-	}
-	path := filepath.Join(d.Home, "projects.json")
-	if err := writeJSON(path, c); err != nil {
-		return 0, nil, err
-	}
-	d.cfgMod = modTime(path)
-	return http.StatusNoContent, nil, d.setConfig(c)
-}
-
-type catalog struct {
-	Projects   []catalogItem `json:"projects"`
-	Activities []catalogItem `json:"activities"`
-}
-
-type catalogItem struct {
-	ID    string `json:"id"`
-	Name  string `json:"name,omitempty"`
-	Label string `json:"label,omitempty"`
-}
-
-// getProjects lists the projects and the kinds of activity in config order, for the mod's menus and names.
-func (d *Daemon) getProjects(r *http.Request) (int, any, error) {
-	out := catalog{Projects: []catalogItem{}, Activities: []catalogItem{}}
-	for _, p := range d.Config.Projects {
-		out.Projects = append(out.Projects, catalogItem{ID: p.ID, Name: p.Name})
-	}
-	for _, a := range d.Config.Activities {
-		label := activityLabels[a]
-		if label == "" {
-			label = a
-		}
-		out.Activities = append(out.Activities, catalogItem{ID: a, Label: label})
-	}
 	return http.StatusOK, out, nil
 }
 

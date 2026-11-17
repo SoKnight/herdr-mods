@@ -63,15 +63,10 @@ test('days shift across months', () => {
   assert.equal(L.shiftDay('2026-03-01', -1), '2026-02-28');
 });
 
-test('rules match a title as written', () => {
-  assert.deepEqual(L.ruleFor({ kind: 'path', value: 'C:\\Dev\\new' }, 'easy'), { project: 'easy', kind: 'path', value: 'C:\\Dev\\new' });
-  assert.deepEqual(L.ruleFor({ kind: 'title', value: 'a (1).kt' }, 'easy'), { project: 'easy', kind: 'title', value: '^a \\(1\\)\\.kt$' });
-  const odd = '[x] $1 ^a|b \\ c+';
-  const { value } = L.ruleFor({ kind: 'title', value: odd }, 'easy');
-  assert.equal(value, '^\\[x\\] \\$1 \\^a\\|b \\\\ c\\+$');
-  assert.ok(new RegExp(value).test(odd));
-  assert.ok(!new RegExp(value).test(`${odd}!`));
-  assert.deepEqual(L.ruleFor({ kind: 'figma', value: 'Launcher (v2)' }, 'easy'), { project: 'easy', kind: 'figma', value: '^Launcher \\(v2\\)$' });
+test('rules for no-project items are plain text from this month', () => {
+  assert.deepEqual(L.ruleFor({ kind: 'path', value: 'C:\\Dev\\new' }, 'easy'), { kind: 'folder', value: 'C:\\Dev\\new', project: 'easy', scope: 'month' });
+  assert.deepEqual(L.ruleFor({ kind: 'title', value: 'a (1).kt', exe: 'idea64.exe' }, 'easy'), { kind: 'title', value: 'a (1).kt', project: 'easy', scope: 'month' });
+  assert.deepEqual(L.ruleFor({ kind: 'figma', value: 'Launcher (v2)' }, 'easy'), { kind: 'figma', value: 'Launcher (v2)', project: 'easy', scope: 'month' });
 });
 
 test('stepping days: today and later ask for today', () => {

@@ -153,6 +153,19 @@ func showPeriods(w io.Writer, resp []byte) error {
 	return nil
 }
 
+func showRules(w io.Writer, resp []byte) error {
+	var v struct {
+		Rules []ruleInfo `json:"rules"`
+	}
+	if err := json.Unmarshal(resp, &v); err != nil {
+		return err
+	}
+	for _, r := range v.Rules {
+		fmt.Fprintf(w, "#%d  %s  %s\n", r.ID, r.why(), dur(r.Ms))
+	}
+	return nil
+}
+
 func showProjects(w io.Writer, resp []byte) error {
 	var c catalog
 	if err := json.Unmarshal(resp, &c); err != nil {

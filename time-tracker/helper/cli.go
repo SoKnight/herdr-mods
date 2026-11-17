@@ -33,7 +33,9 @@ const usage = `herdr-time <команда> [--json]
   correct add <json> | rm <id> | ls
   beat <json>
   unassigned --from --to
-  rule add <json>
+  rules
+  rule add <json> | set <id> <json> | rm <id>
+  project add <json> | set <id> <json>
   session [start|end]
   periods [--project id]
   reopen <id>
@@ -260,9 +262,31 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 	case cmd == "beat":
 		body, err := arg(0, "<json>")
 		return apiCall{method: "POST", path: "/v1/heartbeat", body: []byte(body)}, err
+	case cmd == "rules":
+		return apiCall{method: "GET", path: "/v1/rules", show: showRules}, nil
 	case cmd == "rule" && sub == "add":
 		body, err := arg(1, "<json>")
 		return apiCall{method: "POST", path: "/v1/rules", body: []byte(body)}, err
+	case cmd == "rule" && sub == "set":
+		id, err := arg(1, "<id>")
+		if err != nil {
+			return apiCall{}, err
+		}
+		body, err := arg(2, "<json>")
+		return apiCall{method: "PUT", path: "/v1/rules/" + url.PathEscape(id), body: []byte(body)}, err
+	case cmd == "rule" && sub == "rm":
+		id, err := arg(1, "<id>")
+		return apiCall{method: "DELETE", path: "/v1/rules/" + url.PathEscape(id)}, err
+	case cmd == "project" && sub == "add":
+		body, err := arg(1, "<json>")
+		return apiCall{method: "POST", path: "/v1/projects", body: []byte(body)}, err
+	case cmd == "project" && sub == "set":
+		id, err := arg(1, "<id>")
+		if err != nil {
+			return apiCall{}, err
+		}
+		body, err := arg(2, "<json>")
+		return apiCall{method: "PATCH", path: "/v1/projects/" + url.PathEscape(id), body: []byte(body)}, err
 	case cmd == "periods":
 		if *project != "" {
 			q.Set("project", *project)

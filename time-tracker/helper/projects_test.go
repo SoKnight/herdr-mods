@@ -1,0 +1,170 @@
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func ruleIDs(rs []Rule) []int64 {
+	var ids []int64
+	for _, r := range rs {
+		ids = append(ids, r.ID)
+	}
+	return ids
+}
+
+func seedWindow(t *testing.T, d *Daemon, start int64, exe, title string, minutes int) {
+	end := start + int64(minutes)*minMs
+	seed(t, d, Span{Kind: "power", Start: start, End: end}, Span{Kind: "input", Start: start, End: end}, Span{Kind: "window", Start: start, End: end, Exe: exe, Title: title})
+}
+
+func dayProject(t *testing.T, api testAPI, day string) string {
+	var a struct {
+		Timeline Timeline `json:"timeline"`
+	}
+	assertEq(t, api.do("GET", "/v1/timeline?day="+day, nil, &a), http.StatusOK)
+	return a.Timeline.Me[0].Project
+}
+
+func TestProjectsCreateAndChange(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	var p Project
+	assertEq(t, api.do("POST", "/v1/projects", map[string]string{"name": "Easy Payments"}, &p), http.StatusCreated)
+	assertEq(t, p.ID, "easy-payments")
+	assertEq(t, p.Color, "ansi3")
+	api.do("POST", "/v1/projects", map[string]string{"name": "Easy Payments"}, &p)
+	assertEq(t, p.ID, "easy-payments-2")
+	api.do("POST", "/v1/projects", map[string]string{"name": "Учёба", "color": "ansi6"}, &p)
+	assertEq(t, p.ID, "project")
+	assertEq(t, p.Color, "ansi6")
+	assertEq(t, api.do("POST", "/v1/projects", map[string]string{"name": " "}, nil), http.StatusBadRequest)
+	assertEq(t, api.do("PATCH", "/v1/projects/easy", map[string]any{"name": "Easy 2", "color": "ansi5", "archived": true}, &p), http.StatusOK)
+	e := d.project("easy")
+	assertEq(t, fmt.Sprintf("%s %s %v", e.Name, e.Color, e.Archived), "Easy 2 ansi5 true")
+	assertEq(t, api.do("PATCH", "/v1/projects/easy", map[string]string{"color": "red"}, nil), http.StatusBadRequest)
+	assertEq(t, api.do("PATCH", "/v1/projects/nope", map[string]string{"name": "x"}, nil), http.StatusNotFound)
+}
+
+func TestRuleAddPlacesAndDates(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 16, 12, 0) })
+	var r Rule
+	assertEq(t, api.do("POST", "/v1/rules", map[string]any{"kind": "folder", "value": `C:\Dev\new\**`, "project": "other"}, &r), http.StatusCreated)
+	assertEq(t, r.Value, `C:\Dev\new`)
+	assertEq(t, r.From, mskAt(2026, 11, 1, 6, 0))
+	assertEq(t, fmt.Sprint(ruleIDs(d.Config.Rules)), "[1 2 4 3]") // after the folders, before the titles
+	api.do("POST", "/v1/rules", map[string]any{"kind": "title", "value": "Spec", "project": "exclude", "scope": "today", "before": 1}, &r)
+	assertEq(t, r.From, mskAt(2026, 11, 16, 6, 0))
+	assertEq(t, fmt.Sprint(ruleIDs(d.Config.Rules)), "[5 1 2 4 3]")
+}
+
+func TestRuleEditFromTodayKeepsThePast(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	yesterday, today := mskAt(2026, 11, 15, 12, 0), mskAt(2026, 11, 16, 12, 0)
+	swap(t, &nowMs, func() int64 { return today + 30*minMs })
+	seedWindow(t, d, yesterday, "notepad.exe", "Spec draft", 20)
+	seedWindow(t, d, today, "notepad.exe", "Spec draft", 20)
+	var r, r2 Rule
+	assertEq(t, api.do("POST", "/v1/rules", map[string]any{"kind": "title", "value": "Spec", "project": "other"}, &r), http.StatusCreated)
+	assertEq(t, api.do("PUT", fmt.Sprintf("/v1/rules/%d", r.ID), map[string]any{"kind": "title", "value": "Spec", "project": "easy", "scope": "today"}, &r2), http.StatusOK)
+	assertEq(t, r2.ID != r.ID, true)
+	assertEq(t, dayProject(t, api, "2026-11-15"), "other")
+	assertEq(t, dayProject(t, api, "2026-11-16"), "easy")
+	var list struct {
+		Rules []ruleInfo `json:"rules"`
+	}
+	api.do("GET", "/v1/rules", nil, &list)
+	assertEq(t, slices.ContainsFunc(list.Rules, func(x ruleInfo) bool { return x.ID == r.ID }), false)
+	assertEq(t, api.do("PUT", fmt.Sprintf("/v1/rules/%d", r.ID), map[string]any{"kind": "title", "value": "x", "project": "easy"}, nil), http.StatusNotFound)
+}
+
+func TestRuleDeleteKeepsPastMonths(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 16, 12, 0) })
+	seedWindow(t, d, mskAt(2026, 10, 30, 12, 0), "notepad.exe", "Easy notes", 20)
+	seedWindow(t, d, mskAt(2026, 11, 10, 12, 0), "notepad.exe", "Easy notes", 20)
+	assertEq(t, api.do("DELETE", "/v1/rules/3", nil, nil), http.StatusNoContent)
+	assertEq(t, dayProject(t, api, "2026-10-30"), "easy")
+	assertEq(t, dayProject(t, api, "2026-11-10"), "")
+	var r Rule
+	api.do("POST", "/v1/rules", map[string]any{"kind": "title", "value": "Notes", "project": "other"}, &r)
+	api.do("DELETE", fmt.Sprintf("/v1/rules/%d", r.ID), nil, nil)
+	assertEq(t, slices.Contains(ruleIDs(d.Config.Rules), r.ID), false) // started this month: gone for good
+}
+
+func TestRuleRequestsChecked(t *testing.T) {
+	api := serve(t, testDaemon(t))
+	for body, want := range map[string]int{
+		`{"kind":"url","value":"x","project":"easy"}`:                  http.StatusBadRequest,
+		`{"kind":"title","value":" ","project":"easy"}`:                http.StatusBadRequest,
+		`{"kind":"title","value":"x","project":"nope"}`:                http.StatusBadRequest,
+		`{"kind":"title","value":"x","project":"leisure"}`:             http.StatusCreated,
+		`{"kind":"title","value":"x","project":"easy","scope":"week"}`: http.StatusBadRequest,
+	} {
+		assertEq(t, fmt.Sprint(body, api.do("POST", "/v1/rules", body, nil)), fmt.Sprint(body, want))
+	}
+	assertEq(t, api.do("DELETE", "/v1/rules/99", nil, nil), http.StatusNotFound)
+	var r, again Rule
+	assertEq(t, api.do("POST", "/v1/rules", `{"kind":"title","value":"Main.kt (1)","project":"easy"}`, &r), http.StatusCreated)
+	assertEq(t, api.do("POST", "/v1/rules", `{"kind":"title","value":"main.kt (1) ","project":"easy","scope":"today"}`, &again), http.StatusOK)
+	assertEq(t, again, r) // the same open rule is answered as is
+}
+
+func TestRuleAddReadsFileFresh(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	file := filepath.Join(d.Home, "projects.json")
+	c := d.Config
+	c.Projects[1].Name = "Edited" // after the last reload
+	must(t, writeJSON(file, c))
+	assertEq(t, api.do("POST", "/v1/rules", map[string]any{"kind": "folder", "value": `C:\Dev\new`, "project": "easy"}, nil), http.StatusCreated)
+	got, err := readConfig(d.Home)
+	must(t, err)
+	assertEq(t, got.Projects[1].Name, "Edited")
+	must(t, os.WriteFile(file, []byte("{"), 0o644))
+	var e struct {
+		Error string `json:"error"`
+	}
+	assertEq(t, api.do("POST", "/v1/rules", map[string]any{"kind": "folder", "value": `C:\Dev\x`, "project": "easy"}, &e), http.StatusConflict)
+	assertEq(t, strings.HasPrefix(e.Error, "projects.json не читается"), true)
+	data, err := os.ReadFile(file)
+	must(t, err)
+	assertEq(t, string(data), "{")
+}
+
+func TestRulesListWithHits(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return at(60) })
+	seed(t, d, power(0, 60), inp(0, 30), win("idea64.exe", "Easy – Main.kt", 0, 30))
+	var list struct {
+		Rules []ruleInfo `json:"rules"`
+	}
+	assertEq(t, api.do("GET", "/v1/rules", nil, &list), http.StatusOK)
+	assertEq(t, fmt.Sprint(ruleIDs([]Rule{list.Rules[0].Rule, list.Rules[1].Rule, list.Rules[2].Rule})), "[1 2 3]")
+	assertEq(t, list.Rules[2].Ms, int64(30*minMs))
+	assertEq(t, list.Rules[2].Windows, 1)
+}
+
+func TestCLIRulesAndProjects(t *testing.T) {
+	d := testDaemon(t)
+	cliHome(t, portOf(t, serve(t, d).url))
+	var out, errOut bytes.Buffer
+	assertEq(t, runCLI([]string{"project", "add", `{"name":"Site"}`, "--json"}, &out, &errOut), 0)
+	assertEq(t, runCLI([]string{"rule", "add", `{"kind":"title","value":"site","project":"site"}`, "--json"}, &out, &errOut), 0)
+	out.Reset()
+	assertEq(t, runCLI([]string{"rules"}, &out, &errOut), 0)
+	assertEq(t, strings.Contains(out.String(), "заголовок «site» → site"), true)
+	assertEq(t, runCLI([]string{"rule", "rm", "4", "--json"}, &out, &errOut), 0)
+	assertEq(t, runCLI([]string{"project", "set", "site", `{"archived":true}`, "--json"}, &out, &errOut), 0)
+}

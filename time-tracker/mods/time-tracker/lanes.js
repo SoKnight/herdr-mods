@@ -71,10 +71,9 @@ export function stepDay(want, today, n) {
   return next >= today ? null : next;
 }
 
-// A rule for one "no project" item: titles and Figma files are regexps, so a title matches as written.
+// A rule for one "no project" item, from the start of this month; its value is plain text.
 export function ruleFor(item, project) {
-  const exact = (s) => `^${s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`;
-  return { project, kind: item.kind, value: item.kind === "path" ? item.value : exact(item.value) };
+  return { kind: item.kind === "path" ? "folder" : item.kind, value: item.value, project, scope: "month" };
 }
 
 // The hours a session's strip covers: whole hours around it, three at least, to an end the ticks divide evenly.
