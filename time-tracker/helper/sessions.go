@@ -95,7 +95,7 @@ func Sessions(me []Segment, marks []SessionMark, idleStop, now int64) []Session 
 				held = false
 				cur = &Session{Start: ev.at}
 			}
-			cur.End, last = ev.end, ev.end
+			cur.End, last = max(cur.End, ev.end), max(last, ev.end) // overlapping pieces never move it back
 		case ev.kind == "start":
 			if cur != nil && ev.at-last >= idleStop {
 				closeCur()

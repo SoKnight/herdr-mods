@@ -23,6 +23,8 @@ test('chip states', () => {
   assert.deepEqual(C.chipState({ error: 'config: bad' }, 0, now), { kind: 'error', text: 'config: bad' });
   assert.deepEqual(C.chipState(st, 0, now), { kind: 'working', me: 235 * M, project: 'tricky', name: 'Tricky Network' });
   assert.deepEqual(C.chipState({ ...st, state: 'away', last_active: now - 12 * M }, 0, now), { kind: 'away', me: 235 * M, away: 12 * M });
+  // A session with no activity yet is not "away for 56 years".
+  assert.deepEqual(C.chipState({ ...st, state: 'away', last_active: 0, project: '', project_name: '' }, 0, now), { kind: 'working', me: 235 * M, project: '', name: '' });
   assert.deepEqual(C.chipState({ ...st, state: 'none' }, 0, now), { kind: 'none', me: 235 * M });
   assert.deepEqual(C.chipState({ ...st, last_sample: now - 2 * M }, 0, now), { kind: 'silent', since: now - 2 * M });
 });

@@ -15,7 +15,8 @@ export function chipState(status, lastSample, now) {
   if (quiet) return { kind: "silent", since: quiet.since };
   if (status.error) return { kind: "error", text: status.error };
   const me = status.today_me_ms;
-  if (status.state === "working") return { kind: "working", me, project: status.project, name: status.project_name };
-  if (status.state === "away") return { kind: "away", me, away: Math.max(0, now - status.last_active) };
+  if (status.state === "away" && status.last_active > 0) return { kind: "away", me, away: Math.max(0, now - status.last_active) };
+  // An open session with no activity to be away from yet reads as working.
+  if (status.state === "working" || status.state === "away") return { kind: "working", me, project: status.project, name: status.project_name };
   return { kind: "none", me };
 }

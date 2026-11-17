@@ -16,6 +16,12 @@ func TestSessionsSplitAtIdleStop(t *testing.T) {
 	assertEq(t, two[1].Open, false)
 }
 
+func TestOverlappingPiecesNeverMoveTheEndBack(t *testing.T) {
+	ss := Sessions([]Segment{sg("u", 0, 30), sg("a", 10, 20)}, nil, idle45, at(70))
+	assertEq(t, ss[0].End, at(30))
+	assertEq(t, ss[0].Open, true) // 40 min after 30, not 50 after 20
+}
+
 func TestSessionOpenUntilIdleStopPasses(t *testing.T) {
 	me := []Segment{sg("u", 0, 30)}
 	assertEq(t, Sessions(me, nil, idle45, at(74))[0].Open, true)
