@@ -38,8 +38,9 @@ export class ManualEntry {
   }
 
   add(cx) {
+    if (this.closed) return; // its inputs are released
     const { range } = this.state();
-    if (!range || this.closed) return;
+    if (!range) return;
     const body = { kind: "add", ...range, project: this.project, activity: this.activity, note: this.note.value().trim() };
     this.close(cx);
     this.onAdd(body, cx);

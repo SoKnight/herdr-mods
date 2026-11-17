@@ -67,8 +67,11 @@ export class Inbox {
     });
   }
 
-  // Decisions follow their windows into the new list, which may have gained or lost some.
+  // Decisions follow their windows into the new list, which may have gained or lost some,
+  // but not into another day (today's Разбор rolls over at 06:00). An open dropdown's index may now be another card's.
   took(r) {
+    if (this.data && this.data.day !== r.day) this.decisions = {};
+    this.menu = null;
     const kept = new Map(Object.entries(this.decisions).map(([i, d]) => [windowKey(this.data.items[i]), d]));
     this.decisions = {};
     r.items.forEach((it, i) => kept.has(windowKey(it)) && (this.decisions[i] = kept.get(windowKey(it))));
