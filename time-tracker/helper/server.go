@@ -34,9 +34,11 @@ func closedPeriod(id int64) error {
 func (d *Daemon) api(f func(r *http.Request) (int, any, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-		d.mu.Lock()
-		code, v, err := f(r)
-		d.mu.Unlock()
+		code, v, err := func() (int, any, error) {
+			d.mu.Lock()
+			defer d.mu.Unlock() // a handler that panics must not keep the collector locked
+			return f(r)
+		}()
 		if err != nil {
 			var ae *apiError
 			if !errors.As(err, &ae) {
