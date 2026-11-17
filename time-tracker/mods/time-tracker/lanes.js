@@ -39,16 +39,18 @@ export function ticks(from, to) {
   return out;
 }
 
-// A drag between two x positions as a range of whole minutes, start before end.
-export function rangeFromDrag(x0, x1, from, to, width) {
+// A drag between two x positions as a range of whole minutes, start before end. It ends by now's
+// minute at the latest, so time that hasn't happened can't be marked; null when nothing is left.
+export function rangeFromDrag(x0, x1, from, to, width, now = Infinity) {
   const at = (x) => {
     const ms = from + (Math.min(Math.max(x, 0), width) / width) * (to - from);
     return Math.round(ms / 60_000) * 60_000;
   };
-  let start = at(Math.min(x0, x1));
+  let start = Math.max(at(Math.min(x0, x1)), from);
   let end = at(Math.max(x0, x1));
   if (end <= start) end = start + 60_000;
-  return { start: Math.max(start, from), end: Math.min(end, to) };
+  end = Math.min(end, to, Math.floor(now / 60_000) * 60_000);
+  return end > start ? { start, end } : null;
 }
 
 // The corrections a segment's why names ("правка #12: ..."), each once, for undo.

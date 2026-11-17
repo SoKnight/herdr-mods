@@ -16,6 +16,14 @@ test('drag maps to whole minutes in order', () => {
   assert.deepEqual(L.rangeFromDrag(100.2, 100.3, from, to, 1440), { start: 100 * 60_000, end: 101 * 60_000 });
 });
 
+test('a drag ends by now, rounded down to the minute', () => {
+  const from = 0, to = 24 * 3600_000, now = 500 * 60_000 + 30_000;
+  assert.deepEqual(L.rangeFromDrag(300, 900, from, to, 1440, now), { start: 300 * 60_000, end: 500 * 60_000 });
+  assert.deepEqual(L.rangeFromDrag(300, 400, from, to, 1440, now), { start: 300 * 60_000, end: 400 * 60_000 });
+  assert.equal(L.rangeFromDrag(500, 900, from, to, 1440, now), null);
+  assert.equal(L.rangeFromDrag(700, 900, from, to, 1440, now), null);
+});
+
 test('bars are positioned and coloured by project order', () => {
   const [bar] = L.bars([{ start: 6 * H, end: 12 * H, value: 'easylauncher', seg: {} }], 0, 24 * H, 1440, (v) => L.projectColor(v, ['universe', 'easylauncher']));
   assert.equal(bar.x, 360);
@@ -104,12 +112,12 @@ test('composition of a range, most first', () => {
 test('the window a rule comes from', () => {
   const me = [
     seg(0, 5 * M, { app: 'chrome.exe', title: 'tricky-network/core', path: '' }),
-    seg(5 * M, 8 * M, { app: 'idea64.exe', title: 'Main.kt', path: 'C:\Dev\easy' }),
+    seg(5 * M, 8 * M, { app: 'idea64.exe', title: 'Main.kt', path: 'C:\\Dev\\easy' }),
     seg(8 * M, 10 * M, { app: 'chrome.exe', title: 'tricky-network/core', path: '' }),
   ];
   assert.deepEqual(L.topWindow(me, 0, 10 * M), { app: 'chrome.exe', title: 'tricky-network/core', path: '', ms: 7 * M });
   assert.equal(L.topWindow(me, 20 * M, 30 * M), null);
-  assert.deepEqual(L.ruleItem({ app: 'idea64.exe', title: 'Main.kt', path: 'C:\Dev\easy' }), { kind: 'path', value: 'C:\Dev\easy' });
+  assert.deepEqual(L.ruleItem({ app: 'idea64.exe', title: 'Main.kt', path: 'C:\\Dev\\easy' }), { kind: 'path', value: 'C:\\Dev\\easy' });
   assert.deepEqual(L.ruleItem({ app: 'Figma.exe', title: 'Universe — App', path: '' }), { kind: 'figma', value: 'Universe — App' });
   assert.deepEqual(L.ruleItem({ app: 'chrome.exe', title: 'tricky-network/core', path: '' }), { kind: 'title', value: 'tricky-network/core' });
   assert.equal(L.ruleItem({ app: 'x.exe', title: '', path: '' }), null);

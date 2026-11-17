@@ -206,9 +206,10 @@ func (d *Daemon) getStatus(r *http.Request) (int, any, error) {
 	}
 	if n := len(ss); n > 0 && ss[n-1].Open {
 		sessionStart = ss[n-1].Start
-		state = "away"
-		if now-lastActive < int64(d.S.IdleMinutes)*60_000 {
-			state = "working"
+		state = "working"
+		// Away only from activity inside the session: a session opened by hand has none to be away from yet.
+		if lastActive >= sessionStart && now-lastActive >= int64(d.S.IdleMinutes)*60_000 {
+			state = "away"
 		}
 	}
 	// I am still on the last segment unless I have been away for the idle threshold.
@@ -267,9 +268,14 @@ func (d *Daemon) getTimeline(r *http.Request) (int, any, error) {
 	if err != nil {
 		return 0, nil, err
 	}
-	// Over the day's own timeline, so a session from before the day starts at day_start.
+	// Over the day's own timeline: a session from before the day starts at day_start, one after it
+	// (a later mark; the sweep runs to the real now) is not the day's, and none runs past its end.
+	ss = slices.DeleteFunc(ss, func(s Session) bool { return s.Start >= to })
 	for i := range ss {
 		ss[i].Start = max(ss[i].Start, from)
+		if ss[i].End > to {
+			ss[i].End, ss[i].Open = to, false
+		}
 	}
 	return http.StatusOK, map[string]any{"day": day, "from": from, "to": to, "timeline": listed(tl),
 		"report": rep, "divergences": nonNil(div), "sessions": nonNil(ss),
@@ -386,6 +392,7 @@ func (d *Daemon) postCorrection(r *http.Request) (int, any, error) {
 	if c.Target == "" {
 		c.Target = "me"
 	}
+	now := nowMs()
 	switch {
 	case !slices.Contains([]string{"project", "activity", "exclude", "add", "note"}, c.Kind):
 		return 0, nil, fail(http.StatusBadRequest, "kind: want project, activity, exclude, add or note")
@@ -395,12 +402,15 @@ func (d *Daemon) postCorrection(r *http.Request) (int, any, error) {
 		return 0, nil, fail(http.StatusBadRequest, "target")
 	case c.Start >= c.End:
 		return 0, nil, fail(http.StatusBadRequest, "start must be before end")
+	case c.Start >= now: // time that has not happened yet is no one's to mark
+		return 0, nil, fail(http.StatusBadRequest, "start must be in the past")
 	case c.Project != "" && d.project(c.Project) == nil:
 		return 0, nil, fail(http.StatusBadRequest, "unknown project %q", c.Project)
 	}
 	if err := d.checkActivity(c.Activity); err != nil {
 		return 0, nil, err
 	}
+	c.End = min(c.End, now)
 	periods, err := d.Store.Periods()
 	if err != nil {
 		return 0, nil, err

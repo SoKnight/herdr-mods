@@ -167,6 +167,7 @@ export class Day {
   }
 
   correct(c, cx) {
+    if (!this.sel) return; // the menu closed under the click
     const { start, end, target } = this.sel;
     const body = { project: "", activity: "", note: "", ...c, start, end, target: c.kind === "project" || c.kind === "exclude" ? target : "me" };
     this.perform(cx, () => call(["correct", "add", JSON.stringify(body)]), (r) => ({ text: `Правка #${r.id} сохранена.`, undo: r.id }));
@@ -258,10 +259,11 @@ export class Day {
     const g = this.drag;
     this.drag = null;
     if (!g || Math.abs(g.x1 - g.x0) < 3) return cx.notify();
-    const x = Math.max(0, Math.min(g.x0, g.x1));
-    const w = Math.min(this.width, Math.max(g.x0, g.x1)) - x;
     const r = this.range();
-    this.sel = { ...rangeFromDrag(g.x0, g.x1, r.from, r.to, this.width), target: "me", x, w };
+    const sel = rangeFromDrag(g.x0, g.x1, r.from, r.to, this.width, Date.now()); // never past now
+    if (!sel) return cx.notify();
+    const px = (ms) => ((ms - r.from) / (r.to - r.from)) * this.width;
+    this.sel = { ...sel, target: "me", x: px(sel.start), w: px(sel.end) - px(sel.start) };
     this.step = "root";
     cx.notify();
   }

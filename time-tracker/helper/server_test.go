@@ -195,6 +195,20 @@ func TestCorrectionInClosedPeriodConflicts(t *testing.T) {
 	assertEq(t, len(list), 1)
 }
 
+func TestCorrectionNeverReachesTheFuture(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return at(30) })
+	var e struct {
+		Error string `json:"error"`
+	}
+	assertEq(t, api.do("POST", "/v1/corrections", Correction{Kind: "exclude", Start: at(30), End: at(40)}, &e), http.StatusBadRequest)
+	assertEq(t, e.Error, "start must be in the past")
+	var created Correction
+	assertEq(t, api.do("POST", "/v1/corrections", Correction{Kind: "exclude", Start: at(20), End: at(60)}, &created), http.StatusCreated)
+	assertEq(t, created.End, at(30))
+}
+
 func TestExportClosesPeriodAndRounds(t *testing.T) {
 	d := testDaemon(t)
 	api := serve(t, d)
@@ -642,6 +656,25 @@ func TestTimelineCutsSessionsAtDayStart(t *testing.T) {
 	assertEq(t, got.Sessions[0].Start, mskAt(2026, 11, 16, 6, 0))
 }
 
+func TestTimelineKeepsSessionsInsideThePastDay(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	start, end := mskAt(2026, 11, 16, 5, 30), mskAt(2026, 11, 16, 5, 50)
+	seed(t, d, Span{Kind: "power", Start: start, End: end}, Span{Kind: "input", Start: start, End: end},
+		Span{Kind: "window", Start: start, End: end, Exe: "idea64.exe", Title: "Easy – Main.kt"})
+	act := func(a string, at int64) {
+		swap(t, &nowMs, func() int64 { return at })
+		assertEq(t, api.do("POST", "/v1/session", map[string]string{"action": a}, nil), http.StatusCreated)
+	}
+	act("end", mskAt(2026, 11, 16, 6, 5))   // ends the session after the day's end
+	act("start", mskAt(2026, 11, 16, 6, 10)) // a session of the next day, open now
+	var got dayAnswer
+	api.do("GET", "/v1/timeline?day=2026-11-15", nil, &got)
+	assertEq(t, len(got.Sessions), 1)
+	assertEq(t, got.Sessions[0].End, mskAt(2026, 11, 16, 6, 0))
+	assertEq(t, got.Sessions[0].Open, false)
+}
+
 func TestTimelineEmptyDayGivesEmptyLists(t *testing.T) {
 	api := serve(t, testDaemon(t))
 	var raw map[string]json.RawMessage
@@ -674,6 +707,21 @@ func TestStatusStates(t *testing.T) {
 	assertEq(t, api.do("POST", "/v1/session", map[string]string{"action": "end"}, nil), http.StatusCreated)
 	assertEq(t, state(4), "none") // the input 2–4 after Завершить opens nothing
 	assertEq(t, st.SessionStart, int64(0))
+}
+
+func TestStatusWorkingInAFreshManualSession(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return at(0) })
+	assertEq(t, api.do("POST", "/v1/session", map[string]string{"action": "start"}, nil), http.StatusCreated)
+	swap(t, &nowMs, func() int64 { return at(20) })
+	var st struct {
+		State      string `json:"state"`
+		LastActive int64  `json:"last_active"`
+	}
+	api.do("GET", "/v1/status", nil, &st)
+	assertEq(t, st.LastActive, int64(0))
+	assertEq(t, st.State, "working") // nothing to be away from
 }
 
 func TestRestartStopsThenStarts(t *testing.T) {
