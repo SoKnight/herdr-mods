@@ -16,11 +16,14 @@ type Settings struct {
 	PollSeconds  int    `json:"poll_seconds"`
 	DayStart     string `json:"day_start"`
 
+	SessionIdleMinutes int `json:"session_idle_minutes"`
+	PauseMinutes       int `json:"pause_minutes"`
+
 	Loc *time.Location `json:"-"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{IdleMinutes: 5, CarryMinutes: 15, Port: 47613, PollSeconds: 5, DayStart: "04:00", Loc: time.Local}
+	return Settings{IdleMinutes: 5, CarryMinutes: 15, Port: 47613, PollSeconds: 5, DayStart: "06:00", SessionIdleMinutes: 45, PauseMinutes: 15, Loc: time.Local}
 }
 
 // Home is where data lives, outside the mod folder so reinstalling the mod keeps it.
@@ -66,8 +69,8 @@ func LoadSettings(home string) (Settings, error) {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return s, fmt.Errorf("%s: %w", path, err)
 	}
-	if s.IdleMinutes <= 0 || s.Port <= 0 || s.PollSeconds <= 0 || s.CarryMinutes < 0 {
-		return s, fmt.Errorf("%s: idle_minutes, port, poll_seconds must be positive and carry_minutes not negative", path)
+	if s.IdleMinutes <= 0 || s.Port <= 0 || s.PollSeconds <= 0 || s.SessionIdleMinutes <= 0 || s.PauseMinutes <= 0 || s.CarryMinutes < 0 {
+		return s, fmt.Errorf("%s: idle_minutes, port, poll_seconds, session_idle_minutes and pause_minutes must be positive and carry_minutes not negative", path)
 	}
 	if _, err := time.Parse("15:04", s.DayStart); err != nil {
 		return s, fmt.Errorf("%s: day_start %q: %w", path, s.DayStart, err)

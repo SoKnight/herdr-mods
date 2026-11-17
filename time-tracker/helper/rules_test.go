@@ -67,7 +67,7 @@ func TestAppLookups(t *testing.T) {
 func TestDayOfRespectsDayStart(t *testing.T) {
 	s := DefaultSettings()
 	s.Loc = time.FixedZone("MSK", 3*3600)
-	at := time.Date(2026, 11, 17, 3, 59, 0, 0, s.Loc).UnixMilli()
+	at := time.Date(2026, 11, 17, 5, 59, 0, 0, s.Loc).UnixMilli()
 	assertEq(t, s.DayOf(at), "2026-11-16")
 	assertEq(t, s.DayOf(at+60_000), "2026-11-17")
 }
@@ -113,12 +113,14 @@ func TestDefaultSettings(t *testing.T) {
 	assertEq(t, s.CarryMinutes, 15)
 	assertEq(t, s.Port, 47613)
 	assertEq(t, s.PollSeconds, 5)
-	assertEq(t, s.DayStart, "04:00")
+	assertEq(t, s.DayStart, "06:00")
+	assertEq(t, s.SessionIdleMinutes, 45)
+	assertEq(t, s.PauseMinutes, 15)
 	data, err := json.Marshal(s)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertEq(t, string(data), `{"idle_minutes":5,"carry_minutes":15,"port":47613,"poll_seconds":5,"day_start":"04:00"}`)
+	assertEq(t, string(data), `{"idle_minutes":5,"carry_minutes":15,"port":47613,"poll_seconds":5,"day_start":"06:00","session_idle_minutes":45,"pause_minutes":15}`)
 	var back Settings
 	if err := json.Unmarshal(data, &back); err != nil {
 		t.Fatal(err)
@@ -134,6 +136,7 @@ func TestDefaultActivities(t *testing.T) {
 func TestLoadSettingsRejectsBadValues(t *testing.T) {
 	for _, body := range []string{
 		`{"idle_minutes": 0}`, `{"port": 0}`, `{"poll_seconds": 0}`, `{"carry_minutes": -1}`, `{"day_start": "9"}`,
+		`{"session_idle_minutes": 0}`, `{"pause_minutes": 0}`,
 	} {
 		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(body), 0o644); err != nil {

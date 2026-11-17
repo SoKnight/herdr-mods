@@ -17,7 +17,7 @@ func TestRoundNearestHalfUp(t *testing.T) {
 }
 
 func TestSummarizeByDayWithDayStart(t *testing.T) {
-	tl := Timeline{Me: []Segment{{Start: mskAt(2026, 11, 16, 3, 0), End: mskAt(2026, 11, 16, 5, 0), Project: "easylauncher", Activity: "development"}}}
+	tl := Timeline{Me: []Segment{{Start: mskAt(2026, 11, 16, 5, 0), End: mskAt(2026, 11, 16, 7, 0), Project: "easylauncher", Activity: "development"}}}
 	r := Summarize(tl, tsettings(), []string{"easylauncher"})
 	p := r.Projects[0]
 	assertEq(t, r.Me, int64(120*minMs))
@@ -102,7 +102,7 @@ func TestClosedPeriodClipsAtBounds(t *testing.T) {
 }
 
 func TestAgentTimeCrossingDayBoundarySplits(t *testing.T) {
-	tl := Timeline{Agents: []AgentSeg{{Start: mskAt(2026, 11, 16, 3, 0), End: mskAt(2026, 11, 16, 5, 0), Project: "easylauncher"}}}
+	tl := Timeline{Agents: []AgentSeg{{Start: mskAt(2026, 11, 16, 5, 0), End: mskAt(2026, 11, 16, 7, 0), Project: "easylauncher"}}}
 	p := Summarize(tl, tsettings(), []string{"easylauncher"}).Projects[0]
 	assertEq(t, p.Days["2026-11-15"].Agents, int64(60*minMs))
 	assertEq(t, p.Days["2026-11-16"].Agents, int64(60*minMs))
