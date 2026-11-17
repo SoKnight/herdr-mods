@@ -76,6 +76,27 @@ func showGoals(w io.Writer, resp []byte) error {
 	return nil
 }
 
+// showMonth prints the month's rows and Итого; without a goal, working days, goal and difference are left out.
+func showMonth(w io.Writer, resp []byte) error {
+	var m monthReport
+	if err := json.Unmarshal(resp, &m); err != nil {
+		return err
+	}
+	line := func(label string, r monthRow) {
+		if m.Goal == nil {
+			fmt.Fprintf(w, "%s  моё %s  агенты %s\n", label, mins(r.Me), mins(r.Agents))
+			return
+		}
+		fmt.Fprintf(w, "%s  %d дн.  цель %s  моё %s  %s  агенты %s\n", label, r.Workdays, mins(r.Plan), mins(r.Me),
+			signed(r.Fact-r.Plan), mins(r.Agents))
+	}
+	for _, r := range m.Rows {
+		line(r.Label, r)
+	}
+	line("Итого", m.Total)
+	return nil
+}
+
 func showStatus(w io.Writer, resp []byte) error {
 	var st struct {
 		Me      int64  `json:"today_me_ms"`
