@@ -116,12 +116,13 @@ export function historyEntries({ corrections = [], changes = [] }, { name, activ
   const fromCorrection = (c) => {
     const was = (c.was ?? []).filter((s) => s.me >= 60000).map((s) => `${s.project ? name(s.project) : "Другое"} ${formatDuration(s.me)}`);
     const sub = was.length ? `вручную · было: ${was.join(", ")}` : "вручную";
+    const project = c.project ? name(c.project) : "Без проекта";
     const title = {
-      project: () => `${span(c)} → ${c.project ? name(c.project) : "Без проекта"}`,
+      project: () => `${span(c)} → ${project}`,
       exclude: () => `${span(c)} → Не работа`,
       activity: () => `${span(c)} → ${activity(c.activity)}`,
       note: () => `${span(c)} · заметка`,
-      add: () => `+ ${span(c)} · ${name(c.project)}`,
+      add: () => `+ ${span(c)} · ${project}`,
     }[c.kind]?.() ?? span(c);
     const custom = c.kind === "note" || c.kind === "add";
     return { key: `c:${c.id}`, kind: ENTRY_KIND[c.kind] ?? "note", title, sub: custom ? manual(c.note) : sub, at: c.made || c.start, undo: ["correct", "rm", String(c.id)] };
