@@ -39,7 +39,7 @@ type FileRule struct {
 }
 
 const (
-	telemostExe = "telemost.exe" // placeholder until the real exe is known (Task 9)
+	telemostExe = "YandexTelemost.exe"
 	figmaExe    = "Figma.exe"
 	devRoot     = `C:\Users\SoKnight\Development\`
 )

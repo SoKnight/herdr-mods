@@ -60,7 +60,7 @@ func TestAppLookups(t *testing.T) {
 		t.Errorf("App(IDEA64.EXE) = %v", a)
 	}
 	assertEq(t, r.App("nope.exe") == nil, true)
-	id, _ := r.ProjectByApp("Telemost.exe")
+	id, _ := r.ProjectByApp("yandextelemost.exe")
 	assertEq(t, id, "study")
 }
 
