@@ -1,5 +1,5 @@
-// The day's totals by project — in the panel under the lanes and in the chip's card — and "no project"
-// opened up to assign. Rows are drawn as Usage Limits draws its own: name, bar, numbers in columns.
+// The day's totals by project in the chip's card, and "Другое" opened up to assign. Rows are drawn as
+// Usage Limits draws its own: name, bar, numbers in columns.
 import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { formatDuration } from "../format.js";
@@ -38,25 +38,8 @@ export function ProjectRow(p, name, order, total, t, extra = null) {
     .child(num(AGENTS_W, p.agents > 0 ? formatDuration(p.agents) : "—", t.dim));
 }
 
-// day: the Day view, which holds the data and the actions.
-export function Totals(day, t) {
-  const order = day.projects.map((p) => p.id);
-  const report = day.data.report;
-  const list = v_flex().mx(14).mt(14).pt(12).gap(8).border_t(1).border_color(t.border).text_size(TEXT.small).child(TotalsHead(t));
-  if (!report.projects.length) return list.child(Message("За этот день ничего не насчитано."));
-  for (const p of report.projects) {
-    const none = p.project === "";
-    const assign = none && p.me > 0
-      ? Link({ id: "day-assign", label: day.unassignedOpen ? "скрыть" : "назначить", color: t.dim, onClick: (cx) => day.toggleUnassigned(cx) }).text_size(TEXT.caption)
-      : null;
-    list.child(ProjectRow(p, day.name(p.project), order, report.me, t, assign));
-    if (none && day.unassignedOpen) list.child(Unassigned(day, t));
-  }
-  return list;
-}
-
 // My time without a project by what a rule could match; picking a project writes that rule.
-function Unassigned(day, t) {
+export function Unassigned(day, t) {
   const box = v_flex().pl(16).pb(4).gap(2).text_size(TEXT.small);
   if (!day.unassigned) return box.child(Message("Загрузка…"));
   if (!day.unassigned.length) return box.child(Message("Нечего назначить: правилу не за что зацепиться."));

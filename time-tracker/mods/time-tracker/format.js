@@ -3,7 +3,30 @@
 export function formatDuration(ms) {
   const m = Math.floor(Math.max(0, ms) / 60000);
   const h = Math.floor(m / 60);
-  return h ? `${h}ч ${m % 60}м` : `${m}м`;
+  if (!m) return "—";
+  if (!h) return `${m}м`;
+  return m % 60 ? `${h}ч ${m % 60}м` : `${h}ч`;
+}
+
+// "7 переключений": the form for n, after n.
+export function plural(n, one, few, many) {
+  const d = n % 10, dd = n % 100;
+  return `${n} ${d === 1 && dd !== 11 ? one : d >= 2 && d <= 4 && (dd < 12 || dd > 14) ? few : many}`;
+}
+
+const WEEKDAYS = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
+const MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+
+// "2026-11-16" → "пн, 16 ноября".
+export function dayTitle(day) {
+  const [y, m, d] = day.split("-").map(Number);
+  return `${WEEKDAYS[new Date(y, m - 1, d).getDay()]}, ${d} ${MONTHS[m - 1]}`;
+}
+
+// The other projects in a stretch: "+ Учёба 4м, другое 7м"; under a minute is left out.
+export function shareText(shares, name) {
+  const parts = shares.filter((s) => s.me >= 60000).map((s) => `${s.project ? name(s.project) : "другое"} ${formatDuration(s.me)}`);
+  return parts.length ? `+ ${parts.join(", ")}` : "";
 }
 
 // The built-in kinds of activity, for a collector that doesn't list its own.

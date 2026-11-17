@@ -3,20 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/lanes.js'), 'utf8');
-const L = new Function(`${code.replace(/^export /gm, '')}\nreturn { lanes, projectColor, targetFor, rangeFromDrag, correctionIds, shiftDay, ruleFor, stepDay, laneSpan, viewRange, axisStep };`)();
+const L = new Function(`${code.replace(/^export /gm, '')}\nreturn { bars, projectColor, rangeFromDrag, correctionIds, shiftDay, ruleFor, stepDay, tickStep, ticks };`)();
 
 const H = 3600_000;
-const day = { from: 0, to: 24 * H };
 const seg = (start, end, extra = {}) => ({ start, end, app: 'idea64.exe', title: 't', project: 'easylauncher', activity: 'development', why: '', corrected: false, ...extra });
-const timeline = (me, agents = []) => ({ power: [], nodata: [], agents_unknown: [], me, agents });
-const lane = (all, id) => all.find((l) => l.id === id);
-
-test('selection target', () => {
-  assert.equal(L.targetFor(['me', 'project']), 'me');
-  assert.equal(L.targetFor(['agents']), 'agents');
-  assert.equal(L.targetFor(['project', 'agents']), 'both');
-  assert.equal(L.targetFor(['power', 'agents']), 'agents');
-});
+const byProject = (me, order) => L.bars(me.map((s) => ({ start: s.start, end: s.end, value: s.project, seg: s })), 0, 24 * H, 1440, (v) => L.projectColor(v, order));
 
 test('drag maps to whole minutes in order', () => {
   const from = 0, to = 24 * 3600_000;
@@ -26,31 +17,23 @@ test('drag maps to whole minutes in order', () => {
 });
 
 test('bars are positioned and coloured by project order', () => {
-  const all = L.lanes(timeline([seg(6 * H, 12 * H)]), day.from, day.to, 1440, ['universe', 'easylauncher']);
-  assert.deepEqual(all.map((l) => l.id), ['power', 'me', 'app', 'project', 'activity', 'agents']);
-  const [bar] = lane(all, 'project').bars;
+  const [bar] = L.bars([{ start: 6 * H, end: 12 * H, value: 'easylauncher', seg: {} }], 0, 24 * H, 1440, (v) => L.projectColor(v, ['universe', 'easylauncher']));
   assert.equal(bar.x, 360);
   assert.equal(bar.w, 360);
-  assert.equal(bar.value, 'easylauncher');
   assert.equal(bar.color, 'ansi2');
-  assert.equal(lane(all, 'activity').bars[0].value, 'development');
-  assert.equal(lane(all, 'activity').bars[0].color, 'muted'); // a kind the list doesn't name
-  const kinds = L.lanes(timeline([seg(6 * H, 12 * H)]), day.from, day.to, 1440, [], ['design', 'development']);
-  assert.equal(lane(kinds, 'activity').bars[0].color, 'ansi2');
-  assert.equal(lane(all, 'app').bars[0].value, 'idea64.exe');
 });
 
 test('sub-pixel bars merge into a neighbour', () => {
   const t = 6 * H;
   const me = [seg(t, t + H), seg(t + H, t + H + 10_000, { project: 'universe' }), seg(t + H + 10_000, t + 2 * H)];
-  const bars = lane(L.lanes(timeline(me), day.from, day.to, 1440, ['universe', 'easylauncher']), 'project').bars;
+  const bars = byProject(me, ['universe', 'easylauncher']);
   assert.equal(bars.length, 1);
   assert.equal(bars[0].value, 'easylauncher');
   assert.equal(bars[0].x, 360);
   assert.equal(bars[0].w, 120);
   assert.equal(bars[0].segs.length, 3);
   // A visible gap keeps bars apart, and a different project is its own bar.
-  const apart = lane(L.lanes(timeline([seg(t, t + H), seg(t + 2 * H, t + 3 * H), seg(t + 3 * H, t + 4 * H, { project: 'universe' })]), day.from, day.to, 1440, []), 'project').bars;
+  const apart = byProject([seg(t, t + H), seg(t + 2 * H, t + 3 * H), seg(t + 3 * H, t + 4 * H, { project: 'universe' })], []);
   assert.equal(apart.length, 3);
 });
 
@@ -92,22 +75,13 @@ test('stepping days: today and later ask for today', () => {
   assert.equal(L.stepDay('2026-11-10', '2026-11-17', 1), '2026-11-11');
 });
 
-test('a drag covers whole lanes, clamped to the lanes', () => {
-  assert.deepEqual(L.laneSpan(30, 5, 5, 22), { top: 0, bottom: 1 });
-  assert.deepEqual(L.laneSpan(50, 200, 5, 22), { top: 2, bottom: 4 });
-  assert.deepEqual(L.laneSpan(-10, 3, 5, 22), { top: 0, bottom: 0 });
-});
-
-test('the drawn range hugs the counted time, in whole hours, three at least', () => {
-  const day = { from: 4 * H, to: 28 * H };
-  assert.deepEqual(L.viewRange({ me: [], agents: [] }, day.from, day.to, 22 * H), day);
-  const short = { me: [{ start: 21.5 * H, end: 21.7 * H }], agents: [{ start: 21.6 * H, end: 21.9 * H }] };
-  assert.deepEqual(L.viewRange(short, day.from, day.to, 22.2 * H), { from: 20 * H, to: 23 * H });
-  const long = { me: [{ start: 9.25 * H, end: 18.5 * H }], agents: [] };
-  assert.deepEqual(L.viewRange(long, day.from, day.to, 30 * H), { from: 9 * H, to: 28 * H });
-  const early = { me: [{ start: 4.2 * H, end: 4.4 * H }], agents: [] };
-  assert.deepEqual(L.viewRange(early, day.from, day.to, 4.5 * H), { from: 4 * H, to: 7 * H });
-  assert.equal(L.axisStep(3 * H), H);
-  assert.equal(L.axisStep(10 * H), 2 * H);
-  assert.equal(L.axisStep(24 * H), 3 * H);
+test('ticks split the range evenly', () => {
+  assert.equal(L.tickStep(8 * H), H);
+  assert.equal(L.tickStep(9 * H), 2 * H);
+  assert.equal(L.tickStep(16 * H), 2 * H);
+  assert.equal(L.tickStep(17 * H), 3 * H);
+  const day = L.ticks(6 * H, 30 * H);
+  assert.equal(day.length, 9);
+  assert.equal(day[8], 30 * H);
+  assert.deepEqual(L.ticks(22 * H, 28 * H), [22, 23, 24, 25, 26, 27, 28].map((h) => h * H));
 });

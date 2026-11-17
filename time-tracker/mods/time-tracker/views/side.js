@@ -1,0 +1,61 @@
+// The right panel: my time in big, a few lines about it, and the projects.
+import { div } from "gpui-kit";
+import { h_flex, v_flex } from "gpui-base";
+import { formatDuration } from "../format.js";
+import { projectColor } from "../lanes.js";
+import { TEXT } from "../ui.js";
+import { Link } from "./menu.js";
+
+// total: ms; lines: strings.
+export function Side(view, t, { caption, total, lines }) {
+  const order = view.order();
+  const projects = view.data.report.projects.filter((p) => p.me > 0);
+  const max = Math.max(...projects.map((p) => p.me));
+  return v_flex()
+    .id("day-side")
+    .w(270)
+    .flex_none()
+    .overflow_y_scroll()
+    .bg(t.chrome)
+    .border_l(1)
+    .border_color(t.border)
+    .pt(18)
+    .px(18)
+    .pb(18)
+    .gap(16)
+    .child(
+      v_flex()
+        .gap(2)
+        .child(div().text_size(TEXT.small).text_color(t.dim).child(caption))
+        .child(div().text_size(26).font_semibold().child(formatDuration(total)))
+        .children(lines.map((line) => div().text_size(TEXT.small).text_color(t.dim).child(line))),
+    )
+    .child(div().h(1).flex_none().bg(t.border))
+    .child(
+      v_flex()
+        .gap(12)
+        .children(
+          projects.map((p) =>
+            ProjectBlock(t, { name: view.name(p.project), color: t[projectColor(p.project, order)] ?? t.muted, value: formatDuration(p.me), fill: (p.me / max) * 100, other: !p.project }),
+          ),
+        )
+        .when(projects.some((p) => !p.project), (el) =>
+          el.child(Link({ id: "day-unassigned", label: "разобрать «Другое» →", color: t.muted, onClick: (cx) => view.toggleUnassigned(cx) }).text_size(TEXT.small)),
+        ),
+    );
+}
+
+export function ProjectBlock(t, { name, color, value, fill, other }) {
+  return v_flex()
+    .gap(6)
+    .child(
+      h_flex()
+        .gap(8)
+        .items_center()
+        .child(div().size(8).flex_none().rounded(4).bg(color))
+        .child(div().min_w(0).truncate().text_color(other ? t.muted : t.foreground).child(name))
+        .child(div().flex_1())
+        .child(div().flex_none().font_medium().child(value)),
+    )
+    .child(div().relative().h(4).rounded(2).overflow_hidden().bg(t.raised).child(div().absolute().top(0).left(0).h(4).w(`${fill}%`).bg(color).opacity(0.5)));
+}

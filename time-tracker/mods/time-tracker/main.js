@@ -28,7 +28,8 @@ export default class TimeTracker extends View {
       this.parts.day.show(date === this.parts.day.today ? null : date, cx); // loads once; the tick finds it fresh
       cx.notify();
     };
-    this.parts = { session: placeholder(["Сессия", "Появится в следующем обновлении."]), projects: placeholder(PROJECTS), settings: placeholder(SETTINGS), day: new Day(), week: new Table("week", openDay), month: new Table("month", openDay), report: new Report() };
+    const open = (tab, cx) => this.open(tab, cx);
+    this.parts = { session: placeholder(["Сессия", "Появится в следующем обновлении."]), projects: placeholder(PROJECTS), settings: placeholder(SETTINGS), day: new Day(open),week: new Table("week", openDay), month: new Table("month", openDay), report: new Report() };
     if (checking()) return;
     this.tick(cx);
     cx.timer.every(5000, (cx) => this.tick(cx));

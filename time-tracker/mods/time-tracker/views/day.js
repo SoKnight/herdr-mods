@@ -1,18 +1,19 @@
-// The panel's Day tab: the day as lanes, totals by project, and corrections made by selecting time.
+// The panel's День tab: the day as a strip, its sessions as stretches, my time by project on the
+// right, and corrections made by selecting time. The Сессия tab is the same view over a session.
 import { div } from "gpui-kit";
-import { h_flex, v_flex, InputState, Popup } from "gpui-base";
+import { h_flex, v_flex, InputState } from "gpui-base";
 import { theme, props, layout } from "herdr";
 import { call } from "../client.js";
-import { formatDuration, activityLabel, catalog, hhmm, ACTIVITIES } from "../format.js";
-import { lanes, targetFor, rangeFromDrag, correctionIds, stepDay, laneSpan, ruleFor, viewRange, axisStep } from "../lanes.js";
-import { IconButton, Message, TEXT } from "../ui.js";
-import { SelectionMenu, Link } from "./menu.js";
-import { Totals } from "./totals.js";
+import { formatDuration, activityLabel, catalog, hhmm, dayTitle, plural, ACTIVITIES } from "../format.js";
+import { rangeFromDrag, stepDay, ruleFor } from "../lanes.js";
+import { Message, TEXT } from "../ui.js";
+import { Link } from "./menu.js";
+import { Unassigned } from "./totals.js";
+import { Strip, AgentsStrip, HourLabels, Legend } from "./strip.js";
+import { StretchList, SessionHeader } from "./stretches.js";
+import { Side } from "./side.js";
 
-const ROW = 22;
 const REFRESH_MS = 60_000;
-const LABELS = { power: "Питание", me: "Я", app: "Приложение", project: "Проект", activity: "Вид", agents: "Агенты" };
-const WEEKDAYS = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
 
 const pad = (n) => String(n).padStart(2, "0");
 const dateLabel = (ms) => {
@@ -32,7 +33,9 @@ export function panelShown(node) {
 }
 
 export class Day {
-  constructor() {
+  // open(tab, cx): shows another tab of the panel.
+  constructor(open) {
+    this.open = open;
     this.data = null; // what `timeline` gave
     this.projects = []; // [{id, name}] in config order
     this.activities = ACTIVITIES; // [{id, label}], as the collector lists them
@@ -52,10 +55,11 @@ export class Day {
     this.drag = null;
     this.sel = null; // the selection the menu acts on
     this.step = "root";
-    this.appOpen = false;
     this.unassigned = null;
     this.unassignedOpen = false;
     this.assigning = null;
+    this.silentSince = null;
+    this.lastSample = 0; // when the collector last heard from the computer
   }
 
   // Read again on showing, then once a minute while shown; a hidden panel reads nothing.
@@ -68,20 +72,17 @@ export class Day {
   // Every load wins over the ones before it: a day switch or a change mid-load is never lost.
   load(cx) {
     const seq = ++this.seq;
-    const { want, fresh } = this;
+    const args = this.args();
     this.loading = true;
     cx.notify();
     cx.spawn(async (cx) => {
       try {
-        const args = ["timeline", ...(want ? ["--day", want] : []), ...(fresh ? ["--fresh"] : [])];
-        const [tl, projects] = await Promise.all([call(args), call(["projects"])]);
+        const [r, projects] = await Promise.all([call(args), call(["projects"])]);
         if (seq !== this.seq) return;
         Object.assign(this, catalog(projects));
-        this.error = tl.down ? "Сборщик не запущен: go -C helper run ./deploy" : (tl.error ?? null);
+        this.error = r.down ? "Сборщик не запущен: go -C helper run ./deploy" : (r.error ?? null);
         if (!this.error) {
-          this.data = tl;
-          if (!want) this.today = tl.day;
-          if (!fresh) this.divergences = tl.divergences;
+          this.took(r);
           if (this.unassignedOpen) await this.loadUnassigned(seq);
         }
       } finally {
@@ -95,8 +96,22 @@ export class Day {
     });
   }
 
+  // What the load asks the collector.
+  args() {
+    return ["timeline", ...(this.want ? ["--day", this.want] : []), ...(this.fresh ? ["--fresh"] : [])];
+  }
+
+  // Keeps a good answer. A day switch starts a newer load, which drops this one, so want is the one asked.
+  took(r) {
+    this.data = r;
+    this.lastSample = r.last_sample ?? 0;
+    if (!this.want) this.today = r.day;
+    if (!this.fresh) this.divergences = r.divergences;
+  }
+
   async loadUnassigned(seq = this.seq) {
-    const r = await call(["unassigned", "--from", String(this.data.from), "--to", String(this.data.to)]);
+    const { from, to } = this.otherRange();
+    const r = await call(["unassigned", "--from", String(from), "--to", String(to)]);
     if (seq === this.seq) this.unassigned = Array.isArray(r) ? r : [];
   }
 
@@ -193,88 +208,137 @@ export class Day {
   }
 
   name(id) {
-    if (!id) return "Без проекта";
+    if (!id) return "Другое";
     return this.projects.find((p) => p.id === id)?.name || id;
   }
 
-  // The part of the day drawn: around the counted time, not the whole 24 hours.
+  // Project ids in config order, for their colours.
+  order() {
+    return this.projects.map((p) => p.id);
+  }
+
+  // The time the strip draws.
   range() {
-    const d = this.data;
-    return viewRange(d.timeline, d.from, d.to, Date.now());
+    return { from: this.data.from, to: this.data.to };
   }
 
-  shownLanes() {
-    const d = this.data;
-    const r = d && this.range();
-    const all = d && this.width > 0 ? lanes(d.timeline, r.from, r.to, this.width, this.projects.map((p) => p.id), this.activities.map((a) => a.id)) : [];
-    return all.filter((l) => l.id !== "app" || this.appOpen);
+  // The time "Другое" is taken apart over.
+  otherRange() {
+    return { from: this.data.from, to: this.data.to };
   }
 
-  // Pointer position in the tracks, in the px the bars are drawn in.
+  // Pointer position in the strip, in the px the bars are drawn in.
   point(e) {
     const p = e.local_position ?? { x: 0, y: 0 };
     return { x: e.bounds?.width ? (p.x / e.bounds.width) * this.width : p.x, y: p.y };
   }
 
-  // An x in those px as a share of the tracks: sizes reach us scaled by zoom, so pixels would overshoot.
+  // An x in those px as a share of the strip: sizes reach us scaled by zoom, so pixels would overshoot.
   pct(x) {
     return `${(x / this.width) * 100}%`;
   }
 
-  finishDrag(ids, cx) {
+  finishDrag(cx) {
     const g = this.drag;
     this.drag = null;
     if (!g || Math.abs(g.x1 - g.x0) < 3) return cx.notify();
-    const { top, bottom } = laneSpan(g.y0, g.y1, ids.length, ROW);
-    const picked = ids.slice(top, bottom + 1);
     const x = Math.max(0, Math.min(g.x0, g.x1));
     const w = Math.min(this.width, Math.max(g.x0, g.x1)) - x;
     const r = this.range();
-    this.sel = { ...rangeFromDrag(g.x0, g.x1, r.from, r.to, this.width), target: targetFor(picked), x, w, top: top * ROW, h: picked.length * ROW };
+    this.sel = { ...rangeFromDrag(g.x0, g.x1, r.from, r.to, this.width), target: "me", x, w };
     this.step = "root";
     cx.notify();
   }
 
-  render() {
-    const t = theme();
-    const d = this.data;
-    const root = v_flex().id("day").flex_1().min_h(0).overflow_y_scroll().pb(14).child(this.dayBar(t));
-    if (this.error) root.child(Message(this.error, true));
-    if (this.pending) root.child(this.confirmView(t));
-    root.children(this.divergences.map((v) => this.divergenceView(v, t)));
-    if (this.message) root.child(this.messageView(t));
-    if (!d) return root.child(Message(this.loading ? "Загрузка…" : ""));
-    return root.child(this.lanesView(t)).child(Totals(this, t));
+  // Hover on my time: when, what, which project and kind, and why it was counted so.
+  tip(bar) {
+    const s = bar.seg;
+    const more = bar.segs.length > 1 ? `\n(и ещё ${bar.segs.length - 1} коротких рядом)` : "";
+    const what = [s.app, s.title].filter(Boolean).join(" — ");
+    return `${hhmm(s.start)}–${hhmm(s.end)} · ${formatDuration(s.end - s.start)}\n${what}\nПроект: ${this.name(s.project)}\nВид: ${activityLabel(s.activity, this.activities) || "—"}${s.note ? `\nЗаметка: ${s.note}` : ""}\nПочему: ${s.why}${more}`;
   }
 
-  dayBar(t) {
-    const d = this.data;
-    const r = d?.report;
-    const day = d?.day; // the day drawn, not the one being asked for: a failed load keeps both as they were
-    const date = day ? new Date(`${day}T12:00:00`) : null;
-    const label = date ? `${WEEKDAYS[date.getDay()]} ${dateLabel(date.getTime())}` : "…";
+  render() {
+    const t = theme();
     return h_flex()
-      .h(40)
+      .flex_1()
+      .min_h(0)
+      .items_stretch()
+      .child(this.left(t))
+      .when(Boolean(this.data), (el) => el.child(this.sideView(t)));
+  }
+
+  left(t) {
+    const d = this.data;
+    const col = v_flex().id("day").flex_1().min_w(0).min_h(0).overflow_y_scroll().pt(18).px(22).pb(18).gap(14).child(this.header(t)).children(this.notices(t));
+    if (!d) return col.child(Message(this.loading ? "Загрузка…" : ""));
+    const { from, to } = this.range();
+    col.child(
+      v_flex()
+        .flex_none()
+        .gap(4)
+        .child(Strip(this, t, { from, to, h: 20, radius: 4 }))
+        .child(AgentsStrip(this, t, { from, to }))
+        .child(HourLabels(t, from, to))
+        .child(Legend(t)),
+    );
+    const sessions = d.sessions ?? [];
+    if (!sessions.length) col.child(Message("За этот день ничего не насчитано."));
+    for (const s of sessions) col.child(v_flex().flex_none().child(SessionHeader(this, t, s)).child(StretchList(this, t, s.stretches, { row: 30, gap: 16 })));
+    if (this.unassignedOpen) col.child(Unassigned(this, t));
+    return col;
+  }
+
+  sideView(t) {
+    const { report, stats } = this.data;
+    const lines = [`агенты ${formatDuration(report.agents)} · включён ${formatDuration(report.uptime)}`];
+    if (report.me > 0 && stats) lines.push(`${plural(stats.switches, "переключение", "переключения", "переключений")} · фокус до ${formatDuration(stats.focus)}`);
+    return Side(this, t, { caption: "Моё время", total: report.me, lines });
+  }
+
+  header(t) {
+    const d = this.data;
+    const day = d?.day; // the day drawn, not the one being asked for: a failed load keeps both as they were
+    const today = Boolean(day) && day === this.today;
+    const chevron = (id, label, glyph, n) =>
+      div()
+        .id(id)
+        .flex_none()
+        .px(4)
+        .text_size(16)
+        .text_color(t.muted)
+        .accessibility_label(label)
+        .cursor_pointer()
+        .hover((s) => s.text_color(t.foreground))
+        .on_click((_e, cx) => this.go(n, cx))
+        .child(glyph);
+    const title = (text) => div().flex_none().text_size(15).font_semibold().child(text);
+    return h_flex()
       .flex_none()
-      .px(14)
       .gap(10)
       .items_center()
-      .child(Link({ id: "day-prev", label: "‹", onClick: (cx) => this.go(-1, cx) }))
-      .child(div().text_size(TEXT.body).child(day && day === this.today ? `Сегодня, ${label}` : label))
-      .when(Boolean(day) && day !== this.today, (el) => el.child(Link({ id: "day-next", label: "›", onClick: (cx) => this.go(1, cx) })))
+      .child(chevron("day-prev", "Предыдущий день", "‹", -1))
+      .when(!day, (el) => el.child(title("…")))
+      .when(today, (el) => el.child(title("Сегодня")).child(div().text_color(t.dim).child(dayTitle(day))))
+      .when(Boolean(day) && !today, (el) => el.child(title(dayTitle(day))).child(chevron("day-next", "Следующий день", "›", 1)))
       .child(div().flex_1())
-      .when(Boolean(r), (el) =>
-        el.child(div().text_size(TEXT.small).text_color(t.muted).child(`Аптайм ${formatDuration(r.uptime)} · Моё ${formatDuration(r.me)} · Агенты ${formatDuration(r.agents)}`)),
-      )
-      .child(IconButton({ id: "day-refresh", icon: "refresh", label: "Обновить", spinning: this.loading, onClick: (cx) => this.load(cx) }));
+      .when(Boolean(d), (el) => el.child(div().text_size(TEXT.small).text_color(t.dim).child(`сутки ${hhmm(d.from)} → ${hhmm(d.from)}`)));
+  }
+
+  // Above the strip: an error, a reopen to confirm, closed exports the rules would change, the last message.
+  notices(t) {
+    return [
+      this.error && Message(this.error, true),
+      this.pending && this.confirmView(t),
+      ...this.divergences.map((v) => this.divergenceView(v, t)),
+      this.message && this.messageView(t),
+    ].filter(Boolean);
   }
 
   strip(id, t, text, links) {
     return h_flex()
       .id(id)
       .flex_none()
-      .mx(14)
-      .mb(8)
       .px(10)
       .py(7)
       .gap(12)
@@ -314,127 +378,11 @@ export class Day {
     const m = this.message;
     return h_flex()
       .flex_none()
-      .px(14)
-      .pb(8)
       .gap(10)
       .text_size(TEXT.small)
       .text_color(m.error ? t.ansi1 : t.muted)
       .child(div().min_w(0).whitespace_normal().child(m.text))
       .when(Boolean(m.undo), (el) => el.child(Link({ id: "day-undo-last", label: "Отменить", onClick: (cx) => this.undo(m.undo, cx) })));
-  }
-
-  // Hover: when, what, which project and kind, and why it was counted so.
-  tip(id, bar) {
-    const s = bar.seg;
-    const more = bar.segs.length > 1 ? `\n(и ещё ${bar.segs.length - 1} коротких рядом)` : "";
-    const when = `${hhmm(s.start)}–${hhmm(s.end)} · ${formatDuration(s.end - s.start)}`;
-    if (id === "power") return `Компьютер включён ${when}`;
-    if (id === "agents") return `${when}\nПроект: ${this.name(s.project)}\nПочему: ${s.why}${more}`;
-    const what = [s.app, s.title].filter(Boolean).join(" — ");
-    return `${when}\n${what}\nПроект: ${this.name(s.project)}\nВид: ${activityLabel(s.activity, this.activities) || "—"}${s.note ? `\nЗаметка: ${s.note}` : ""}\nПочему: ${s.why}${more}`;
-  }
-
-  laneRow(lane, i, t) {
-    const row = div().relative().h(ROW).w_full();
-    lane.bars.forEach((bar, j) => {
-      row.child(div().id(`bar-${lane.id}-${j}`).absolute().left(this.pct(bar.x)).top(4).w(this.pct(bar.w)).h(ROW - 8).rounded(2).bg(t[bar.color] ?? t.muted).tooltip(this.tip(lane.id, bar)));
-      const ids = [...new Set(bar.segs.filter((s) => s.corrected).flatMap((s) => correctionIds(s.why)))];
-      if (ids.length)
-        row.child(
-          div()
-            .id(`mark-${lane.id}-${j}`)
-            .absolute()
-            .left(this.pct(bar.x))
-            .top(0)
-            .size(7)
-            .rounded(4)
-            .bg(t.foreground)
-            .cursor_pointer()
-            .tooltip(`Правка ${ids.map((n) => `#${n}`).join(", ")}`)
-            .on_mouse_down("left", (_e, cx) => {
-              cx.stop_propagation();
-              this.sel = { undo: ids, x: bar.x, w: 7, top: i * ROW, h: ROW };
-              this.step = "undo";
-              cx.notify();
-            }),
-        );
-    });
-    return row;
-  }
-
-  lanesView(t) {
-    const shown = this.shownLanes();
-    const ids = shown.map((l) => l.id);
-    const labels = (this.appOpen ? Object.keys(LABELS) : Object.keys(LABELS).filter((id) => id !== "app")).map((id) =>
-      h_flex()
-        .h(ROW)
-        .items_center()
-        .text_size(TEXT.small)
-        .text_color(t.muted)
-        .child(LABELS[id]),
-    );
-    // The App lane folds; its toggle sits under the labels.
-    labels.push(Link({ id: "day-app-toggle", label: this.appOpen ? "▾ Приложение" : "▸ Приложение", color: t.dim, onClick: (cx) => ((this.appOpen = !this.appOpen), cx.notify()) }).text_size(TEXT.caption));
-
-    const g = this.drag;
-    const tracks = v_flex()
-      .id("day-tracks")
-      .relative()
-      .flex_1()
-      .min_w(0)
-      .cursor_crosshair()
-      .on_size_change((size, cx) => {
-        if (size.width !== this.width) {
-          this.width = size.width;
-          cx.notify();
-        }
-      })
-      .on_mouse_down("left", (e, cx) => {
-        const p = this.point(e);
-        if (p.y >= ids.length * ROW) return; // the hours under the lanes
-        this.sel = null;
-        this.drag = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
-        cx.notify();
-      })
-      .on_mouse_move((e, cx) => {
-        if (!this.drag) return;
-        const p = this.point(e);
-        Object.assign(this.drag, { x1: p.x, y1: p.y });
-        cx.notify();
-      })
-      .on_mouse_up("left", (_e, cx) => this.finishDrag(ids, cx))
-      .on_hover((hovered, cx) => !hovered && this.drag && this.finishDrag(ids, cx))
-      .children(shown.map((lane, i) => this.laneRow(lane, i, t)))
-      .child(this.axis(t));
-
-    if (g) {
-      const { top, bottom } = laneSpan(g.y0, g.y1, ids.length, ROW);
-      tracks.child(div().absolute().left(this.pct(Math.min(g.x0, g.x1))).top(top * ROW).w(this.pct(Math.abs(g.x1 - g.x0))).h((bottom - top + 1) * ROW).bg(t.selection));
-    } else if (this.sel) {
-      const s = this.sel;
-      tracks.child(
-        Popup.new("day-sel", div().size_full())
-          .absolute()
-          .left(this.pct(s.x))
-          .top(s.top)
-          .w(this.pct(s.w))
-          .h(s.h)
-          .bg(s.undo ? t.background : t.selection)
-          .anchor("top_left")
-          .content(SelectionMenu(this)),
-      );
-    }
-    return h_flex().px(14).pt(4).gap(10).items_start().child(v_flex().w(96).flex_none().children(labels)).child(tracks);
-  }
-
-  // Hours under the lanes, spaced to the range drawn.
-  axis(t) {
-    const row = div().relative().h(16).w_full().text_size(TEXT.badge).text_color(t.dim);
-    if (!this.width) return row;
-    const { from, to } = this.range();
-    for (let ms = from; ms < to; ms += axisStep(to - from))
-      row.child(div().absolute().top(2).left(`${((ms - from) / (to - from)) * 100}%`).child(hhmm(ms)));
-    return row;
   }
 
   toggleUnassigned(cx) {

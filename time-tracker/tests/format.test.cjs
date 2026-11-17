@@ -3,12 +3,31 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/format.js'), 'utf8');
-const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, exportName, catalog };`)();
+const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, exportName, catalog, plural, dayTitle, shareText };`)();
 
 test('durations', () => {
   assert.equal(F.formatDuration(18_720_000), '5ч 12м');
   assert.equal(F.formatDuration(2_700_000), '45м');
-  assert.equal(F.formatDuration(0), '0м');
+  assert.equal(F.formatDuration(7_200_000), '2ч');
+  assert.equal(F.formatDuration(0), '—');
+  assert.equal(F.formatDuration(59_999), '—');
+});
+
+test('plural forms', () => {
+  const p = (n) => F.plural(n, 'переключение', 'переключения', 'переключений');
+  assert.deepEqual([0, 1, 3, 7, 11, 21, 22].map(p), ['0 переключений', '1 переключение', '3 переключения', '7 переключений', '11 переключений', '21 переключение', '22 переключения']);
+});
+
+test('day title', () => {
+  assert.equal(F.dayTitle('2026-11-16'), 'пн, 16 ноября');
+  assert.equal(F.dayTitle('2026-03-01'), 'вс, 1 марта');
+});
+
+test('share text', () => {
+  const names = { study: 'Учёба', easy: 'EasyLauncher' };
+  const name = (id) => names[id];
+  assert.equal(F.shareText([{ project: 'study', me: 4 * 60_000 }, { project: '', me: 7 * 60_000 }, { project: 'easy', me: 30_000 }], name), '+ Учёба 4м, другое 7м');
+  assert.equal(F.shareText([], name), '');
 });
 
 test('activity labels fall back to the id', () => {
