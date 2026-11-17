@@ -71,11 +71,6 @@ export function stepDay(want, today, n) {
   return next >= today ? null : next;
 }
 
-// A rule for one "no project" item, from the start of this month; its value is plain text.
-export function ruleFor(item, project) {
-  return { kind: item.kind === "path" ? "folder" : item.kind, value: item.value, project, scope: "month" };
-}
-
 // The hours a session's strip covers: whole hours around it, three at least, to an end the ticks divide evenly.
 export function sessionWindow(start, end, now, open) {
   const H = 3600_000;
@@ -96,21 +91,22 @@ export function composition(me, start, end) {
   return [...by].map(([project, ms]) => ({ project, ms })).sort((a, b) => b.ms - a.ms);
 }
 
-// The app + title + path with the most time in [start, end], or null.
+// The app + title + path + server with the most time in [start, end], or null.
 export function topWindow(me, start, end) {
   const by = new Map();
   for (const s of me) {
     const ms = Math.min(s.end, end) - Math.max(s.start, start);
     if (ms <= 0) continue;
-    const key = JSON.stringify([s.app, s.title, s.path ?? ""]);
-    by.set(key, { app: s.app, title: s.title, path: s.path ?? "", ms: (by.get(key)?.ms ?? 0) + ms });
+    const key = JSON.stringify([s.app, s.title, s.path ?? "", s.server ?? ""]);
+    by.set(key, { app: s.app, title: s.title, path: s.path ?? "", server: s.server ?? "", ms: (by.get(key)?.ms ?? 0) + ms });
   }
   return [...by.values()].sort((a, b) => b.ms - a.ms)[0] ?? null;
 }
 
-// What a rule from a window matches on: path, else the Figma file, else the title.
+// What a rule from a window matches on: its folder, else the Minecraft server, else the Figma file, else the title.
 export function ruleItem(win) {
-  if (win.path) return { kind: "path", value: win.path };
+  if (win.path) return { kind: "folder", value: win.path };
+  if (win.server) return { kind: "minecraft", value: win.server };
   if (!win.title) return null;
   return { kind: win.app === "Figma.exe" ? "figma" : "title", value: win.title };
 }

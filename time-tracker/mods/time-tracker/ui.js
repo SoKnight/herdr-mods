@@ -87,7 +87,7 @@ export function Message(text, error = false) {
   return div().flex_none().p(8).text_size(TEXT.small).whitespace_normal().text_color(error ? t.ansi1 : t.dim).child(text);
 }
 
-export function Button({ id, label, icon, primary, onClick }) {
+export function Button({ id, label, icon, primary, ghost, onClick }) {
   const t = theme();
   return h_flex()
     .id(id)
@@ -101,7 +101,8 @@ export function Button({ id, label, icon, primary, onClick }) {
     .cursor_pointer()
     .on_click((_e, cx) => onClick(cx))
     .when(primary, (el) => el.bg(t.solid).text_color(t.solid_foreground).font_medium())
-    .when(!primary, (el) => el.bg(t.raised).text_color(t.foreground).border_1().border_color(t.border))
+    .when(ghost, (el) => el.text_color(t.dim).hover((s) => s.text_color(t.foreground)))
+    .when(!primary && !ghost, (el) => el.bg(t.raised).text_color(t.foreground).border_1().border_color(t.border))
     .when(icon, (el) => el.child(Icon(icon, 12)))
     .child(label);
 }
@@ -117,4 +118,116 @@ export function Placeholder(title, text) {
     .p(24)
     .child(div().text_size(15).font_semibold().child(title))
     .child(div().max_w(420).text_size(12).text_center().whitespace_normal().text_color(t.dim).child(text));
+}
+
+// A dialog over the whole panel (which is `relative`): a dimmed backdrop that keeps presses from what's
+// under it, and the dialog centred on it. `sub` sits after the title; `footer` is the row's children.
+export function Dialog({ id, width, title, sub, onClose, body, footer }) {
+  const t = theme();
+  const stop = (_e, cx) => cx.stop_propagation();
+  return div()
+    .id(id)
+    .absolute()
+    .inset_0()
+    .flex()
+    .items_center()
+    .justify_center()
+    .on_mouse_down("left", stop)
+    .on_mouse_down("right", stop)
+    .on_scroll_wheel(stop)
+    .child(div().absolute().inset_0().bg(t.background).opacity(0.8))
+    .child(
+      v_flex()
+        .w(width)
+        .role("dialog")
+        .accessibility_label(title)
+        .rounded(10)
+        .border_1()
+        .border_color(t.border)
+        .bg(t.chrome)
+        .shadow_lg()
+        .child(
+          h_flex()
+            .flex_none()
+            .px(18)
+            .py(12)
+            .gap(10)
+            .items_center()
+            .border_b(1)
+            .border_color(t.border)
+            .child(div().flex_none().text_size(15).font_semibold().child(title))
+            .when(Boolean(sub), (el) => el.child(sub))
+            .child(div().flex_1())
+            .child(IconButton({ id: `${id}-close`, icon: "x", label: "Закрыть", onClick: onClose }).mr(-6)),
+        )
+        .child(body)
+        .child(h_flex().flex_none().px(18).py(12).gap(8).items_center().border_t(1).border_color(t.border).children(footer)),
+    );
+}
+
+// One of a few choices, side by side; options: [{ id, label, icon }].
+export function Segmented({ id, options, value, onChange }) {
+  const t = theme();
+  return h_flex()
+    .id(id)
+    .flex_none()
+    .p(2)
+    .rounded(7)
+    .border_1()
+    .border_color(t.border)
+    .bg(t.background)
+    .role("radio_group")
+    .children(
+      options.map((o) => {
+        const on = o.id === value;
+        return h_flex()
+          .id(`${id}-${o.id}`)
+          .flex_1()
+          .h(28)
+          .gap(6)
+          .items_center()
+          .justify_center()
+          .rounded(5)
+          .text_size(12)
+          .text_color(on ? t.foreground : t.dim)
+          .role("radio_button")
+          .aria_selected(on)
+          .cursor_pointer()
+          .when(on, (el) => el.bg(t.raised))
+          .when(!on, (el) => el.hover((s) => s.text_color(t.foreground)))
+          .on_click((_e, cx) => onChange(o.id, cx))
+          .when(Boolean(o.icon), (el) => el.child(Icon(o.icon, 13)))
+          .child(o.label);
+      }),
+    );
+}
+
+// A checkbox, or a radio button with `radio`, and its label.
+export function Check({ id, checked, label, radio, onClick }) {
+  const t = theme();
+  const box = div()
+    .size(14)
+    .flex_none()
+    .flex()
+    .items_center()
+    .justify_center()
+    .rounded(radio ? 7 : 4)
+    .border_1()
+    .border_color(checked ? t.foreground : t.dim)
+    .bg(checked ? t.foreground : t.background)
+    .text_color(t.background)
+    .when(checked && radio, (el) => el.child(div().size(6).rounded(3).bg(t.background)))
+    .when(checked && !radio, (el) => el.child(Icon("check", 10)));
+  return h_flex()
+    .id(id)
+    .flex_none()
+    .gap(8)
+    .items_center()
+    .text_color(checked ? t.foreground : t.muted)
+    .role(radio ? "radio_button" : "check_box")
+    .aria_selected(Boolean(checked))
+    .cursor_pointer()
+    .on_click((_e, cx) => onClick(cx))
+    .child(box)
+    .child(label);
 }

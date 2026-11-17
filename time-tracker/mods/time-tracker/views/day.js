@@ -5,7 +5,7 @@ import { h_flex, v_flex, InputState, ScrollHandle } from "gpui-base";
 import { theme, props, layout } from "herdr";
 import { call } from "../client.js";
 import { formatDuration, activityLabel, catalog, hhmm, dayTitle, plural, ACTIVITIES } from "../format.js";
-import { rangeFromDrag, stepDay, ruleFor } from "../lanes.js";
+import { rangeFromDrag, stepDay } from "../lanes.js";
 import { silence } from "../chip.js";
 import { Button, Icon, Message, TEXT } from "../ui.js";
 import { Link } from "./menu.js";
@@ -13,6 +13,7 @@ import { Unassigned } from "./totals.js";
 import { Strip, AgentsStrip, HourLabels, Legend, DragArea } from "./strip.js";
 import { StretchList, SessionHeader } from "./stretches.js";
 import { Side } from "./side.js";
+import { RuleEdit } from "./ruleedit.js";
 
 const REFRESH_MS = 60_000;
 
@@ -34,9 +35,10 @@ export function panelShown(node) {
 }
 
 export class Day {
-  // open(tab, cx): shows another tab of the panel.
-  constructor(open) {
+  // open(tab, cx): shows another tab of the panel; showDialog(d | null, cx): a dialog over it.
+  constructor(open, showDialog) {
     this.open = open;
+    this.showDialog = showDialog;
     this.data = null; // what `timeline` gave
     this.projects = []; // [{id, name}] in config order
     this.activities = ACTIVITIES; // [{id, label}], as the collector lists them
@@ -193,13 +195,20 @@ export class Day {
     }, done);
   }
 
+  // A v1 "Другое" item: path, title or figma.
   assign(item, project, cx) {
     this.assigning = null;
-    this.addRule(item, project, cx);
+    this.editRule({ kind: item.kind === "path" ? "folder" : item.kind, value: item.value, project }, cx);
   }
 
-  addRule(item, project, cx) {
-    this.perform(cx, () => call(["rule", "add", JSON.stringify(ruleFor(item, project))]), () => ({ text: `Правило добавлено: ${this.name(project)}.` }));
+  editRule(rule, cx) {
+    this.sel = null;
+    this.dropNote();
+    const onSaved = (text, cx) => {
+      this.message = { text };
+      this.load(cx);
+    };
+    RuleEdit.open(this.showDialog, { rule, projects: this.projects, onSaved }, cx);
   }
 
   openNote(cx) {

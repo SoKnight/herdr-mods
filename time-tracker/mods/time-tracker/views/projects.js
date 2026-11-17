@@ -10,6 +10,7 @@ import { RULE_KINDS, COLORS, ruleText, targetName } from "../rules.js";
 import { Icon, Message, TEXT } from "../ui.js";
 import { Item, MenuPanel } from "./menu.js";
 import { panelShown } from "./day.js";
+import { RuleEdit } from "./ruleedit.js";
 
 const NONE = "#00000000";
 
@@ -45,9 +46,10 @@ export function Swatches({ id, size, value, projects, self, onPick }) {
 }
 
 export class Projects {
-  // open(tab, cx): shows another tab of the panel.
-  constructor(open) {
+  // open(tab, cx): shows another tab of the panel; showDialog(d | null, cx): a dialog over it.
+  constructor(open, showDialog) {
     this.open = open;
+    this.showDialog = showDialog;
     this.projects = []; // [{id, name, color, archived?}] in config order
     this.rules = []; // [{id, kind, value, title?, project, from?, ms, windows}] in priority order
     this.other = 0; // today's Другое, ms
@@ -147,6 +149,16 @@ export class Projects {
   toggleArchive(cx) {
     const p = this.project();
     if (p) this.setProject(p, { archived: !p.archived }, cx);
+  }
+
+  // rule: one of this.rules, or a new one's { kind, value, project }.
+  editRule(rule, cx) {
+    this.menu = null;
+    const onSaved = (text, cx) => {
+      this.message = { text };
+      this.load(cx);
+    };
+    RuleEdit.open(this.showDialog, { rule, projects: this.projects, onSaved }, cx);
   }
 
   deleteRule(id, cx) {
@@ -306,7 +318,36 @@ export class Projects {
           .child(div().text_size(TEXT.small).text_color(t.dim).child("за 7 дней")),
       )
       .when(!rules.length, (el) => el.child(div().text_size(TEXT.small).text_color(t.dim).child("Правил пока нет.")))
-      .children(rules.map((r) => this.ruleRow(t, r)));
+      .children(rules.map((r) => this.ruleRow(t, r)))
+      .child(
+        h_flex()
+          .flex_none()
+          .pt(4)
+          .gap(8)
+          .items_center()
+          .flex_wrap()
+          .child(div().flex_none().text_color(t.dim).child(Icon("plus", 14)))
+          .children(
+            RULE_KINDS.map((k) =>
+              div()
+                .id(`projects-add-${k.id}`)
+                .flex_none()
+                .px(10)
+                .py(4)
+                .rounded(6)
+                .border_1()
+                .border_dashed()
+                .border_color(t.border)
+                .text_size(12)
+                .text_color(t.muted)
+                .accessibility_label(`Новое правило: ${k.label}`)
+                .cursor_pointer()
+                .hover((s) => s.bg(t.hover).text_color(t.foreground))
+                .on_click((_e, cx) => this.editRule({ kind: k.id, value: "", project: this.selected }, cx))
+                .child(k.label),
+            ),
+          ),
+      );
   }
 
   ruleRow(t, r) {
@@ -351,6 +392,12 @@ export class Projects {
         cx.notify();
       })
       .trigger(trigger)
-      .when(open, (el) => el.content(MenuPanel(`projects-rule-menu-${r.id}`, 160).child(Item(`projects-rule-delete-${r.id}`, (cx) => this.deleteRule(r.id, cx)).child("Удалить"))));
+      .when(open, (el) =>
+        el.content(
+          MenuPanel(`projects-rule-menu-${r.id}`, 160)
+            .child(Item(`projects-rule-edit-${r.id}`, (cx) => this.editRule(r, cx)).child("Изменить"))
+            .child(Item(`projects-rule-delete-${r.id}`, (cx) => this.deleteRule(r.id, cx)).child("Удалить")),
+        ),
+      );
   }
 }

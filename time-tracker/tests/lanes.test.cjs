@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/lanes.js'), 'utf8');
-const L = new Function(`${code.replace(/^export /gm, '')}\nreturn { bars, projectColor, rangeFromDrag, correctionIds, shiftDay, ruleFor, stepDay, tickStep, ticks, sessionWindow, composition, topWindow, ruleItem };`)();
+const L = new Function(`${code.replace(/^export /gm, '')}\nreturn { bars, projectColor, rangeFromDrag, correctionIds, shiftDay, stepDay, tickStep, ticks, sessionWindow, composition, topWindow, ruleItem };`)();
 
 const H = 3600_000;
 const seg = (start, end, extra = {}) => ({ start, end, app: 'idea64.exe', title: 't', project: 'easylauncher', activity: 'development', why: '', corrected: false, ...extra });
@@ -64,12 +64,6 @@ test('days shift across months', () => {
   assert.equal(L.shiftDay('2026-03-01', -1), '2026-02-28');
 });
 
-test('rules for no-project items are plain text from this month', () => {
-  assert.deepEqual(L.ruleFor({ kind: 'path', value: 'C:\\Dev\\new' }, 'easy'), { kind: 'folder', value: 'C:\\Dev\\new', project: 'easy', scope: 'month' });
-  assert.deepEqual(L.ruleFor({ kind: 'title', value: 'a (1).kt', exe: 'idea64.exe' }, 'easy'), { kind: 'title', value: 'a (1).kt', project: 'easy', scope: 'month' });
-  assert.deepEqual(L.ruleFor({ kind: 'figma', value: 'Launcher (v2)' }, 'easy'), { kind: 'figma', value: 'Launcher (v2)', project: 'easy', scope: 'month' });
-});
-
 test('stepping days: today and later ask for today', () => {
   assert.equal(L.stepDay(null, '2026-11-16', -1), '2026-11-15');
   assert.equal(L.stepDay('2026-11-15', '2026-11-16', -1), '2026-11-14');
@@ -111,9 +105,10 @@ test('the window a rule comes from', () => {
     seg(5 * M, 8 * M, { app: 'idea64.exe', title: 'Main.kt', path: 'C:\\Dev\\easy' }),
     seg(8 * M, 10 * M, { app: 'chrome.exe', title: 'tricky-network/core', path: '' }),
   ];
-  assert.deepEqual(L.topWindow(me, 0, 10 * M), { app: 'chrome.exe', title: 'tricky-network/core', path: '', ms: 7 * M });
+  assert.deepEqual(L.topWindow(me, 0, 10 * M), { app: 'chrome.exe', title: 'tricky-network/core', path: '', server: '', ms: 7 * M });
   assert.equal(L.topWindow(me, 20 * M, 30 * M), null);
-  assert.deepEqual(L.ruleItem({ app: 'idea64.exe', title: 'Main.kt', path: 'C:\\Dev\\easy' }), { kind: 'path', value: 'C:\\Dev\\easy' });
+  assert.deepEqual(L.ruleItem({ app: 'idea64.exe', title: 'Main.kt', path: 'C:\\Dev\\easy' }), { kind: 'folder', value: 'C:\\Dev\\easy' });
+  assert.deepEqual(L.ruleItem({ app: 'javaw.exe', title: 'Minecraft 26.3 - Multiplayer (3rd-party Server)', path: '', server: 'play.tricky.net:25565' }), { kind: 'minecraft', value: 'play.tricky.net:25565' });
   assert.deepEqual(L.ruleItem({ app: 'Figma.exe', title: 'Universe — App', path: '' }), { kind: 'figma', value: 'Universe — App' });
   assert.deepEqual(L.ruleItem({ app: 'chrome.exe', title: 'tricky-network/core', path: '' }), { kind: 'title', value: 'tricky-network/core' });
   assert.equal(L.ruleItem({ app: 'x.exe', title: '', path: '' }), null);

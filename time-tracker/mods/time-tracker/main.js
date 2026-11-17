@@ -30,7 +30,9 @@ export default class TimeTracker extends View {
       cx.notify();
     };
     const open = (tab, cx) => this.open(tab, cx);
-    this.parts = { session: new SessionView(open), projects: new Projects(open), settings: placeholder(SETTINGS), day: new Day(open), week: new Table("week", openDay), month: new Table("month", openDay), report: new Report() };
+    const showDialog = (d, cx) => this.showDialog(d, cx);
+    this.dialog = null; // drawn over the whole panel while set
+    this.parts = { session: new SessionView(open, showDialog), projects: new Projects(open, showDialog), settings: placeholder(SETTINGS), day: new Day(open, showDialog), week: new Table("week", openDay), month: new Table("month", openDay), report: new Report() };
     if (checking()) return;
     this.tick(cx);
     cx.timer.every(5000, (cx) => this.tick(cx));
@@ -45,6 +47,11 @@ export default class TimeTracker extends View {
     this.tab = tab;
     this.parts[tab].wasShown = false; // read again on coming back
     this.tick(cx);
+    cx.notify();
+  }
+
+  showDialog(d, cx) {
+    this.dialog = d;
     cx.notify();
   }
 
@@ -69,6 +76,7 @@ export default class TimeTracker extends View {
         .on_click((_e, cx) => this.open(id, cx));
     };
     return Panel({ id: "time-root" })
+      .relative()
       .child(
         PanelHeader()
           .children(TABS.map(([id, label]) => HeaderTab({ id: `time-tab-${id}`, label, active: id === this.tab, dot: id === "session" ? t.ansi2 : undefined, onClick: (cx) => this.open(id, cx) })))
@@ -76,6 +84,7 @@ export default class TimeTracker extends View {
           .child(button("projects", "Проекты").px(10).py(6).gap(6).text_size(13).child(Icon("settings-2", 15)).child("Проекты"))
           .child(button("settings", "Настройки").w(32).h(30).justify_center().child(Icon("settings", 15)).tooltip("Настройки")),
       )
-      .child(this.parts[this.tab].render(cx));
+      .child(this.parts[this.tab].render(cx))
+      .when(Boolean(this.dialog), (el) => el.child(this.dialog.render(cx)));
   }
 }
