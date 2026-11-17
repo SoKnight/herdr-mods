@@ -7,10 +7,11 @@ import { call } from "../client.js";
 import { formatDuration } from "../format.js";
 import { projectColor } from "../lanes.js";
 import { RULE_KINDS, COLORS, ruleText, targetName } from "../rules.js";
-import { Icon, Message, TEXT } from "../ui.js";
+import { Button, Icon, Message, TEXT } from "../ui.js";
 import { Item, MenuPanel } from "./menu.js";
 import { panelShown } from "./day.js";
 import { RuleEdit } from "./ruleedit.js";
+import { NewProject } from "./newproject.js";
 
 const NONE = "#00000000";
 
@@ -52,6 +53,7 @@ export class Projects {
     this.showDialog = showDialog;
     this.projects = []; // [{id, name, color, archived?}] in config order
     this.rules = []; // [{id, kind, value, title?, project, from?, ms, windows}] in priority order
+    this.suggestions = []; // [{kind, value, ms}] Другое of the last 3 days, read while there are no projects
     this.other = 0; // today's Другое, ms
     this.selected = null; // a project id, "exclude" or "leisure"
     this.menu = null; // the rule whose menu is open
@@ -89,6 +91,10 @@ export class Projects {
         const known = ["exclude", "leisure"].includes(this.selected) || this.projects.some((x) => x.id === this.selected);
         if (!known) this.selected = this.list()[0]?.id ?? "leisure";
         this.syncName();
+        if (!this.projects.length) {
+          const h = await call(["hints", "--days", "3"]);
+          if (seq === this.seq && Array.isArray(h)) this.suggestions = h;
+        }
       } finally {
         if (seq === this.seq) this.loading = false;
         cx.notify();
@@ -161,6 +167,15 @@ export class Projects {
     RuleEdit.open(this.showDialog, { rule, projects: this.projects, onSaved }, cx);
   }
 
+  newProject(cx, hint) {
+    this.menu = null;
+    const onCreated = (id, cx) => {
+      this.selected = id;
+      this.load(cx);
+    };
+    NewProject.open(this.showDialog, { projects: this.projects, hint, onCreated }, cx);
+  }
+
   deleteRule(id, cx) {
     this.rules = this.rules.filter((r) => r.id !== id);
     this.change(["rule", "rm", String(id)], cx, "Правило удалено.");
@@ -186,7 +201,23 @@ export class Projects {
       .pt(14)
       .px(10)
       .gap(10)
-      .child(h_flex().flex_none().px(6).items_center().child(div().text_size(15).font_semibold().child("Проекты")).child(div().flex_1()))
+      .child(h_flex().flex_none().px(6).items_center().child(div().text_size(15).font_semibold().child("Проекты")).child(div().flex_1()).child(
+        div()
+          .id("projects-new")
+          .flex_none()
+          .size(28)
+          .flex()
+          .items_center()
+          .justify_center()
+          .rounded(6)
+          .text_color(t.muted)
+          .accessibility_label("Новый проект")
+          .tooltip("Новый проект")
+          .cursor_pointer()
+          .hover((s) => s.bg(t.hover).text_color(t.foreground))
+          .on_click((_e, cx) => this.newProject(cx))
+          .child(Icon("plus", 15)),
+      ))
       .when(this.projects.length > 0, (el) => el.child(
         v_flex()
           .flex_none()
@@ -238,6 +269,7 @@ export class Projects {
     const col = v_flex().id("projects-detail").flex_1().min_w(0).overflow_y_scroll().pt(14).px(22).gap(18);
     if (this.error) col.child(Message(this.error, true));
     if (this.message) col.child(div().flex_none().text_size(TEXT.small).whitespace_normal().text_color(this.message.error ? t.ansi1 : t.muted).child(this.message.text));
+    if (!this.projects.length && !this.loading && !this.error) return col.child(this.empty(t));
     if (!this.selected) return col.child(Message(this.loading ? "Загрузка…" : ""));
     col.child(p ? this.title(t, p) : div().flex_none().text_size(17).font_semibold().child(targetName(this.selected, this.projects)));
     col.child(this.ruleList(t));
@@ -256,6 +288,43 @@ export class Projects {
           .child("агенты по папке проекта"),
       );
     return col;
+  }
+
+  // The first run: nothing to show but what Другое could become.
+  empty(t) {
+    return v_flex()
+      .flex_none()
+      .pt(40)
+      .gap(10)
+      .items_center()
+      .child(div().text_color(t.dim).child(Icon("sparkles", 26)))
+      .child(div().text_size(15).font_semibold().child("Проектов пока нет"))
+      .when(this.suggestions.length > 0, (el) =>
+        el
+          .child(div().text_size(TEXT.small).text_color(t.dim).child("Всё копится в «Другом». Чаще всего за 3 дня:"))
+          .child(
+            v_flex()
+              .flex_none()
+              .w(460)
+              .gap(4)
+              .children(
+                this.suggestions.map((h, i) =>
+                  h_flex()
+                    .flex_none()
+                    .h(34)
+                    .pl(12)
+                    .pr(6)
+                    .gap(10)
+                    .items_center()
+                    .rounded(6)
+                    .bg(t.chrome)
+                    .child(div().flex_1().min_w(0).truncate().font_family("Consolas").text_size(12).child(ruleText(h)))
+                    .child(div().flex_none().text_size(TEXT.small).text_color(t.dim).child(formatDuration(h.ms)))
+                    .child(Button({ id: `projects-suggest-${i}`, label: "Создать", onClick: (cx) => this.newProject(cx, h) })),
+                ),
+              ),
+          ),
+      );
   }
 
   title(t, p) {

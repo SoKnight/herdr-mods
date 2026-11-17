@@ -14,6 +14,7 @@ import { Strip, AgentsStrip, HourLabels, Legend, DragArea } from "./strip.js";
 import { StretchList, SessionHeader } from "./stretches.js";
 import { Side } from "./side.js";
 import { RuleEdit } from "./ruleedit.js";
+import { NewProject } from "./newproject.js";
 
 const REFRESH_MS = 60_000;
 
@@ -209,6 +210,17 @@ export class Day {
       this.load(cx);
     };
     RuleEdit.open(this.showDialog, { rule, projects: this.projects, onSaved }, cx);
+  }
+
+  // The menu closes under the dialog, so the range is kept to assign it to the new project.
+  newProject(cx) {
+    const sel = this.sel && { ...this.sel };
+    this.closeMenu(cx);
+    const onCreated = (id, cx) => {
+      this.sel = sel;
+      this.correct({ kind: "project", project: id }, cx);
+    };
+    NewProject.open(this.showDialog, { projects: this.projects, onCreated }, cx);
   }
 
   openNote(cx) {

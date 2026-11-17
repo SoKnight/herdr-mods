@@ -113,6 +113,8 @@ export function MarkupMenu(view) {
       ...projects("menu-p", pick),
       Divider(),
       Item("menu-p-none", (cx) => pick("", cx), top === "").child(div().flex_none().size(8).rounded(4).bg(t.dim)).child("Без проекта"),
+      Divider(),
+      Item("menu-p-new", (cx) => view.newProject(cx)).text_color(t.muted).child("+ Новый проект…"),
     ];
   } else if (step === "rule") submenu = projects("menu-r", (project, cx) => view.editRule({ ...rule, project }, cx));
   else if (step === "activity") submenu = view.activities.map((a) => Item(`menu-a-${a.id}`, (cx) => view.correct({ kind: "activity", activity: a.id }, cx)).child(a.label || a.id));
