@@ -118,6 +118,8 @@ func newServer(d *Daemon) http.Handler {
 		"POST /v1/rules":               d.postRule,
 		"PUT /v1/rules/{id}":           d.putRule,
 		"DELETE /v1/rules/{id}":        d.deleteRule,
+		"POST /v1/rules/preview":       read(d.postRulePreview),
+		"GET /v1/hints":                read(d.getHints),
 		"GET /v1/periods":              d.getPeriods,
 		"GET /v1/projects":             read(d.getProjects),
 		"POST /v1/projects":            d.postProject,

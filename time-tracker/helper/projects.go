@@ -370,3 +370,150 @@ func (d *Daemon) deleteRule(r *http.Request) (int, any, error) {
 	})
 	return http.StatusNoContent, nil, err
 }
+
+type titleMs struct {
+	Title string `json:"title"`
+	Ms    int64  `json:"ms"`
+}
+
+type overlapInfo struct {
+	Rule    Rule   `json:"rule"`    // the earlier rule that keeps the time
+	Project string `json:"project"` // its target
+	Ms      int64  `json:"ms"`
+}
+
+type preview struct {
+	Ms      int64        `json:"ms"`
+	Windows int          `json:"windows"`
+	Top     []titleMs    `json:"top"`     // up to 3, most first; never nil
+	Overlap *overlapInfo `json:"overlap"` // null when nothing
+}
+
+// postRulePreview shows what a rule would match over the last 7 days and how much of it an earlier rule
+// keeps, writing nothing. "id" names the rule being edited, 0 for a new one.
+// ponytail: time a Не работа rule drops is in no list, so a rule over it previews nothing; keep excluded segments aside if that matters
+func (d *Daemon) postRulePreview(r *http.Request) (int, any, error) {
+	var req ruleRequest
+	if err := decode(r, &req); err != nil {
+		return 0, nil, err
+	}
+	rule, err := req.rule(&d.Config)
+	if err != nil {
+		return 0, nil, err
+	}
+	rules := slices.Clone(d.Config.Rules)
+	if req.ID != 0 {
+		i := openRule(rules, req.ID)
+		if i < 0 {
+			return 0, nil, fail(http.StatusNotFound, "no rule %d", req.ID)
+		}
+		rule.ID, rules[i] = req.ID, rule
+	} else {
+		rule.ID = nextRuleID(rules)
+		rules = insertRule(rules, rule)
+	}
+	rules = moveBefore(rules, rule.ID, req.Before)
+	earlier := rules[:slices.IndexFunc(rules, func(x Rule) bool { return x.ID == rule.ID })]
+
+	now := nowMs()
+	tl, err := d.fresh(now-7*24*60*60_000, now)
+	if err != nil {
+		return 0, nil, err
+	}
+	out := preview{Top: []titleMs{}}
+	windows := map[[2]string]bool{}
+	titles := map[string]int64{}
+	kept := map[int64]int64{} // earlier rule id → the time it keeps
+	for _, s := range slices.Concat(tl.Me, tl.Leisure) {
+		if !rule.matches(window{exe: s.App, title: s.Title, path: s.Path, server: s.Server}) {
+			continue
+		}
+		ms := s.End - s.Start
+		out.Ms += ms
+		windows[[2]string{s.App, s.Title}] = true
+		titles[s.Title] += ms
+		if slices.ContainsFunc(earlier, func(x Rule) bool { return s.Rule == x.ID && s.Project == x.Project && x.Project != rule.Project }) {
+			kept[s.Rule] += ms
+		}
+	}
+	out.Windows = len(windows)
+	for t, ms := range titles {
+		out.Top = append(out.Top, titleMs{t, ms})
+	}
+	slices.SortFunc(out.Top, func(a, b titleMs) int { return cmp.Or(cmp.Compare(b.Ms, a.Ms), cmp.Compare(a.Title, b.Title)) })
+	out.Top = out.Top[:min(3, len(out.Top))]
+	for _, x := range earlier { // in rule order, so the first of equal ones names the overlap
+		if ms := kept[x.ID]; ms > 0 {
+			if out.Overlap == nil {
+				out.Overlap = &overlapInfo{Rule: x, Project: x.Project}
+			} else if ms > kept[out.Overlap.Rule.ID] {
+				out.Overlap.Rule, out.Overlap.Project = x, x.Project
+			}
+			out.Overlap.Ms += ms
+		}
+	}
+	return http.StatusOK, out, nil
+}
+
+type hint struct {
+	Kind  string `json:"kind"`
+	Value string `json:"value"`
+	Ms    int64  `json:"ms"`
+}
+
+// getHints suggests rules for a new project from my time in Другое: its folders, Figma files, Minecraft
+// servers and titles. With ?name= only those that contain it, the title one being the name itself.
+func (d *Daemon) getHints(r *http.Request) (int, any, error) {
+	q := r.URL.Query()
+	days := int64(30)
+	if v := q.Get("days"); v != "" {
+		n, err := intParam(v, "days")
+		if err != nil {
+			return 0, nil, err
+		}
+		if n < 1 || n > 60 {
+			return 0, nil, fail(http.StatusBadRequest, "days: want 1..60")
+		}
+		days = n
+	}
+	name := strings.TrimSpace(q.Get("name"))
+	now := nowMs()
+	tl, err := d.fresh(now-days*24*60*60_000, now)
+	if err != nil {
+		return 0, nil, err
+	}
+	sums := map[hint]int64{}
+	for _, s := range tl.Me {
+		if s.Project != "" {
+			continue
+		}
+		cands := []hint{{Kind: "folder", Value: s.Path}, {Kind: "minecraft", Value: s.Server}, {Kind: "title", Value: s.Title}}
+		if strings.EqualFold(s.App, figmaExe) {
+			cands = append(cands, hint{Kind: "figma", Value: s.Title})
+		}
+		if name != "" {
+			cands[2].Value = ""
+			if containsFold(s.Title, name) {
+				cands[2].Value = name
+			}
+		}
+		for _, h := range cands {
+			if h.Value != "" && containsFold(h.Value, name) {
+				sums[h] += s.End - s.Start
+			}
+		}
+	}
+	out := []hint{}
+	for h, ms := range sums {
+		h.Ms = ms
+		out = append(out, h)
+	}
+	slices.SortFunc(out, func(a, b hint) int {
+		return cmp.Or(cmp.Compare(b.Ms, a.Ms), cmp.Compare(slices.Index(ruleKinds, a.Kind), slices.Index(ruleKinds, b.Kind)), cmp.Compare(a.Value, b.Value))
+	})
+	top := 3
+	if name != "" {
+		top = 5
+	}
+	return http.StatusOK, out[:min(top, len(out))], nil
+}

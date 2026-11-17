@@ -34,7 +34,8 @@ const usage = `herdr-time <команда> [--json]
   beat <json>
   unassigned --from --to
   rules
-  rule add <json> | set <id> <json> | rm <id>
+  rule add <json> | set <id> <json> | rm <id> | preview <json>
+  hints [--name X] [--days N]
   project add <json> | set <id> <json>
   session [start|end]
   periods [--project id]
@@ -187,6 +188,8 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 	out := fs.String("out", "", "")
 	fresh := fs.Bool("fresh", false, "")
 	dry := fs.Bool("dry-run", false, "")
+	name := fs.String("name", "", "")
+	days := fs.Int("days", 30, "")
 	if err := fs.Parse(args); err != nil {
 		return apiCall{}, err
 	}
@@ -277,6 +280,15 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 	case cmd == "rule" && sub == "rm":
 		id, err := arg(1, "<id>")
 		return apiCall{method: "DELETE", path: "/v1/rules/" + url.PathEscape(id)}, err
+	case cmd == "rule" && sub == "preview":
+		body, err := arg(1, "<json>")
+		return apiCall{method: "POST", path: "/v1/rules/preview", body: []byte(body), show: showPreview}, err
+	case cmd == "hints":
+		q.Set("days", strconv.Itoa(*days))
+		if *name != "" {
+			q.Set("name", *name)
+		}
+		return apiCall{method: "GET", path: "/v1/hints?" + q.Encode(), show: showHints}, nil
 	case cmd == "project" && sub == "add":
 		body, err := arg(1, "<json>")
 		return apiCall{method: "POST", path: "/v1/projects", body: []byte(body)}, err

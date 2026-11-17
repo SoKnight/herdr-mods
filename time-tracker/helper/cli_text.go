@@ -166,6 +166,32 @@ func showRules(w io.Writer, resp []byte) error {
 	return nil
 }
 
+func showPreview(w io.Writer, resp []byte) error {
+	var p preview
+	if err := json.Unmarshal(resp, &p); err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "за 7 дней: %s, окон %d\n", dur(p.Ms), p.Windows)
+	for _, t := range p.Top {
+		fmt.Fprintf(w, "%8s  %s\n", dur(t.Ms), t.Title)
+	}
+	if o := p.Overlap; o != nil {
+		fmt.Fprintf(w, "%s из них оставит за собой #%d  %s\n", dur(o.Ms), o.Rule.ID, o.Rule.why())
+	}
+	return nil
+}
+
+func showHints(w io.Writer, resp []byte) error {
+	var hs []hint
+	if err := json.Unmarshal(resp, &hs); err != nil {
+		return err
+	}
+	for _, h := range hs {
+		fmt.Fprintf(w, "%8s  %-9s  %s\n", dur(h.Ms), h.Kind, h.Value)
+	}
+	return nil
+}
+
 func showProjects(w io.Writer, resp []byte) error {
 	var c catalog
 	if err := json.Unmarshal(resp, &c); err != nil {

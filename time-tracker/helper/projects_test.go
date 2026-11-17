@@ -168,3 +168,47 @@ func TestCLIRulesAndProjects(t *testing.T) {
 	assertEq(t, runCLI([]string{"rule", "rm", "4", "--json"}, &out, &errOut), 0)
 	assertEq(t, runCLI([]string{"project", "set", "site", `{"archived":true}`, "--json"}, &out, &errOut), 0)
 }
+
+func TestRulePreviewMatchesAndOverlap(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return at(120) })
+	seed(t, d, power(0, 120), inp(0, 60), win("herdr-app.exe", "pwsh", 0, 20), win("notepad.exe", "Easy plan", 20, 30), win("notepad.exe", "Easy plan v2", 30, 35))
+	for i := 0; i < 20; i++ {
+		must(t, d.Store.AppendBeat(Heartbeat{Source: "herdr", Time: at(i), ProjectPath: `C:\Dev\other\x`}))
+	}
+	var p preview
+	body := map[string]any{"kind": "title", "value": "plan", "project": "other"}
+	assertEq(t, api.do("POST", "/v1/rules/preview", body, &p), http.StatusOK)
+	assertEq(t, p.Ms, int64(15*minMs))
+	assertEq(t, p.Windows, 2)
+	assertEq(t, p.Top[0], titleMs{"Easy plan", 10 * minMs})
+	assertEq(t, p.Overlap.Project, "easy")
+	assertEq(t, p.Overlap.Rule.ID, int64(3))
+	assertEq(t, p.Overlap.Ms, int64(15*minMs))
+	body["before"] = 3
+	p = preview{}
+	api.do("POST", "/v1/rules/preview", body, &p)
+	assertEq(t, p.Overlap == nil, true) // placed above it, it would win
+	p = preview{}
+	api.do("POST", "/v1/rules/preview", map[string]any{"kind": "process", "value": "herdr-app.exe", "project": "easy"}, &p)
+	assertEq(t, p.Overlap.Rule.ID, int64(1)) // the folder rule above keeps it
+	assertEq(t, len(d.Config.Rules), 3)      // nothing written
+}
+
+func TestHintsFromOther(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return at(120) })
+	seed(t, d, power(0, 120), inp(0, 40), win("herdr-app.exe", "pwsh", 0, 20), win("notepad.exe", "Payments spec", 20, 25), win("Figma.exe", "Payments — UI", 25, 35), win("notepad.exe", "random", 35, 40))
+	for i := 0; i < 20; i++ {
+		must(t, d.Store.AppendBeat(Heartbeat{Source: "herdr", Time: at(i), ProjectPath: `C:\Dev\payments\api`}))
+	}
+	var hs []hint
+	assertEq(t, api.do("GET", "/v1/hints?name=payments", nil, &hs), http.StatusOK)
+	assertEq(t, fmt.Sprint(hs), fmt.Sprint([]hint{{"folder", `C:\Dev\payments\api`, 20 * minMs}, {"title", "payments", 15 * minMs}, {"figma", "Payments — UI", 10 * minMs}}))
+	assertEq(t, api.do("GET", "/v1/hints?days=3", nil, &hs), http.StatusOK)
+	assertEq(t, len(hs), 3)
+	assertEq(t, hs[0].Kind, "folder")
+	assertEq(t, api.do("GET", "/v1/hints?days=0", nil, nil), http.StatusBadRequest)
+}
