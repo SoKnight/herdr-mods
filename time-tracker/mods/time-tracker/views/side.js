@@ -8,7 +8,6 @@ import { Link } from "./menu.js";
 
 // total: ms; lines: strings.
 export function Side(view, t, { caption, total, lines }) {
-  const order = view.order();
   const projects = view.data.report.projects.filter((p) => p.me >= 60_000); // under a minute reads as "—"
   const max = Math.max(...projects.map((p) => p.me));
   return v_flex()
@@ -36,7 +35,7 @@ export function Side(view, t, { caption, total, lines }) {
         .gap(12)
         .children(
           projects.map((p) =>
-            ProjectBlock(t, { name: view.name(p.project), color: t[projectColor(p.project, order)] ?? t.muted, value: formatDuration(p.me), fill: (p.me / max) * 100, other: !p.project }),
+            ProjectBlock(t, { name: view.name(p.project), color: t[projectColor(p.project, view.projects)] ?? t.muted, value: formatDuration(p.me), fill: (p.me / max) * 100, other: !p.project }),
           ),
         )
         .when(projects.some((p) => !p.project), (el) =>

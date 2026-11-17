@@ -7,7 +7,7 @@ const L = new Function(`${code.replace(/^export /gm, '')}\nreturn { bars, projec
 
 const H = 3600_000;
 const seg = (start, end, extra = {}) => ({ start, end, app: 'idea64.exe', title: 't', project: 'easylauncher', activity: 'development', why: '', corrected: false, ...extra });
-const byProject = (me, order) => L.bars(me.map((s) => ({ start: s.start, end: s.end, value: s.project, seg: s })), 0, 24 * H, 1440, (v) => L.projectColor(v, order));
+const byProject = (me, projects) => L.bars(me.map((s) => ({ start: s.start, end: s.end, value: s.project, seg: s })), 0, 24 * H, 1440, (v) => L.projectColor(v, projects));
 
 test('drag maps to whole minutes in order', () => {
   const from = 0, to = 24 * 3600_000;
@@ -25,7 +25,7 @@ test('a drag ends by now, rounded down to the minute', () => {
 });
 
 test('bars are positioned and coloured by project order', () => {
-  const [bar] = L.bars([{ start: 6 * H, end: 12 * H, value: 'easylauncher', seg: {} }], 0, 24 * H, 1440, (v) => L.projectColor(v, ['universe', 'easylauncher']));
+  const [bar] = L.bars([{ start: 6 * H, end: 12 * H, value: 'easylauncher', seg: {} }], 0, 24 * H, 1440, (v) => L.projectColor(v, [{ id: 'universe' }, { id: 'easylauncher' }]));
   assert.equal(bar.x, 360);
   assert.equal(bar.w, 360);
   assert.equal(bar.color, 'ansi2');
@@ -34,7 +34,7 @@ test('bars are positioned and coloured by project order', () => {
 test('sub-pixel bars merge into a neighbour', () => {
   const t = 6 * H;
   const me = [seg(t, t + H), seg(t + H, t + H + 10_000, { project: 'universe' }), seg(t + H + 10_000, t + 2 * H)];
-  const bars = byProject(me, ['universe', 'easylauncher']);
+  const bars = byProject(me, [{ id: 'universe' }, { id: 'easylauncher' }]);
   assert.equal(bars.length, 1);
   assert.equal(bars[0].value, 'easylauncher');
   assert.equal(bars[0].x, 360);
@@ -45,11 +45,12 @@ test('sub-pixel bars merge into a neighbour', () => {
   assert.equal(apart.length, 3);
 });
 
-test('project colours', () => {
-  assert.equal(L.projectColor('', ['a']), 'dim');
-  assert.equal(L.projectColor('a', ['a', 'b']), 'ansi1');
-  assert.equal(L.projectColor('g', ['a', 'b', 'c', 'd', 'e', 'f', 'g']), 'ansi1');
-  assert.equal(L.projectColor('zzz', ['a']), 'muted');
+test('a project has its own colour', () => {
+  const projects = [{ id: 'u', color: 'ansi5' }, { id: 'e' }];
+  assert.equal(L.projectColor('u', projects), 'ansi5');
+  assert.equal(L.projectColor('e', projects), 'ansi2'); // no colour yet: by its place
+  assert.equal(L.projectColor('', projects), 'dim');
+  assert.equal(L.projectColor('x', projects), 'muted');
 });
 
 test('correction ids from why', () => {

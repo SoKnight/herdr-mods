@@ -15,11 +15,14 @@ const blocks = (view, list, h, color) =>
 
 export function Strip(view, t, { from, to, h, radius }) {
   const tl = view.data.timeline;
-  const order = view.order();
+  const order = view.projects;
   // The bars clip to the rounded track; the selection and its menu sit outside the clip.
   const track = div().absolute().top(0).left(0).size_full().rounded(radius).overflow_hidden().bg(t.chrome);
   if (view.width > 0) {
     track.children(blocks(view, bars(items(tl.power, () => "on"), from, to, view.width, () => "raised"), h, () => t.raised));
+    bars(items(tl.leisure, () => "leisure"), from, to, view.width, () => "raised").forEach((bar, i) =>
+      track.child(div().id(`leisure-${i}`).absolute().top(0).h(h).left(view.pct(bar.x)).w(view.pct(bar.w)).bg(t.raised).border_1().border_color(t.muted)),
+    );
     bars(items(tl.me, (s) => s.project), from, to, view.width, (v) => projectColor(v, order)).forEach((bar, i) =>
       track.child(div().id(`me-${i}`).absolute().top(0).h(h).left(view.pct(bar.x)).w(view.pct(bar.w)).bg(t[bar.color] ?? t.muted).tooltip(view.tip(bar))),
     );
@@ -75,7 +78,7 @@ export function DragArea(view) {
 }
 
 export function AgentsStrip(view, t, { from, to }) {
-  const order = view.order();
+  const order = view.projects;
   const strip = div().relative().h(4).w_full().flex_none().rounded(2).overflow_hidden().bg(t.chrome);
   if (view.width > 0)
     strip.children(blocks(view, bars(items(view.data.timeline.agents, (s) => s.project), from, to, view.width, (v) => projectColor(v, order)), 4, (bar) => t[bar.color] ?? t.muted).map((el) => el.opacity(0.55)));
@@ -86,7 +89,7 @@ export function HourLabels(t, from, to) {
   return h_flex().h(16).flex_none().justify_between().text_size(TEXT.caption).text_color(t.dim).children(ticks(from, to).map((ms) => div().child(hhmm(ms))));
 }
 
-export function Legend(t) {
+export function Legend(t, leisure) {
   const item = (swatch, label) => h_flex().gap(6).items_center().child(swatch.w(14).flex_none().rounded(2)).child(label);
   return h_flex()
     .gap(16)
@@ -97,5 +100,6 @@ export function Legend(t) {
     .child(item(div().h(10).bg(t.muted), "я работал"))
     .child(item(div().h(10).bg(t.raised), "включён, без активности"))
     .child(item(div().h(10).bg(t.chrome).border_1().border_color(t.border), "выключен"))
-    .child(item(div().h(4).bg(t.muted), "агенты"));
+    .child(item(div().h(4).bg(t.muted), "агенты"))
+    .children(leisure ? [item(div().h(10).bg(t.raised).border_1().border_color(t.muted), "досуг")] : []);
 }

@@ -1,10 +1,10 @@
 // The day as strips of bars, and what a drag over them means. Pure: no imports, tests load it as it is.
 
-// Projects take ansi1..ansi6 in config order; no project is dim, an unknown id muted.
-export function projectColor(id, order) {
+// A project's own colour, else ansi1..ansi6 by its place; no project is dim, an unknown id muted.
+export function projectColor(id, projects) {
   if (!id) return "dim";
-  const i = (order ?? []).indexOf(id);
-  return i < 0 ? "muted" : `ansi${(i % 6) + 1}`;
+  const i = (projects ?? []).findIndex((p) => p.id === id);
+  return i < 0 ? "muted" : projects[i].color || `ansi${(i % 6) + 1}`;
 }
 
 // Pieces closer than a pixel join when they show the same thing, or when one of them is too thin

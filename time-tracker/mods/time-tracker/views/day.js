@@ -231,11 +231,6 @@ export class Day {
     return this.projects.find((p) => p.id === id)?.name || id;
   }
 
-  // Project ids in config order, for their colours.
-  order() {
-    return this.projects.map((p) => p.id);
-  }
-
   // The time the strip draws.
   range() {
     return { from: this.data.from, to: this.data.to };
@@ -316,7 +311,7 @@ export class Day {
         .flex_none()
         .gap(4)
         .child(DragArea(this).gap(4).child(Strip(this, t, { from, to, h: 20, radius: 4 })).child(AgentsStrip(this, t, { from, to })).child(HourLabels(t, from, to)))
-        .child(Legend(t)),
+        .child(Legend(t, d.timeline.leisure?.length > 0)),
     );
     const sessions = d.sessions ?? [];
     const rows = sessions.length

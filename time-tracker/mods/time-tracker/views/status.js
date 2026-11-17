@@ -131,7 +131,7 @@ export class Status {
       case "away":
         return chip.child(clock(t.dim)).child(text(t.dim, `${formatDuration(c.me)} · отошёл ${formatDuration(c.away)}`));
       default: {
-        const order = this.catalog?.projects.map((p) => p.id) ?? [];
+        const order = this.catalog?.projects ?? [];
         return chip.child(clock()).child(text(t.foreground, formatDuration(c.me)))
           .when(Boolean(c.project), (el) =>
             el.child(text(t.dim, "·")).child(div().size(7).rounded(3.5).flex_none().bg(t[projectColor(c.project, order)] ?? t.muted))
@@ -148,7 +148,7 @@ export class Status {
       .text_size(12).text_color(t.foreground);
     if (this.day?.down || this.day?.error) return body.child(div().text_color(t.ansi3).whitespace_normal().child(this.day.down ? "Сборщик не отвечает" : this.day.error));
     if (!r) return body.child(div().text_color(t.dim).child(this.dayBusy ? "Загрузка…" : "Нет данных"));
-    const order = this.catalog?.projects.map((p) => p.id) ?? [];
+    const order = this.catalog?.projects ?? [];
     const projects = r.projects.filter((p) => p.me >= 60_000);
     const max = Math.max(...projects.map((p) => p.me));
     const session = s?.session_start > 0 ? `сессия с ${hhmm(s.session_start)}` : "сессии нет";

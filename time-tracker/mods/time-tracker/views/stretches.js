@@ -7,7 +7,6 @@ import { TEXT } from "../ui.js";
 import { Link } from "./menu.js";
 
 export function StretchList(view, t, stretches, { row, gap }) {
-  const order = view.order();
   const list = v_flex();
   for (const s of stretches) {
     if (s.gap_before > 0)
@@ -32,7 +31,7 @@ export function StretchList(view, t, stretches, { row, gap }) {
         .rounded(6)
         .when(s.current, (el) => el.bg(t.chrome))
         .child(div().w(84).flex_none().text_color(t.dim).child(`${hhmm(s.start)}–${hhmm(s.end)}`))
-        .child(div().size(8).flex_none().rounded(4).bg(t[projectColor(s.project, order)] ?? t.muted))
+        .child(div().size(8).flex_none().rounded(4).bg(t[projectColor(s.project, view.projects)] ?? t.muted))
         .child(div().flex_none().font_medium().child(view.name(s.project)))
         .when(Boolean(share), (el) => el.child(div().min_w(0).truncate().text_size(TEXT.small).text_color(t.dim).child(share)))
         .child(div().flex_1())

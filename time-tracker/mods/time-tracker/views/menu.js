@@ -101,9 +101,9 @@ export function MarkupMenu(view) {
       );
 
   const projects = (prefix, pick) =>
-    view.projects.map((p) =>
+    view.projects.filter((p) => !p.archived).map((p) =>
       Item(`${prefix}-${p.id}`, (cx) => pick(p.id, cx), p.id === top)
-        .child(div().flex_none().size(8).rounded(4).bg(t[projectColor(p.id, view.order())] ?? t.muted))
+        .child(div().flex_none().size(8).rounded(4).bg(t[projectColor(p.id, view.projects)] ?? t.muted))
         .child(div().min_w(0).truncate().child(p.name || p.id)),
     );
   let submenu = null;
