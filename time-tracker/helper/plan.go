@@ -262,7 +262,7 @@ func checkGoal(g Goal) (Goal, error) {
 	return g, nil
 }
 
-// putGoal sets a project's goal from g.From on; earlier versions stay.
+// putGoal sets a project's goal from g.From on; earlier versions stay. A change is logged in history.json.
 func (d *Daemon) putGoal(r *http.Request) (int, any, error) {
 	id := r.PathValue("id")
 	var g Goal
@@ -270,6 +270,7 @@ func (d *Daemon) putGoal(r *http.Request) (int, any, error) {
 		return 0, nil, err
 	}
 	var p Project
+	ch := Change{Kind: "goal-set", Project: id}
 	_, err := d.editConfig(func(c *Config) error {
 		i := slices.IndexFunc(c.Projects, func(x Project) bool { return x.ID == id })
 		if i < 0 {
@@ -279,10 +280,14 @@ func (d *Daemon) putGoal(r *http.Request) (int, any, error) {
 		if err != nil {
 			return err
 		}
+		ch.Goal, ch.PrevGoals = &g, c.Projects[i].Goals
 		c.Projects[i].Goals = setGoal(c.Projects[i].Goals, g)
-		p = c.Projects[i]
+		ch.Goals, p = c.Projects[i].Goals, c.Projects[i]
 		return nil
 	})
+	if err == nil && !sameGoals(ch.PrevGoals, ch.Goals) {
+		d.logChange(ch)
+	}
 	return http.StatusOK, p, err
 }
 

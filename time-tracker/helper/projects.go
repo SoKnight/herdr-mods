@@ -429,6 +429,16 @@ type preview struct {
 	Overlap *overlapInfo `json:"overlap"` // null when nothing
 }
 
+// rulesBefore is the rules ahead of rule id. The rule is always in the list as the preview builds it;
+// 409 rather than a panic if that ever breaks (a build of 17.11 panicked here when it lost an edited rule's id).
+func rulesBefore(rules []Rule, id int64) ([]Rule, error) {
+	i := slices.IndexFunc(rules, func(x Rule) bool { return x.ID == id })
+	if i < 0 {
+		return nil, fail(http.StatusConflict, "правила изменились, повторите")
+	}
+	return rules[:i], nil
+}
+
 // postRulePreview shows what a rule would match over the last 7 days and how much of it an earlier rule
 // keeps, writing nothing. "id" names the rule being edited, 0 for a new one.
 // ponytail: time a Не работа rule drops is in no list, so a rule over it previews nothing; keep excluded segments aside if that matters
@@ -454,7 +464,10 @@ func (d *Daemon) postRulePreview(r *http.Request) (int, any, error) {
 		rules = insertRule(rules, rule)
 	}
 	rules = moveBefore(rules, rule.ID, req.Before)
-	earlier := rules[:slices.IndexFunc(rules, func(x Rule) bool { return x.ID == rule.ID })]
+	earlier, err := rulesBefore(rules, rule.ID)
+	if err != nil {
+		return 0, nil, err
+	}
 
 	now := nowMs()
 	tl, err := d.fresh(now-7*24*60*60_000, now)

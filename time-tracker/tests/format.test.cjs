@@ -133,6 +133,24 @@ test('history entries', () => {
   assert.deepEqual([del[0].key, del[0].title, del[0].sub], ['h:4', 'Правило Universe: «Jira»', 'удалено']);
 });
 
+test('goal changes in history', () => {
+  const g = { from: '2026-11-01', dir: 'min', minutes: 390, period: 'day', weekdays: [1, 2, 3, 4, 5], calendar: true };
+  const at = (d) => new Date(2026, 10, d, 12, 0).getTime();
+  const changes = [
+    { id: 7, kind: 'goal-set', at: at(20), project: 'easy', goal: { from: '2026-11-20', off: true }, goals: [g, { from: '2026-11-20', off: true }], prev_goals: [g] },
+    { id: 6, kind: 'goal-set', at: at(19), project: 'easy', goal: g, goals: [g], prev_goals: [] },
+    { id: 5, kind: 'pay-set', at: at(18) }, // a kind this version doesn't know: left out
+  ];
+  const rows = F.historyEntries({ changes }, { name: () => 'Easy', activity: (x) => x, ruleText: () => '', dayStartMs: 0 });
+  assert.deepEqual(rows.map((r) => [r.key, r.kind, r.title, r.sub]), [
+    ['h:7', 'goal', 'Цель Easy убрана', 'с 20 ноября · было: ≥ 6ч 30м / раб. день'],
+    ['h:6', 'goal', 'Цель Easy: ≥ 6ч 30м / раб. день', 'с 1 ноября · новая'],
+  ]);
+  assert.deepEqual(rows[0].undo, ['history', 'undo', '7']);
+  const dec = F.historyEntries({ changes: [{ id: 8, kind: 'goal-set', at: at(20), project: 'easy', goal: { ...g, from: '2025-12-01' }, prev_goals: [] }] }, { name: () => 'Easy' });
+  assert.equal(dec[0].sub, 'с 1 декабря 2025 · новая');
+});
+
 test('manual range', () => {
   const H = 3600_000, M = 60_000;
   const day0 = new Date(2026, 10, 16).getTime();

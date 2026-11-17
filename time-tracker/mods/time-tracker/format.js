@@ -214,8 +214,8 @@ export const offReduce = (days, project) => Math.round(days.reduce((n, d) => n +
 
 const ENTRY_KIND = { project: "assign", exclude: "excl", activity: "activity", note: "note", add: "manual" };
 
-// История правок: corrections, rule changes and days off as rows, newest first. opts: name(project id),
-// activity(id), ruleText(rule), dayStartMs.
+// История правок: corrections, rule and goal changes and days off as rows, newest first; change kinds it
+// doesn't know are left out. opts: name(project id), activity(id), ruleText(rule), dayStartMs.
 export function historyEntries({ corrections = [], changes = [], days_off = [] }, { name, activity, ruleText, dayStartMs }) {
   const span = (c) => `${hhmm(c.start)}–${hhmm(c.end)}`;
   const manual = (note) => (note ? `вручную · ${note}` : "вручную");
@@ -233,7 +233,16 @@ export function historyEntries({ corrections = [], changes = [], days_off = [] }
     const custom = c.kind === "note" || c.kind === "add";
     return { key: `c:${c.id}`, kind: ENTRY_KIND[c.kind] ?? "note", title, sub: custom ? manual(c.note) : sub, at: c.made || c.start, undo: ["correct", "rm", String(c.id)] };
   };
+  const fromGoal = (h) => {
+    const g = h.goal, [y, m, d] = g.from.split("-").map(Number);
+    const was = goalOn(h.prev_goals ?? [], g.from);
+    const title = g.off ? `Цель ${name(h.project)} убрана` : `Цель ${name(h.project)}: ${goalLine(g)}`;
+    const from = `с ${d} ${MONTHS[m - 1]}${y === new Date(h.at).getFullYear() ? "" : ` ${y}`}`;
+    return { key: `h:${h.id}`, kind: "goal", title, sub: `${from} · ${was ? `было: ${goalLine(was)}` : "новая"}`, at: h.at, undo: ["history", "undo", String(h.id)] };
+  };
   const fromChange = (h) => {
+    if (h.kind === "goal-set") return fromGoal(h);
+    if (!h.kind?.startsWith("rule-")) return null;
     const range = `применено к ${appliedRange(h.from, h.at, dayStartMs)}`;
     const ms = (plus) => (h.ms >= 60000 ? ` · ${plus}${formatDuration(h.ms)}` : "");
     const rule = h.rule ?? h.prev;
@@ -252,7 +261,7 @@ export function historyEntries({ corrections = [], changes = [], days_off = [] }
     at: o.made,
     undo: ["dayoff", "rm", String(o.id)],
   });
-  return [...corrections.map(fromCorrection), ...changes.map(fromChange), ...days_off.map(fromDayOff)].sort((a, b) => b.at - a.at);
+  return [...corrections.map(fromCorrection), ...changes.map(fromChange).filter(Boolean), ...days_off.map(fromDayOff)].sort((a, b) => b.at - a.at);
 }
 
 // The seven days, Monday to Sunday, of the week around a day.

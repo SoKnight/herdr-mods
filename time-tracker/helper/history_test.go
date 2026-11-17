@@ -210,3 +210,35 @@ func TestHistoryDaysOff(t *testing.T) {
 	assertEq(t, runCLI([]string{"history", "--from", strconv.FormatInt(now-minMs, 10), "--to", strconv.FormatInt(now, 10)}, &out, &errOut), 0)
 	assertEq(t, strings.Contains(out.String(), "dayoff rm 2\n"), true)
 }
+
+func TestGoalChangesAreLoggedAndUndone(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	now := mskAt(2026, 11, 20, 12, 0)
+	swap(t, &nowMs, func() int64 { return now })
+	day := map[string]any{"from": "2026-11-01", "dir": "min", "minutes": 390, "period": "day", "weekdays": []int{1, 2, 3, 4, 5}, "calendar": true}
+	api.do("PUT", "/v1/projects/easy/goal", day, nil)
+	api.do("PUT", "/v1/projects/easy/goal", day, nil) // the same again: nothing new
+	api.do("PUT", "/v1/projects/easy/goal", map[string]any{"from": "2026-11-20", "off": true}, nil)
+	var h struct {
+		Changes []Change `json:"changes"`
+	}
+	api.do("GET", fmt.Sprintf("/v1/history?from=%d&to=%d", now-minMs, now+minMs), nil, &h)
+	assertEq(t, len(h.Changes), 2)
+	off, set := h.Changes[0], h.Changes[1]
+	assertEq(t, fmt.Sprintf("%s %s %t %d %d", off.Kind, off.Project, off.Goal.Off, len(off.Goals), len(off.PrevGoals)), "goal-set easy true 2 1")
+	assertEq(t, fmt.Sprint(len(set.PrevGoals), set.Goal.Minutes), "0 390")
+	undo := func(id int64) int { return api.do("POST", fmt.Sprintf("/v1/history/%d/undo", id), nil, nil) }
+	assertEq(t, undo(set.ID), http.StatusConflict) // the removal came after it
+	assertEq(t, undo(off.ID), http.StatusNoContent)
+	assertEq(t, len(d.project("easy").Goals), 1)
+	assertEq(t, undo(set.ID), http.StatusNoContent)
+	assertEq(t, len(d.project("easy").Goals), 0)
+}
+
+func TestRulesBeforeAMissingRule(t *testing.T) {
+	_, err := rulesBefore([]Rule{{ID: 1}, {ID: 2}}, 3)
+	assertEq(t, fmt.Sprint(err.(*apiError).code, " ", err), "409 правила изменились, повторите")
+	earlier, _ := rulesBefore([]Rule{{ID: 1}, {ID: 2}}, 2)
+	assertEq(t, len(earlier), 1)
+}
