@@ -144,6 +144,8 @@ test('manual range', () => {
   assert.deepEqual(F.manualRange('2026-11-16', 6 * H, 1410, 30), { start: day0 + 23.5 * H, end: day0 + 24.5 * H }); // past midnight
   assert.deepEqual(F.manualRange('2026-11-16', 6 * H, 60, 120), { start: day0 + 25 * H, end: day0 + 26 * H }); // before 06:00: the night after
   assert.equal(F.manualRange('2026-11-16', 6 * H, 930, 840), null);
+  assert.equal(F.manualRange('2026-11-16', 6 * H, 300, 420), null); // 05:00 is the night after, 07:00 this morning
+  assert.deepEqual(F.manualRange('2026-11-16', 6 * H, 360, 359), { start: day0 + 6 * H, end: day0 + 29 * H + 59 * M }); // 06:00 this day, 05:59 the next
   const me = [{ start: day0 + 14 * H, end: day0 + 14 * H + 25 * M }, { start: day0 + 16 * H, end: day0 + 17 * H }];
   assert.equal(F.overlapMs(me, day0 + 14 * H, day0 + 15.5 * H), 25 * M);
 });
