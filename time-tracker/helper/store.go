@@ -232,19 +232,28 @@ func (st *Store) ClearOpen() error {
 
 // addItem appends to a JSON array file, assigning max(id)+1.
 func addItem[T any](st *Store, file string, v T, id func(*T) *int64) (T, error) {
+	vs, err := addItems(st, file, []T{v}, id)
+	return vs[0], err
+}
+
+// addItems appends vs in one write, so they are stored all or none, each given the next free id.
+func addItems[T any](st *Store, file string, vs []T, id func(*T) *int64) ([]T, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	path := filepath.Join(st.Dir, file)
 	var all []T
 	if err := readJSON(path, &all); err != nil {
-		return v, err
+		return vs, err
 	}
 	var next int64 = 1
 	for i := range all {
 		next = max(next, *id(&all[i])+1)
 	}
-	*id(&v) = next
-	return v, writeJSON(path, append(all, v))
+	vs = slices.Clone(vs)
+	for i := range vs {
+		*id(&vs[i]) = next + int64(i)
+	}
+	return vs, writeJSON(path, append(all, vs...))
 }
 
 func removeItem[T any](st *Store, file string, want int64, id func(*T) *int64) error {
@@ -289,6 +298,9 @@ func (st *Store) Corrections() ([]Correction, error) {
 }
 func (st *Store) AddCorrection(c Correction) (Correction, error) {
 	return addItem(st, "corrections.json", c, corrID)
+}
+func (st *Store) AddCorrections(cs []Correction) ([]Correction, error) {
+	return addItems(st, "corrections.json", cs, corrID)
 }
 func (st *Store) RemoveCorrection(id int64) error {
 	return removeItem(st, "corrections.json", id, corrID)

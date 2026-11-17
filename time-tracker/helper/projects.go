@@ -274,6 +274,12 @@ func nextRuleID(rules []Rule, changes []Change) int64 {
 	return id + 1
 }
 
+// sameOpenRule tells whether x is open and asks for what r asks for.
+func sameOpenRule(x, r Rule) bool {
+	return x.To == 0 && x.Kind == r.Kind && strings.EqualFold(x.Value, r.Value) &&
+		strings.EqualFold(x.Title, r.Title) && x.Project == r.Project
+}
+
 // openRule is the index of rule id when it is still open, else -1.
 func openRule(rules []Rule, id int64) int {
 	return slices.IndexFunc(rules, func(r Rule) bool { return r.ID == id && r.To == 0 })
@@ -310,10 +316,7 @@ func (d *Daemon) postRule(r *http.Request) (int, any, error) {
 		if err != nil {
 			return err
 		}
-		if i := slices.IndexFunc(c.Rules, func(x Rule) bool {
-			return x.To == 0 && x.Kind == rule.Kind && strings.EqualFold(x.Value, rule.Value) &&
-				strings.EqualFold(x.Title, rule.Title) && x.Project == rule.Project
-		}); i >= 0 {
+		if i := slices.IndexFunc(c.Rules, func(x Rule) bool { return sameOpenRule(x, rule) }); i >= 0 {
 			out = c.Rules[i]
 			return same
 		}

@@ -32,7 +32,8 @@ const usage = `herdr-time <команда> [--json]
   export --from --to --project id [--format md|csv] [--round 1|5|15] [--agents] [--out файл] [--dry-run]
   correct add <json> | rm <id> | ls
   beat <json>
-  unassigned --from --to
+  inbox [--day YYYY-MM-DD]
+  inbox apply <json>
   rules
   rule add <json> | set <id> <json> | rm <id> | preview <json>
   hints [--name X] [--days N]
@@ -239,11 +240,14 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 			q.Set("project", *project)
 		}
 		return apiCall{method: "GET", path: "/v1/report?" + q.Encode(), show: showReport}, nil
-	case cmd == "unassigned":
-		if _, _, err := span(); err != nil {
-			return apiCall{}, err
+	case cmd == "inbox" && sub == "apply":
+		body, err := arg(1, "<json>")
+		return apiCall{method: "POST", path: "/v1/inbox", body: []byte(body), show: showInboxApplied}, err
+	case cmd == "inbox" && sub == "":
+		if *day != "" {
+			q.Set("day", *day)
 		}
-		return apiCall{method: "GET", path: "/v1/unassigned?" + q.Encode(), show: showUnassigned}, nil
+		return apiCall{method: "GET", path: "/v1/inbox?" + q.Encode(), show: showInbox}, nil
 	case cmd == "export":
 		if *dry && *out != "" {
 			return apiCall{}, fmt.Errorf("export: --dry-run never writes a file, drop --out")

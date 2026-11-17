@@ -131,15 +131,34 @@ func showCorrections(w io.Writer, resp []byte) error {
 	return nil
 }
 
-func showUnassigned(w io.Writer, resp []byte) error {
-	var list []unassigned
-	if err := json.Unmarshal(resp, &list); err != nil {
+// showInbox prints the day's Другое windows, each with its suggestion.
+func showInbox(w io.Writer, resp []byte) error {
+	var v struct {
+		Day   string      `json:"day"`
+		Ms    int64       `json:"ms"`
+		Items []inboxItem `json:"items"`
+	}
+	if err := json.Unmarshal(resp, &v); err != nil {
 		return err
 	}
-	for _, u := range list {
-		fmt.Fprintf(w, "%8s  %-5s  %s\n", dur(u.Ms), u.Kind, strings.TrimSpace(u.Value+" "+u.Exe))
+	fmt.Fprintf(w, "%s · другое %s\n", v.Day, dur(v.Ms))
+	for _, it := range v.Items {
+		what := strings.Join(slices.DeleteFunc([]string{it.App, it.Title, it.Path, it.Server}, func(s string) bool { return s == "" }), " · ")
+		if s := it.Suggest; s != nil {
+			what += fmt.Sprintf("  → %s (%s %s)", s.Project, s.Rule.Kind, s.Rule.Value)
+		}
+		fmt.Fprintf(w, "%8s  %s\n", dur(it.Ms), what)
 	}
 	return nil
+}
+
+func showInboxApplied(w io.Writer, resp []byte) error {
+	var v struct{ Rules, Corrections int }
+	if err := json.Unmarshal(resp, &v); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(w, "правил %d, правок %d\n", v.Rules, v.Corrections)
+	return err
 }
 
 func showPeriods(w io.Writer, resp []byte) error {

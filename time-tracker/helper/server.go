@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -115,7 +114,8 @@ func newServer(d *Daemon) http.Handler {
 		"GET /v1/corrections":          d.getCorrections,
 		"POST /v1/corrections":         d.postCorrection,
 		"DELETE /v1/corrections/{id}":  d.deleteCorrection,
-		"GET /v1/unassigned":           read(d.getUnassigned),
+		"GET /v1/inbox":                read(d.getInbox),
+		"POST /v1/inbox":               d.postInbox,
 		"GET /v1/rules":                read(d.getRules),
 		"POST /v1/rules":               d.postRule,
 		"PUT /v1/rules/{id}":           d.putRule,
@@ -472,53 +472,6 @@ func (d *Daemon) deleteCorrection(r *http.Request) (int, any, error) {
 		return 0, nil, closedPeriod(p.ID)
 	}
 	return http.StatusNoContent, nil, d.Store.RemoveCorrection(id)
-}
-
-type unassigned struct {
-	Kind  string `json:"kind"`
-	Value string `json:"value"`
-	Exe   string `json:"exe"`
-	Ms    int64  `json:"ms"`
-}
-
-// getUnassigned sums my time without a project by what a rule could match: the signal's folder, a
-// Figma file, else the window title. Agents are not included.
-func (d *Daemon) getUnassigned(r *http.Request) (int, any, error) {
-	from, to, err := rangeParams(r)
-	if err != nil {
-		return 0, nil, err
-	}
-	tl, _, err := d.timeline(from, to)
-	if err != nil {
-		return 0, nil, err
-	}
-	sums := map[unassigned]int64{}
-	for _, s := range tl.Me {
-		if s.Project != "" {
-			continue
-		}
-		key := unassigned{Kind: "title", Value: s.Title, Exe: s.App}
-		if s.Path != "" {
-			key = unassigned{Kind: "path", Value: s.Path}
-		} else if strings.EqualFold(s.App, figmaExe) {
-			key = unassigned{Kind: "figma", Value: s.Title}
-		}
-		if key.Value != "" { // nothing a rule could match
-			sums[key] += s.End - s.Start
-		}
-	}
-	out := []unassigned{}
-	for k, ms := range sums {
-		k.Ms = ms
-		out = append(out, k)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Ms != out[j].Ms {
-			return out[i].Ms > out[j].Ms
-		}
-		return out[i].Kind+out[i].Value < out[j].Kind+out[j].Value
-	})
-	return http.StatusOK, out, nil
 }
 
 func (d *Daemon) postQuit(r *http.Request) (int, any, error) {
