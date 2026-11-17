@@ -3,10 +3,9 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme } from "herdr";
 import { call } from "../client.js";
-import { monthRange, midnight, dayTitle, activityLabel, catalog, stamp, historyEntries, ACTIVITIES } from "../format.js";
+import { monthRange, midnight, dayTitle, activityLabel, catalog, stamp, historyEntries, ACTIVITIES, MONTH_NAMES } from "../format.js";
 import { ruleText, targetName } from "../rules.js";
 import { Button, Icon, Message, Segmented, TEXT } from "../ui.js";
-import { MONTHS } from "./table.js";
 
 const ICONS = { assign: "arrow-right", excl: "ban", activity: "tag", note: "sticky-note", manual: "plus", rule: "funnel" };
 
@@ -86,7 +85,7 @@ export class History {
     const t = theme();
     const col = v_flex().id("history").flex_1().min_w(0).min_h(0).overflow_y_scroll().pt(18).px(22).gap(14);
     const n = this.entries?.length;
-    const when = this.day && (this.period === "month" ? MONTHS[Number(this.day.slice(5, 7)) - 1] : dayTitle(this.day).split(", ")[1]);
+    const when = this.day && (this.period === "month" ? MONTH_NAMES[Number(this.day.slice(5, 7)) - 1] : dayTitle(this.day).split(", ")[1]);
     col.child(
       h_flex()
         .flex_none()

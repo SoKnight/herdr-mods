@@ -4,7 +4,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme, props, layout } from "herdr";
 import { call } from "../client.js";
-import { formatDuration, activityLabel, weekRange, monthRange, dayString, catalog, ACTIVITIES } from "../format.js";
+import { formatDuration, activityLabel, weekRange, monthRange, dayString, catalog, ACTIVITIES, MONTH_NAMES } from "../format.js";
 import { shiftDay } from "../lanes.js";
 import { IconButton, Message, TEXT } from "../ui.js";
 import { Link } from "./menu.js";
@@ -12,7 +12,6 @@ import { panelShown } from "./day.js";
 
 const REFRESH_MS = 60_000;
 const WEEKDAYS = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
-export const MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
 
 const label = (day) => `${day.slice(8)}.${day.slice(5, 7)}`;
 
@@ -97,7 +96,7 @@ export class Table {
     if (!r) return "…";
     if (this.mode === "month") {
       const d = new Date(r.from);
-      return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+      return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
     }
     return `${label(dayString(r.from))} – ${label(dayString(r.to - 24 * 3600_000))}`;
   }

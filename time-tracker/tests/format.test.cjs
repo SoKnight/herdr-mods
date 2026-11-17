@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/format.js'), 'utf8');
-const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, exportName, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs };`)();
+const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, exportName, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs, fmtMin, signed, roundRows, parseHours, hoursText, goalOn, goalShort, goalLine, goalVersion, weeklyTotal, progressText, goalBlock, forecastLine };`)();
 const rcode = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/rules.js'), 'utf8');
 const R = new Function(`${rcode.replace(/^export /gm, '')}
 return { ruleText, targetName };`)();
@@ -148,4 +148,36 @@ test('manual range', () => {
   assert.deepEqual(F.manualRange('2026-11-16', 6 * H, 360, 359), { start: day0 + 6 * H, end: day0 + 29 * H + 59 * M }); // 06:00 this day, 05:59 the next
   const me = [{ start: day0 + 14 * H, end: day0 + 14 * H + 25 * M }, { start: day0 + 16 * H, end: day0 + 17 * H }];
   assert.equal(F.overlapMs(me, day0 + 14 * H, day0 + 15.5 * H), 25 * M);
+});
+
+test('goal wording', () => {
+  const u = { from: '2026-11-01', dir: 'min', minutes: 390, period: 'day', weekdays: [1, 2, 3, 4, 5], calendar: true, weekends: true };
+  const t = { from: '2026-11-01', dir: 'min', minutes: 480, period: 'week' };
+  assert.deepEqual([0, 0.5, 209, -209, 120].map(F.signed), ['0', '0', '+3ч 29м', '−3ч 29м', '+2ч']);
+  assert.deepEqual(['6,5', '6.5', '8', '6,25', '0', '-1', 'abc', ''].map(F.parseHours), [390, 390, 480, 375, null, null, null, null]);
+  assert.deepEqual([390, 480, 375].map(F.hoursText), ['6,5', '8', '6,25']);
+  const r = F.roundRows([{ project: 'u', me: 181.5 * 60000 }, { project: 't', me: 36 * 60000 + 29999 }, { project: '', me: 29999 }]);
+  assert.deepEqual([r.rows.map((x) => x.me / 60000), r.total / 60000], [[182, 36, 0], 218]);
+  assert.equal(F.goalOn([u, { ...u, from: '2026-12-01', minutes: 420 }], '2026-11-30').minutes, 390);
+  assert.equal(F.goalOn([u, { from: '2026-11-20', off: true }], '2026-11-21'), null);
+  assert.equal(F.goalOn([{ ...u, from: '2026-12-01', minutes: 420 }, u], '2026-12-02').minutes, 420);
+  assert.deepEqual([u, t, { ...t, period: 'month', minutes: 2400, dir: 'max' }].map(F.goalShort), ['6,5ч / д', '8ч / нед', '≤ 40ч / мес']);
+  assert.deepEqual([u, { ...u, calendar: false }, t].map(F.goalLine), ['≥ 6ч 30м / раб. день', '≥ 6ч 30м / день', '≥ 8ч / нед.']);
+  assert.equal(F.goalVersion(u), 'с 1 ноября 2026 — не меньше 6,5ч в день');
+  assert.equal(F.goalVersion({ from: '2026-12-01', off: true }), 'с 1 декабря 2026 — цели нет');
+  assert.equal(F.weeklyTotal([u, t, { ...t, minutes: 300 }]), 2730);
+  assert.deepEqual([[t, 480, 480], [t, 360, 480], [{ ...t, dir: 'max' }, 300, 480], [{ ...t, dir: 'max' }, 540, 480]].map((a) => F.progressText(...a)), ['цель выполнена', 'не хватает 2ч', 'в пределах цели', 'сверх цели на 1ч']);
+});
+
+test('goal rows and the forecast', () => {
+  const sum = (o) => ({ plan: 0, plan_to_date: 0, fact: 0, me: 0, balance: 0, forecast: 0, need: 0, days: 0, days_left: 0, ...o });
+  const day = { period: 'day', dir: 'min', minutes: 390 };
+  const u = { project: 'u', goal: day, day: sum({ me: 181, plan: 390, fact: 181, balance: -209 }), week: sum({}), month: sum({ plan: 7800, forecast: 4901 }), agents: 343 };
+  const b = F.goalBlock(u);
+  assert.deepEqual({ ...b, fill: Math.round(b.fill) }, { value: '3ч 1м', goal: '6ч 30м', fill: 46, sub: '−3ч 29м · агенты 5ч 43м' });
+  const tr = { project: 't', goal: { period: 'week', dir: 'min', minutes: 480 }, day: sum({ me: 36 }), week: sum({ plan: 480, fact: 36 }), month: sum({}), agents: 0 };
+  assert.deepEqual(F.goalBlock(tr), { value: '36м', goal: '8ч в нед.', fill: 7.5, sub: 'за неделю 36м' });
+  const weekend = { ...u, day: sum({ me: 60, fact: 60, balance: 60 }), agents: 0 };
+  assert.deepEqual(F.goalBlock(weekend), { value: '1ч', goal: null, fill: null, sub: null });
+  assert.equal(F.forecastLine({ ...u, day: { ...u.day }, month: sum({ plan: 7800, forecast: 4901 }) }, 'Universe', '2026-11-16'), 'прогноз ноября по Universe ≈ 81ч 41м из 130ч');
 });

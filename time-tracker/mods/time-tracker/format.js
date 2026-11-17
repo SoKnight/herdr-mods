@@ -109,7 +109,77 @@ export function exportName(project, from, to, format, dayStartMs = 0, now = Date
 // The line under a session's title: how it began and when it ends.
 export const sessionNote = (manual, minutes) => `${manual ? "начата вручную" : "началась сама после простоя"} · закончится после ${minutes} мин без активности`;
 
-const SHORT_MONTHS = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+export const MONTH_NAMES = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
+
+// Goals and balance: minutes in, wording out.
+export const fmtMin = (min) => formatDuration(min * 60000);
+
+// "+3ч 29м" / "−3ч 29м" (U+2212); under a minute "0".
+export const signed = (min) => (Math.abs(min) < 1 ? "0" : `${min < 0 ? "−" : "+"}${fmtMin(Math.abs(min))}`);
+
+// "6,5" / "6.5" hours → whole minutes; not a positive number → null.
+export function parseHours(s) {
+  if (!/^\d+([.,]\d+)?$/.test(String(s).trim())) return null;
+  return Math.round(parseFloat(String(s).trim().replace(",", ".")) * 60) || null;
+}
+
+// 390 → "6,5", 480 → "8", 375 → "6,25".
+export const hoursText = (min) => String(Number((min / 60).toFixed(2))).replace(".", ",");
+
+// The version in force on a day: the greatest `from` ≤ day, whatever the order; an `off` one is none.
+export function goalOn(goals, day) {
+  let g = null;
+  for (const v of goals) if (v.from <= day && (!g || v.from >= g.from)) g = v;
+  return g && !g.off ? g : null;
+}
+
+const PERIOD_SHORT = { day: "д", week: "нед", month: "мес" };
+const PERIOD_LINE = { day: "день", week: "нед.", month: "мес." };
+const PERIOD_IN = { day: "в день", week: "в неделю", month: "в месяц" };
+
+// "6,5ч / д", "≤ 40ч / мес".
+export const goalShort = (g) => `${g.dir === "max" ? "≤ " : ""}${hoursText(g.minutes)}ч / ${PERIOD_SHORT[g.period]}`;
+
+// "≥ 6ч 30м / раб. день".
+export const goalLine = (g) => `${g.dir === "max" ? "≤" : "≥"} ${fmtMin(g.minutes)} / ${g.period === "day" && g.calendar ? "раб. день" : PERIOD_LINE[g.period]}`;
+
+// "с 1 ноября 2026 — не меньше 6,5ч в день".
+export function goalVersion(g) {
+  const [y, m, d] = g.from.split("-").map(Number);
+  const from = `с ${d} ${MONTHS[m - 1]} ${y}`;
+  return g.off ? `${from} — цели нет` : `${from} — ${g.dir === "max" ? "не больше" : "не меньше"} ${hoursText(g.minutes)}ч ${PERIOD_IN[g.period]}`;
+}
+
+// A week's worth of goals, minutes: month goals as 12 / 52 of a month.
+export const weeklyTotal = (goals) => goals.reduce((n, g) => n + (g.period === "day" ? g.minutes * g.weekdays.length : g.period === "week" ? g.minutes : Math.round((g.minutes * 12) / 52)), 0);
+
+export function progressText(goal, fact, plan) {
+  if (goal.dir === "max") return fact <= plan ? "в пределах цели" : `сверх цели на ${fmtMin(fact - plan)}`;
+  return fact >= plan ? "цель выполнена" : `не хватает ${fmtMin(plan - fact)}`;
+}
+
+// One `goals` entry as a right-panel or card row.
+export function goalBlock(info) {
+  const { goal, day, agents } = info;
+  const ag = agents >= 1 ? `агенты ${fmtMin(agents)}` : null;
+  const fill = (s) => (s.plan ? Math.min(100, (s.fact / s.plan) * 100) : null);
+  if (goal.period === "day") {
+    return { value: fmtMin(day.me), goal: day.plan ? fmtMin(day.plan) : null, fill: fill(day), sub: day.plan ? [signed(day.balance), ag].filter(Boolean).join(" · ") : ag };
+  }
+  const [s, short, word] = goal.period === "week" ? [info.week, "нед.", "неделю"] : [info.month, "мес.", "месяц"];
+  return { value: fmtMin(day.me), goal: `${fmtMin(s.plan)} в ${short}`, fill: fill(s), sub: `за ${word} ${fmtMin(s.fact)}` };
+}
+
+// "прогноз ноября по Universe ≈ 81ч 41м из 130ч".
+export const forecastLine = (info, name, day) => `прогноз ${MONTHS[Number(day.slice(5, 7)) - 1]} по ${name} ≈ ${fmtMin(info.month.forecast)} из ${fmtMin(info.month.plan)}`;
+
+// Each row's `me` (ms) rounded half up to whole minutes, the total their sum.
+export function roundRows(rows) {
+  const out = rows.map((r) => ({ ...r, me: Math.floor(r.me / 60000 + 0.5) * 60000 }));
+  return { rows: out, total: out.reduce((n, r) => n + r.me, 0) };
+}
+
+const SHORT_MONTHS =["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 const dayMonth = (ms) => [new Date(ms).getDate(), SHORT_MONTHS[new Date(ms).getMonth()]];
 
 // "17 ноя, 00:40".
