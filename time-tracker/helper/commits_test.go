@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,7 +44,7 @@ func TestCommitsSkipsNonRepos(t *testing.T) {
 	mkdirs(t, root, "plain")
 	d.Rules = folderRules("easy", filepath.Join(root, "plain"))
 	called := false
-	swap(t, &gitLog, func(string, int64, int64) ([]Commit, error) { called = true; return nil, nil })
+	swap(t, &gitLog, func(context.Context, string, int64, int64) ([]Commit, error) { called = true; return nil, nil })
 	assertEq(t, len(d.commits(0, 1000)), 0)
 	assertEq(t, called, false)
 }
@@ -60,7 +61,7 @@ func repoDaemon(t *testing.T, project string) (*Daemon, string) {
 func TestCommitsWithoutGit(t *testing.T) {
 	d, _ := repoDaemon(t, "easy")
 	calls := 0
-	swap(t, &gitLog, func(string, int64, int64) ([]Commit, error) { calls++; return nil, exec.ErrNotFound })
+	swap(t, &gitLog, func(context.Context, string, int64, int64) ([]Commit, error) { calls++; return nil, exec.ErrNotFound })
 	now := mskAt(2026, 11, 10, 12, 0)
 	swap(t, &nowMs, func() int64 { return now })
 	assertEq(t, len(d.commits(0, now)), 0)
@@ -76,7 +77,7 @@ func TestCommitsRouteDropsOtherProjects(t *testing.T) {
 	other := filepath.Join(filepath.Dir(repo), "lei")
 	mkdirs(t, other, ".git")
 	d.Rules.rules = append(d.Rules.rules, Rule{ID: 10, Kind: "folder", Value: other, Project: leisureID})
-	swap(t, &gitLog, func(r string, from, to int64) ([]Commit, error) {
+	swap(t, &gitLog, func(_ context.Context, r string, from, to int64) ([]Commit, error) {
 		return []Commit{{At: 2000, Msg: "b " + filepath.Base(r)}, {At: 1000, Msg: "a " + filepath.Base(r)}}, nil
 	})
 	var out struct {
@@ -140,12 +141,13 @@ func TestExportCommits(t *testing.T) {
 	assertEq(t, strings.Contains(exportCSV(m, on), "'=cmd"), true)
 }
 
-func TestGitLogReal(t *testing.T) {
+// gitRepo is a temp repo with my commit "mine" (user.email t@x) and o@x's "theirs"; git runs git in it.
+func gitRepo(t *testing.T) (repo string, git func(args ...string)) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
-	repo := t.TempDir()
-	git := func(args ...string) {
+	repo = t.TempDir()
+	git = func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", append([]string{"-C", repo, "-c", "commit.gpgsign=false", "-c", "user.name=T"}, args...)...)
 		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull)
@@ -157,8 +159,26 @@ func TestGitLogReal(t *testing.T) {
 	git("config", "user.email", "t@x")
 	git("commit", "--allow-empty", "-m", "mine")
 	git("-c", "user.email=o@x", "commit", "--allow-empty", "-m", "theirs")
+	return repo, git
+}
+
+func TestGitEmailFailureIsNotCached(t *testing.T) {
+	repo, _ := gitRepo(t)
+	gone, cancel := context.WithCancel(context.Background())
+	cancel() // as a timeout would: git never answered
+	if _, err := gitLog(gone, repo, 0, time.Now().UnixMilli()+60_000); err == nil {
+		t.Fatal("a failed user.email lookup must skip the repo, not list every author")
+	}
+	got, err := gitLog(context.Background(), repo, 0, time.Now().UnixMilli()+60_000)
+	must(t, err)
+	assertEq(t, len(got), 1) // asked again: only mine
+	assertEq(t, got[0].Msg, "mine")
+}
+
+func TestGitLogReal(t *testing.T) {
+	repo, git := gitRepo(t)
 	now := time.Now().UnixMilli()
-	got, err := gitLog(repo, 0, now+60_000)
+	got, err := gitLog(context.Background(), repo, 0, now+60_000)
 	must(t, err)
 	assertEq(t, len(got), 1)
 	assertEq(t, got[0].Msg, "mine")
@@ -179,18 +199,18 @@ func TestGitLogReal(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("%v %s", err, out)
 	}
-	all, err := gitLog(repo, t0*1000-1000, t0*1000+60_000)
+	all, err := gitLog(context.Background(), repo, t0*1000-1000, t0*1000+60_000)
 	must(t, err)
 	assertEq(t, len(all), 1)
 	assertEq(t, all[0].Msg, "rebased")
-	got, err = gitLog(repo, 0, now+60_000)
+	got, err = gitLog(context.Background(), repo, 0, now+60_000)
 	must(t, err)
 	var msgs []string
 	for _, c := range got {
 		msgs = append(msgs, c.Msg)
 	}
 	assertEq(t, strings.Join(slices.Sorted(slices.Values(msgs)), "|"), "mine|rebased|with file")
-	none, err := gitLog(repo, 0, 1000)
+	none, err := gitLog(context.Background(), repo, 0, 1000)
 	must(t, err)
 	assertEq(t, len(none), 0)
 }

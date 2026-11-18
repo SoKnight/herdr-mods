@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"os/exec"
@@ -30,20 +31,28 @@ var gitLog = realGitLog
 
 var gitEmails sync.Map // repo -> user.email, for the process
 
-func gitOut(repo string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout) // git runs under d.mu: a stall must not freeze the collector
+// gitOut runs git in repo for at most gitTimeout; a git killed by ctx gives ctx's error, not its exit.
+func gitOut(ctx context.Context, repo string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
 	cmd := hidden(exec.CommandContext(ctx, "git", append([]string{"-C", repo}, args...)...))
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	return out.Bytes(), err
 }
 
-func realGitLog(repo string, from, to int64) ([]Commit, error) {
+func realGitLog(ctx context.Context, repo string, from, to int64) ([]Commit, error) {
 	email, ok := gitEmails.Load(repo)
 	if !ok {
-		out, _ := gitOut(repo, "config", "user.email") // exit 1 = not set: every author's then
+		out, err := gitOut(ctx, repo, "config", "user.email")
+		var exit *exec.ExitError
+		if err != nil && !(errors.As(err, &exit) && exit.ExitCode() == 1) { // exit 1 = not set: every author's then
+			return nil, err // a timeout or a broken repo: asked again next time, and no one else's commits meanwhile
+		}
 		email, _ = gitEmails.LoadOrStore(repo, strings.TrimSpace(string(out)))
 	}
 	args := []string{"log", "--branches", "--tags", "--remotes", "--no-merges", // not --all: stashes and notes are commits too
@@ -51,7 +60,7 @@ func realGitLog(repo string, from, to int64) ([]Commit, error) {
 	if e := email.(string); e != "" {
 		args = append(args, "--fixed-strings", "--author=<"+e+">")
 	}
-	out, err := gitOut(repo, args...)
+	out, err := gitOut(ctx, repo, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +121,7 @@ func (d *Daemon) commits(from, to int64) []Commit {
 	}
 	out := []Commit{}
 	for _, repo := range repoDirs(d.Rules) {
-		list, err := gitLog(repo, from, to)
+		list, err := gitLog(context.Background(), repo, from, to)
 		if err != nil {
 			continue
 		}
