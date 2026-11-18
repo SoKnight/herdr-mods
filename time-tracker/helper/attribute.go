@@ -334,7 +334,7 @@ func agentPieces(rules *Rules, spans []Span, from, to int64) []AgentSeg {
 			continue
 		}
 		id, why := rules.FolderProject(sp.Cwd, sp.Start)
-		if id == excludeID || id == leisureID {
+		if dropped(id) {
 			continue
 		}
 		if id == "" {

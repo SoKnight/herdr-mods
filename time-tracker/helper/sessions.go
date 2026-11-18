@@ -19,6 +19,7 @@ type Stretch struct {
 	Shares    []Share `json:"shares"`     // the other projects, most first; never nil
 	GapBefore int64   `json:"gap_before"` // the break before it (> pause), 0 for the first and for project splits
 	Current   bool    `json:"current"`
+	Commits   int     `json:"commits"` // my commits in the stretch's project from its start to its end
 }
 type Session struct {
 	Start     int64     `json:"start"`
@@ -320,7 +321,7 @@ func clipList[T any](xs []T, from, to int64, ends func(*T) (*int64, *int64)) []T
 	return out
 }
 
-func describe(ss Session, me []Segment, s Settings, now int64) Session {
+func describe(ss Session, me []Segment, commits []Commit, s Settings, now int64) Session {
 	to := ss.End
 	if ss.Open {
 		to = now
@@ -329,7 +330,12 @@ func describe(ss Session, me []Segment, s Settings, now int64) Session {
 	pause := int64(s.PauseMinutes) * 60_000
 	ss.Stretches = Stretches(me, pause)
 	ss.Me, ss.Breaks = 0, 0
-	for _, st := range ss.Stretches {
+	for i, st := range ss.Stretches {
+		for _, c := range commits {
+			if c.Project == st.Project && st.Start <= c.At && c.At <= st.End {
+				ss.Stretches[i].Commits++
+			}
+		}
 		ss.Me += st.Me
 		ss.Breaks += st.GapBefore
 	}

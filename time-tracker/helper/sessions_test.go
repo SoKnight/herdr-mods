@@ -94,13 +94,13 @@ func TestFocusBridgesShortBreaksAndOther(t *testing.T) {
 
 func TestDescribeSession(t *testing.T) {
 	me := []Segment{sg("u", 0, 20), sg("u", 40, 60), sg("t", 61, 70)} // t-segment is after the session
-	ss := describe(Session{Start: at(0), End: at(60), Open: true}, me[:2], tsettings(), at(61))
+	ss := describe(Session{Start: at(0), End: at(60), Open: true}, me[:2], nil, tsettings(), at(61))
 	assertEq(t, ss.Me, int64(40*minMs))
 	assertEq(t, ss.Breaks, int64(20*minMs))
 	assertEq(t, len(ss.Stretches), 2)
 	assertEq(t, ss.Stretches[1].Current, true)
-	assertEq(t, describe(Session{Start: at(0), End: at(60), Open: true}, me[:2], tsettings(), at(70)).Stretches[1].Current, false) // 10 min ≥ idle_minutes
-	cut := describe(Session{Start: at(0), End: at(50)}, me, tsettings(), at(200))                                                  // a manual end inside a segment
+	assertEq(t, describe(Session{Start: at(0), End: at(60), Open: true}, me[:2], nil, tsettings(), at(70)).Stretches[1].Current, false) // 10 min ≥ idle_minutes
+	cut := describe(Session{Start: at(0), End: at(50)}, me, nil, tsettings(), at(200))                                                  // a manual end inside a segment
 	assertEq(t, cut.Me, int64(30*minMs))
 }
 

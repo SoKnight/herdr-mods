@@ -36,14 +36,15 @@ type Daemon struct {
 	// mu guards everything above and the trackers. The poll loop, the agent stream and every HTTP
 	// handler hold it, and closed spans reach the store before it is released, so a timeline never
 	// sees a span neither open nor stored.
-	mu       sync.Mutex
-	tracker  Tracker
-	agents   AgentTracker
-	cfgMod   time.Time
-	setMod   time.Time
-	calMod   time.Time
-	quit     chan struct{}
-	quitOnce sync.Once
+	mu          sync.Mutex
+	tracker     Tracker
+	agents      AgentTracker
+	cfgMod      time.Time
+	setMod      time.Time
+	calMod      time.Time
+	commitCache map[[2]int64]commitsAt
+	quit        chan struct{}
+	quitOnce    sync.Once
 
 	// A bad projects.json or settings.json found at start: collection runs on the defaults and the
 	// read endpoints answer with the error until a reload reads the file.

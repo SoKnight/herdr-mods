@@ -122,6 +122,7 @@ func newServer(d *Daemon) http.Handler {
 		"PUT /v1/rules/{id}":             d.putRule,
 		"DELETE /v1/rules/{id}":          d.deleteRule,
 		"POST /v1/rules/preview":         read(d.postRulePreview),
+		"GET /v1/commits":                read(d.getCommits),
 		"GET /v1/hints":                  read(d.getHints),
 		"GET /v1/history":                d.getHistory,
 		"POST /v1/history/{id}/undo":     d.postUndo,
@@ -353,8 +354,12 @@ func (d *Daemon) sessions(me []Segment, now int64) ([]Session, error) {
 		return cmp.Compare(a.ID, b.ID)
 	})
 	out := Sessions(me, marks, int64(d.S.SessionIdleMinutes)*60_000, now)
+	var commits []Commit
+	if len(out) > 0 { // to the next minute, so the 60 s cache holds between polls
+		commits = d.commits(out[0].Start, (now/60_000+1)*60_000)
+	}
 	for i := range out {
-		out[i] = describe(out[i], me, d.S, now)
+		out[i] = describe(out[i], me, commits, d.S, now)
 	}
 	return out, nil
 }

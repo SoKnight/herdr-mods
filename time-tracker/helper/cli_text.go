@@ -386,3 +386,16 @@ func showSettings(w io.Writer, resp []byte) error {
 	fmt.Fprintf(w, "скрытые заголовки: %s\n", strings.Join(s.HiddenTitles, ", "))
 	return nil
 }
+
+func showCommits(w io.Writer, resp []byte) error {
+	var v struct {
+		Commits []Commit `json:"commits"`
+	}
+	if err := json.Unmarshal(resp, &v); err != nil {
+		return err
+	}
+	for _, c := range v.Commits {
+		fmt.Fprintf(w, "%s  %-10s  %-12s  %s\n", time.UnixMilli(c.At).Format("02.01 15:04"), c.Project, c.Repo, c.Msg)
+	}
+	return nil
+}
