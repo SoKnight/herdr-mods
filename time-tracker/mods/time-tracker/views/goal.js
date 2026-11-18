@@ -39,7 +39,7 @@ export class GoalEdit {
     this.weekdays = new Set(g?.weekdays ?? [1, 2, 3, 4, 5]);
     this.calendar = g ? Boolean(g.calendar) : true;
     this.weekends = g ? Boolean(g.weekends) : true;
-    this.hours = InputState.new({ placeholder: "6,5", value: g ? hoursText(g.minutes) : "" });
+    this.hours = InputState.new({ placeholder: "часы", value: g ? hoursText(g.minutes) : "" });
     this.hours.on("submit", (_e, cx) => this.save(cx));
     const [y, m] = today.split("-").map(Number);
     const next = dayString(new Date(y, m, 1).getTime());
@@ -87,7 +87,13 @@ export class GoalEdit {
       }
       steps.push({ args: ["pay", "set", this.project.id, JSON.stringify(pay)], done: () => (this.opened.pay = now.pay) });
     }
-    const text = steps.length === 2 ? "Цель и оплата сохранены." : steps[0]?.args[0] === "pay" ? "Оплата сохранена." : "Цель сохранена.";
+    // No goal yet and no hours typed: say so rather than close as if the goal were saved.
+    const noGoal = !this.current && !this.hours.value().trim();
+    if (!steps.length && noGoal) {
+      this.error = "Цель не задана: впишите часы, например 6,5";
+      return cx.notify();
+    }
+    const text = steps.length === 2 ? "Цель и оплата сохранены." : steps[0]?.args[0] === "pay" ? (noGoal ? "Оплата сохранена. Цель не задана: впишите часы." : "Оплата сохранена.") : "Цель сохранена.";
     if (!steps.length) return this.close(cx);
     this.finish(cx, steps, text);
   }
