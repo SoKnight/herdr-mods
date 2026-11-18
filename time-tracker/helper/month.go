@@ -16,7 +16,7 @@ type monthRow struct {
 	From     string   `json:"from"`     // first day, inside the month
 	To       string   `json:"to"`       // last day, inside the month and not after today
 	Workdays int      `json:"workdays"` // working days From..To
-	Plan     int64    `json:"plan"`     // plan minutes From..To, rounded half up per row
+	Plan     int64    `json:"plan"`     // plan minutes From..To: the plan to To less the plan before From, each rounded half up
 	Me       int64    `json:"me"`
 	Fact     int64    `json:"fact"` // counted toward the goal
 	Agents   int64    `json:"agents"`
@@ -67,6 +67,7 @@ func buildMonth(project, month, rows, today string, days []planDay, notes []Segm
 		}
 	}
 	notes = slices.SortedStableFunc(slices.Values(notes), func(a, b Segment) int { return cmp.Compare(a.Start, b.Start) })
+	var cum int64 // the plan up to the row's end in 1/planUnit minutes: rows round it once, so they add up to the plan to date
 	for t := first; !t.After(last) && date(t) <= today; {
 		end := t
 		if rows == "week" {
@@ -83,13 +84,18 @@ func buildMonth(project, month, rows, today string, days []planDay, notes []Segm
 			Current: date(upTo) == today, Notes: []string{}}
 		in := slices.DeleteFunc(slices.Clone(days), func(pd planDay) bool { return pd.Day < r.From || pd.Day > r.To })
 		sum := sumGoal(in, project, today)
-		r.Plan, r.Me, r.Fact = sum.Plan, sum.Me, sum.Fact
+		r.Me, r.Fact = sum.Me, sum.Fact
+		before := roundUnits(cum)
 		for _, pd := range in {
+			if p := pd.Plan[project]; p > 0 {
+				cum += planUnits(p)
+			}
 			r.Agents += pd.Agents[project]
 			if pd.Work {
 				r.Workdays++
 			}
 		}
+		r.Plan = roundUnits(cum) - before
 		for _, n := range notes {
 			if day := s.DayOf(n.Start); n.Project == project && n.Note != "" && r.From <= day && day <= r.To && !slices.Contains(r.Notes, n.Note) {
 				r.Notes = append(r.Notes, n.Note)

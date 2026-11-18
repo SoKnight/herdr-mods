@@ -170,13 +170,17 @@ func planDays(days []string, cal Calendar, projects []Project, off []DayOff, rep
 // is a whole number, so plans add up exactly and a sum ending in .5 rounds up instead of drifting.
 const planUnit = 4 * 3 * 5 * 7 * 29 * 31
 
+// planUnits is a day's plan in 1/planUnit minutes; roundUnits is a sum of them in minutes, half up.
+func planUnits(p float64) int64 { return int64(math.Round(p * planUnit)) }
+func roundUnits(u int64) int64  { return (u + planUnit/2) / planUnit }
+
 func sumGoal(days []planDay, project, today string) goalSum {
 	var s goalSum
 	var plan, toDate int64 // in 1/planUnit minutes
 	for _, d := range days {
 		p, ok := d.Plan[project]
 		if ok && p > 0 {
-			u := int64(math.Round(p * planUnit))
+			u := planUnits(p)
 			plan += u
 			s.Days++
 			if d.Day <= today {
@@ -190,8 +194,8 @@ func sumGoal(days []planDay, project, today string) goalSum {
 			s.Me += d.Me[project]
 		}
 	}
-	s.Plan = (plan + planUnit/2) / planUnit
-	s.PlanToDate = (toDate + planUnit/2) / planUnit
+	s.Plan = roundUnits(plan)
+	s.PlanToDate = roundUnits(toDate)
 	s.Balance = s.Fact - s.PlanToDate
 	s.Forecast = s.Fact
 	if s.PlanToDate > 0 {

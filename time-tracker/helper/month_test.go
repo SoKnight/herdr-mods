@@ -33,13 +33,22 @@ func TestBuildMonthWeeks(t *testing.T) {
 
 func TestWeeklyGoalRowsAddUp(t *testing.T) {
 	projects := []Project{{ID: "t", Goals: []Goal{{From: "2026-11-01", Dir: "min", Minutes: 480, Period: "week"}}}}
-	m := buildMonth("t", "2026-11", "week", "2026-11-30", planDays(novDays(), shipped(t), projects, nil, Report{}), nil, tsettings())
-	var sum int64
-	for _, r := range m.Rows {
-		sum += r.Plan
+	days := planDays(novDays(), shipped(t), projects, nil, Report{})
+	for _, today := range []string{"2026-11-30", "2026-11-16"} {
+		m := buildMonth("t", "2026-11", "week", today, days, nil, tsettings())
+		var sum int64
+		for _, r := range m.Rows {
+			sum += r.Plan
+		}
+		// Each row is the plan to its end less the plan to its start, both rounded once: the rows add up to
+		// the plan to date that Месяц shows (2057 = 30 × 480 / 7 for the whole month, 1097 to the 16th).
+		toDate := sumGoal(days, "t", today).PlanToDate
+		assertEq(t, fmt.Sprintln(today, len(m.Rows), m.Rows[0].Plan, m.Rows[1].Plan, m.Total.Plan, sum == toDate),
+			fmt.Sprintln(today, map[string]int{"2026-11-30": 6, "2026-11-16": 4}[today], 69, 480, toDate, true))
+		assertEq(t, m.Plan, int64(2057))
 	}
-	assertEq(t, fmt.Sprint(len(m.Rows), m.Rows[0].Plan, m.Rows[1].Plan, m.Total.Plan == sum), "6 69 480 true")
-	assertEq(t, m.Plan, int64(2057)) // 30 × 480 / 7 rounded once, while the rows add up to 2058
+	assertEq(t, sumGoal(days, "t", "2026-11-30").PlanToDate, int64(2057))
+	assertEq(t, sumGoal(days, "t", "2026-11-16").PlanToDate, int64(1097))
 }
 
 func TestMonthReportRoute(t *testing.T) {
