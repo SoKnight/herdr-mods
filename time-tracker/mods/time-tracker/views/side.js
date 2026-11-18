@@ -25,7 +25,7 @@ export function Side(view, t, { caption, lines, session = false }) {
     const info = p.project && goals.find((g) => g.project === p.project);
     if (info && !session) return against(info, fill);
     const sub = info && goalBlock(info).sub;
-    return ProjectBlock(t, { ...base(p.project), value: formatDuration(p.me), fill, sub: sub && info.goal.period === "day" ? `сегодня ${sub}` : sub });
+    return ProjectBlock(t, { ...base(p.project), value: formatDuration(p.me), fill, sub });
   };
   const idle = session ? [] : goals.filter((g) => !projects.some((p) => p.project === g.project));
   return SideFrame(t, "day-side")
