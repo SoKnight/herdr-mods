@@ -4,7 +4,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex, Input, InputState } from "gpui-base";
 import { theme } from "herdr";
 import { call } from "../client.js";
-import { parseHours, hoursText, goalOn, goalVersion, dayTitle, dayString, fmtMin, money, parseMoney, payOn, monthOf, dialogWrites, MONTH_NAMES } from "../format.js";
+import { parseHours, parseDay, hoursText, goalOn, goalVersion, dayTitle, dayString, fmtMin, money, parseMoney, payOn, monthOf, dialogWrites, MONTH_NAMES } from "../format.js";
 import { projectColor } from "../lanes.js";
 import { monthStartTitle } from "../rules.js";
 import { Dialog, Dropdown, Check, Button, Icon, Message, Segmented, TEXT } from "../ui.js";
@@ -49,6 +49,9 @@ export class GoalEdit {
       { id: "next", day: next, label: `${monthStartTitle(next)} ${next.slice(0, 4)}` },
     ];
     this.from = this.froms[0].day;
+    this.fromOther = false; // «другая дата…»: the day is typed into fromText
+    this.fromText = InputState.new({ placeholder: "ДД.ММ" });
+    this.fromText.on("submit", (_e, cx) => this.save(cx));
     this.openList = null; // the open dropdown: "dir" | "period" | "from"
     this.showVersions = false;
     this.error = null;
@@ -59,21 +62,31 @@ export class GoalEdit {
 
   controls() {
     return {
-      goal: [this.dir, this.hours.value().trim(), this.period, [...this.weekdays].sort((a, b) => a - b), this.calendar, this.weekends, this.from],
+      goal: [this.dir, this.hours.value().trim(), this.period, [...this.weekdays].sort((a, b) => a - b), this.calendar, this.weekends, this.fromOther ? `other:${this.fromText.value().trim()}` : this.from],
       pay: [this.payKind, this.sum.value().trim()],
     };
+  }
+
+  // The day the goal acts from: a listed one, or the typed one (null when it doesn't read as a day).
+  fromDay() {
+    return this.fromOther ? parseDay(this.fromText.value(), this.today) : this.from;
   }
 
   // Sends `goal set` when the goal's controls were changed and `pay set` when the pay's were.
   save(cx) {
     const now = this.controls(), writes = dialogWrites(this.opened, now), steps = [];
+    const from = this.fromDay();
+    if (writes.goal && !from) {
+      this.error = "Дата: ДД.ММ, например 16.11";
+      return cx.notify();
+    }
     if (writes.goal) {
       const minutes = parseHours(this.hours.value());
       if (minutes === null) {
         this.error = "Часы: число больше нуля, например 6,5";
         return cx.notify();
       }
-      const goal = { from: this.from, dir: this.dir, minutes, period: this.period, weekdays: [...this.weekdays].sort((a, b) => a - b), calendar: this.calendar, weekends: this.weekends };
+      const goal = { from, dir: this.dir, minutes, period: this.period, weekdays: [...this.weekdays].sort((a, b) => a - b), calendar: this.calendar, weekends: this.weekends };
       steps.push({ args: ["goal", "set", this.project.id, JSON.stringify(goal)], done: () => (this.opened.goal = now.goal) });
     }
     if (writes.pay) {
@@ -99,7 +112,12 @@ export class GoalEdit {
   }
 
   remove(cx) {
-    this.finish(cx, [{ args: ["goal", "set", this.project.id, JSON.stringify({ from: this.from, off: true })] }], "Цель убрана.");
+    const from = this.fromDay();
+    if (!from) {
+      this.error = "Дата: ДД.ММ, например 16.11";
+      return cx.notify();
+    }
+    this.finish(cx, [{ args: ["goal", "set", this.project.id, JSON.stringify({ from, off: true })] }], "Цель убрана.");
   }
 
   // Writes the steps one after the other; a refusal stops there and stays open with its reason, the panel
@@ -137,6 +155,7 @@ export class GoalEdit {
     this.closed = true;
     this.hours.release();
     this.sum.release();
+    this.fromText.release();
     this.closeDialog(cx);
   }
 
@@ -149,10 +168,12 @@ export class GoalEdit {
     const t = theme();
     const caption = (text) => div().flex_none().text_size(TEXT.small).text_color(t.dim).child(text);
     const dropdown = (id, label, items, pick) =>
-      Dropdown({ id: `goal-${id}`, label, open: this.openList === id, items, onToggle: (open, cx) => ((this.openList = open ? id : null), cx.notify()), onPick: (v, cx) => (pick(v), (this.openList = null), cx.notify()) });
+      Dropdown({ id: `goal-${id}`, label, open: this.openList === id, items, onToggle: (open, cx) => ((this.openList = open ? id : null), cx.notify()), onPick: (v, cx) => (pick(v, cx), (this.openList = null), cx.notify()) });
     const labelOf = (items, id) => items.find((it) => it.id === id)?.label ?? "";
     const from = this.froms.find((f) => f.day === this.from);
-    const since = `с ${from?.label ?? this.from}`; // the buttons name the day they act from
+    const typed = this.fromOther && this.fromDay();
+    // the buttons name the day they act from
+    const since = this.fromOther ? (typed ? `с ${dayTitle(typed).split(", ")[1]}` : "с даты") : `с ${from?.label ?? this.from}`;
     const versions = [...(this.project.goals ?? [])].sort((a, b) => b.from.localeCompare(a.from));
     const goal = v_flex()
       .flex_1()
@@ -213,10 +234,17 @@ export class GoalEdit {
           .child(
             dropdown(
               "from",
-              h_flex().gap(6).items_center().child(div().text_color(t.dim).child(Icon("calendar", 12))).child(from?.label ?? this.from),
-              this.froms.map((f) => ({ id: f.id, label: f.label })),
-              (v) => (this.from = this.froms.find((f) => f.id === v).day),
+              h_flex().gap(6).items_center().child(div().text_color(t.dim).child(Icon("calendar", 12))).child(this.fromOther ? "другая дата" : (from?.label ?? this.from)),
+              [...this.froms.map((f) => ({ id: f.id, label: f.label })), { id: "other", label: "другая дата…" }],
+              (v, cx) => {
+                this.fromOther = v === "other";
+                if (!this.fromOther) this.from = this.froms.find((f) => f.id === v).day;
+                else cx.timer.after(0, () => this.fromOther && this.fromText.focus()); // once the input is drawn
+              },
             ),
+          )
+          .when(this.fromOther, (el) =>
+            el.child(Input.new(this.fromText).id("goal-from-day").flex_none().w(64).h(28).px(6).rounded(6).border_1().border_color(t.border).bg(t.background).text_size(TEXT.small)),
           )
           .child(Link({ id: "goal-history", label: "история", onClick: (cx) => ((this.showVersions = !this.showVersions), cx.notify()) }).text_size(TEXT.small)),
       )

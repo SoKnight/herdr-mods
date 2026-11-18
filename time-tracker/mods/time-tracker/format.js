@@ -111,6 +111,16 @@ export const fmtMin = (min) => formatDuration(min * 60000);
 // "+3ч 29м" / "−3ч 29м" (U+2212); under a minute "0".
 export const signed = (min) => (Math.abs(min) < 1 ? "0" : `${min < 0 ? "−" : "+"}${fmtMin(Math.abs(min))}`);
 
+// "16.11" (today's year) or "16.11.2026" → "2026-11-16"; anything else, or no such day → null.
+export function parseDay(s, today) {
+  const m = /^\s*(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?\s*$/.exec(s);
+  if (!m) return null;
+  const [d, mo, y] = [Number(m[1]), Number(m[2]), m[3] ? Number(m[3]) : Number(today.slice(0, 4))];
+  const at = new Date(y, mo - 1, d);
+  if (at.getFullYear() !== y || at.getMonth() !== mo - 1 || at.getDate() !== d) return null;
+  return `${y}-${pad2(mo)}-${pad2(d)}`;
+}
+
 // "6,5" / "6.5" hours → whole minutes; not a positive number → null.
 export function parseHours(s) {
   if (!/^\d+([.,]\d+)?$/.test(String(s).trim())) return null;

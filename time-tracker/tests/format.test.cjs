@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/format.js'), 'utf8');
-const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs, fmtMin, signed, roundRows, parseHours, hoursText, goalOn, goalShort, goalLine, goalVersion, weeklyTotal, progressText, goalBlock, forecastLine, weekDays, weekTitle, weekRelative, mainGoal, dayDiff, weekRows, monthGrid, cellBars, offTitle, workdaysText, offReduce, money, parseMoney, monthOptions, goalStrip, reportFootnote, exportFile, payOn, payShort, dialogWrites, monthTitle, monthGenitive, closedText, offDaysText, agentsText };`)();
+const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs, fmtMin, signed, roundRows, parseHours, hoursText, goalOn, goalShort, goalLine, goalVersion, weeklyTotal, progressText, goalBlock, forecastLine, weekDays, weekTitle, weekRelative, mainGoal, dayDiff, weekRows, monthGrid, cellBars, offTitle, workdaysText, offReduce, money, parseMoney, monthOptions, goalStrip, reportFootnote, exportFile, payOn, payShort, dialogWrites, monthTitle, monthGenitive, closedText, offDaysText, agentsText, parseDay };`)();
 const rcode = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/rules.js'), 'utf8');
 const R = new Function(`${rcode.replace(/^export /gm, '')}
 return { ruleText, targetName };`)();
@@ -339,4 +339,12 @@ test('month close wording', () => {
     ['month-reopen', 'Октябрь открыт заново', 'закрытые цифры сохранены', false, ['history', 'undo', '9']],
     ['month-close', 'Октябрь закрыт · отчёт отправлен', null, true, ['history', 'undo', '8']],
   ]);
+});
+
+test('parseDay reads ДД.ММ and ДД.ММ.ГГГГ', () => {
+  assert.equal(F.parseDay('16.11', '2026-11-18'), '2026-11-16');
+  assert.equal(F.parseDay(' 1.2.2027 ', '2026-11-18'), '2027-02-01');
+  assert.equal(F.parseDay('31.11', '2026-11-18'), null);
+  assert.equal(F.parseDay('16/11', '2026-11-18'), null);
+  assert.equal(F.parseDay('', '2026-11-18'), null);
 });
