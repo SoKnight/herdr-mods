@@ -738,3 +738,21 @@ func TestStatusRemindCloseFailureKeepsStatus(t *testing.T) {
 	assertEq(t, st.Version != "", true)
 	assertEq(t, st.Remind != nil && st.Remind.Close == "", true)
 }
+
+func TestStatusWaitingOutsideRulesNamesTheFolder(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	now := at(-4)
+	swap(t, &nowMs, func() int64 { return now })
+	swap(t, &takeSample, func(ms int64) (Sample, error) { return Sample{At: ms, LastInput: ms, Exe: "idea64.exe"}, nil })
+	d.S.SessionIdleMinutes = 45
+	d.agents.Cap = waitCap(d.S)
+	seed(t, d, power(-10, 5))
+	d.agentsSeen(map[string]AgentState{"t1": {Cwd: `C:\Dev\herdr-mods`, Waiting: true, Since: at(-4)}})
+	now = at(0)
+	d.poll()
+	var st waitStatus
+	assertEq(t, api.do("GET", "/v1/status", nil, &st), http.StatusOK)
+	assertEq(t, st.Waiting.Project, "")
+	assertEq(t, st.Waiting.Name, "herdr-mods")
+}

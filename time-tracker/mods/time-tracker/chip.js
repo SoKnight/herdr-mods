@@ -15,14 +15,14 @@ export function chipState(status, lastSample, now) {
   if (quiet) return { kind: "silent", since: quiet.since };
   if (status.error) return { kind: "error", text: status.error };
   const me = status.today_me_ms;
-  // An agent waiting for me says so whatever I am doing.
+  // An agent waiting for me is added to whatever I am doing: wait, how long it has waited.
   const w = status.waiting;
-  if (w) return { kind: "waiting", me, wait: Math.max(0, now - w.since), project: w.project, name: w.name };
-  if (status.state === "away" && status.last_active > 0) return { kind: "away", me, away: Math.max(0, now - status.last_active) };
+  const add = (c) => (w ? { ...c, wait: Math.max(0, now - w.since) } : c);
+  if (status.state === "away" && status.last_active > 0) return add({ kind: "away", me, away: Math.max(0, now - status.last_active) });
   // An open session with no activity to be away from yet reads as working.
   if (status.state === "working" || status.state === "away")
-    return { kind: "working", me, project: status.project, name: status.project_name, agents: status.agents_working ?? 0 };
-  return { kind: "none", me };
+    return add({ kind: "working", me, project: status.project, name: status.project_name, agents: status.agents_working ?? 0 });
+  return add({ kind: "none", me });
 }
 
 export const SILENT_REMIND_MS = 600_000;

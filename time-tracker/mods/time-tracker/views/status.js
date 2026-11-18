@@ -137,6 +137,11 @@ export class Status {
       .on_size_change((size) => this.fit(size.width));
     const text = (color, s) => div().whitespace_nowrap().text_color(color).child(s);
     const clock = (color = t.muted) => div().text_color(color).child(Icon("clock", 13));
+    // An agent waiting: after the rest, in place of the working robot.
+    const waiting = (el) =>
+      el.when(c.wait !== undefined, (el) =>
+        el.child(text(t.dim, "·")).child(div().flex_none().text_color(t.ansi3).accessibility_label("Агент ждёт ответа").child(Icon("bot", 13)))
+          .child(text(t.ansi3, `ждёт${minuteOn(c.wait)}`)));
     switch (c.kind) {
       case "wait":
         return chip.child(clock()).child(text(t.dim, "…"));
@@ -146,20 +151,17 @@ export class Status {
       case "error":
         return chip.tooltip(c.text).child(clock()).child(text(t.ansi1 ?? t.dim, "ошибка"));
       case "none":
-        return chip.child(div().text_color(t.muted).child(Icon("play", 12))).child(text(t.muted, formatDuration(c.me)));
+        return waiting(chip.child(div().text_color(t.muted).child(Icon("play", 12))).child(text(t.muted, formatDuration(c.me))));
       case "away":
-        return chip.child(clock(t.dim)).child(text(t.dim, `${formatDuration(c.me)} · отошёл ${formatDuration(c.away)}`));
-      case "waiting":
-        return chip.child(clock()).child(text(t.foreground, formatDuration(c.me))).child(text(t.dim, "·"))
-          .child(h_flex().flex_none().h(18).px(6).gap(4).items_center().rounded(4).bg(t.foreground).text_color(t.chrome).font_weight(500)
-            .child(Icon("bot", 12)).child(div().whitespace_nowrap().child(`ждёт${minuteOn(c.wait)}`)));
+        return waiting(chip.child(clock(t.dim)).child(text(t.dim, `${formatDuration(c.me)} · отошёл ${formatDuration(c.away)}`)));
       default: {
         const order = this.catalog?.projects ?? [];
         return chip.child(clock()).child(text(t.foreground, formatDuration(c.me)))
           .when(Boolean(c.project), (el) =>
             el.child(text(t.dim, "·")).child(div().size(7).rounded(3.5).flex_none().bg(t[projectColor(c.project, order)] ?? t.muted))
               .child(text(t.muted, c.name || c.project)))
-          .when(c.agents > 0, (el) =>
+          .when(c.wait !== undefined, waiting)
+          .when(c.wait === undefined && c.agents > 0, (el) =>
             el.child(text(t.dim, "·")).child(div().relative().flex_none().text_color(t.muted).accessibility_label("Агент работает").child(Icon("bot", 13))
               .child(div().absolute().top(-2).right(-3).size(5).rounded(2.5).bg(t.ansi2))));
       }

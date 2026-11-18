@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -334,9 +335,9 @@ func (d *Daemon) longestWait(now int64) map[string]any {
 		return nil
 	}
 	id, _ := d.Rules.FolderProject(best.sp.Cwd, best.sp.Start)
-	name := id
-	if p := d.project(id); p != nil && p.Name != "" {
-		name = p.Name
+	name := filepath.Base(best.sp.Cwd) // a folder no rule covers: its name says which agent
+	if p := d.project(id); p != nil {
+		name = cmp.Or(p.Name, id)
 	}
 	return map[string]any{"project": id, "name": name, "since": best.sp.Start}
 }
