@@ -1,6 +1,9 @@
 package main
 
-import "strings"
+import (
+	"path"
+	"strings"
+)
 
 // Sample is one poll of the Windows session.
 type Sample struct {
@@ -9,12 +12,14 @@ type Sample struct {
 	Exe, Title    string
 	Server        string   // Minecraft server host:port, from the game log
 	CallExes      []string // exes currently holding the microphone
+	SoundExes     []string // exes holding an active, audible render session
 }
 
 // Tracker turns samples into spans.
 type Tracker struct {
 	PollMs   int64
 	CallApps []string
+	Hidden   []string // patterns of exes and titles whose window title is not kept
 
 	prev *Sample
 	open map[string]*Span
@@ -27,6 +32,34 @@ func (t *Tracker) callExe(s Sample) string {
 			if strings.EqualFold(app, e) {
 				return app
 			}
+		}
+	}
+	return ""
+}
+
+// slashFree maps / and \ to look-alikes that titles never hold, so path.Match's * spans them and \ is no escape.
+var slashFree = strings.NewReplacer("/", "∕", `\`, "⧵")
+
+// hiddenTitle tells whether a pattern matches the exe or the title, ignoring case; a bad pattern matches nothing.
+func hiddenTitle(patterns []string, exe, title string) bool {
+	exe, title = slashFree.Replace(strings.ToLower(exe)), slashFree.Replace(strings.ToLower(title))
+	for _, p := range patterns {
+		p = slashFree.Replace(strings.ToLower(p))
+		if ok, err := path.Match(p, exe); ok && err == nil {
+			return true
+		}
+		if ok, err := path.Match(p, title); ok && err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// soundExe returns the foreground exe when it is playing sound.
+func soundExe(s Sample) string {
+	for _, e := range s.SoundExes {
+		if s.Exe != "" && strings.EqualFold(e, s.Exe) {
+			return s.Exe
 		}
 	}
 	return ""
@@ -70,9 +103,15 @@ func (t *Tracker) Feed(s Sample) []Span {
 		set("input", false, 0, prevAt, "", "", "")
 	}
 	set("lock", s.Locked, s.At, s.At, "", "", "")
-	set("window", s.Exe != "", s.At, s.At, s.Exe, s.Title, s.Server)
+	title := s.Title
+	if hiddenTitle(t.Hidden, s.Exe, s.Title) {
+		title = ""
+	}
+	set("window", s.Exe != "", s.At, s.At, s.Exe, title, s.Server)
 	ce := t.callExe(s)
 	set("call", ce != "", s.At, s.At, ce, "", "")
+	se := soundExe(s)
+	set("sound", se != "", s.At, s.At, se, "", "")
 	t.prev = &s
 	return out
 }

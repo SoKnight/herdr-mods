@@ -628,3 +628,113 @@ func TestStatusSumsRoundedProjectMinutes(t *testing.T) {
 	assertEq(t, api.do("GET", "/v1/status", nil, &st), http.StatusOK)
 	assertEq(t, st.Me, int64(16*minMs)) // 11м + 5м, as День and Неделя count them
 }
+
+type waitStatus struct {
+	Working int `json:"agents_working"`
+	Waiting *struct {
+		Project string `json:"project"`
+		Name    string `json:"name"`
+		Since   int64  `json:"since"`
+	} `json:"waiting"`
+	TodayWaiting int64 `json:"today_waiting_ms"`
+}
+
+func TestStatusWaiting(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	now := at(0)
+	swap(t, &nowMs, func() int64 { return now })
+	swap(t, &takeSample, func(ms int64) (Sample, error) { return Sample{At: ms, LastInput: ms, Exe: "idea64.exe"}, nil })
+	d.S.SessionIdleMinutes = 45
+	d.agents.Cap = waitCap(d.S)
+	seed(t, d, power(-10, 5))
+	d.Rules.rules = append(d.Rules.rules, Rule{ID: 99, Kind: "folder", Value: `C:\Games`, Project: leisureID})
+	now = at(-4)
+	d.agentsSeen(map[string]AgentState{
+		"t1": {Cwd: `C:\Dev\other`, Working: true},
+		"t2": {Cwd: `C:\Dev\easy`, Waiting: true, Since: at(-4)},
+		"t3": {Cwd: `C:\Dev\easy`, Waiting: true, Since: at(-3 * 24 * 60)}, // stale
+		"t4": {Cwd: `C:\Games`, Working: true},                             // Досуг: neither working nor waiting here
+		"t5": {Cwd: `C:\Games`, Waiting: true, Since: at(-5)},
+	})
+	now = at(0)
+	d.poll()
+	var st waitStatus
+	assertEq(t, api.do("GET", "/v1/status", nil, &st), http.StatusOK)
+	assertEq(t, st.Working, 1)
+	assertEq(t, st.Waiting != nil, true)
+	assertEq(t, st.Waiting.Project, "easy")
+	assertEq(t, st.Waiting.Name, "Easy")
+	assertEq(t, st.Waiting.Since, at(-4))
+	assertEq(t, st.TodayWaiting, int64(4*minMs))
+
+	now = at(60) // past the cap with no snapshot since: still not a wait
+	st = waitStatus{}
+	assertEq(t, api.do("GET", "/v1/status", nil, &st), http.StatusOK)
+	assertEq(t, st.Waiting == nil, true)
+}
+
+func TestStaleDoneStatusIsNull(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	now := at(0)
+	swap(t, &nowMs, func() int64 { return now })
+	d.agents.Cap = waitCap(d.S)
+	d.agentsSeen(map[string]AgentState{"t17": {Cwd: `C:\Dev\easy`, Waiting: true, Since: at(-3 * 24 * 60)}})
+	var st waitStatus
+	assertEq(t, api.do("GET", "/v1/status", nil, &st), http.StatusOK)
+	assertEq(t, st.Waiting == nil, true)
+	assertEq(t, st.TodayWaiting, int64(0))
+}
+
+func TestStatusRemindClose(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 18, 12, 0) })
+	remind := func() (r struct {
+		Silent bool   `json:"silent"`
+		Close  string `json:"close"`
+	}) {
+		var st struct {
+			Remind *struct {
+				Silent bool   `json:"silent"`
+				Close  string `json:"close"`
+			} `json:"remind"`
+		}
+		assertEq(t, api.do("GET", "/v1/status", nil, &st), http.StatusOK)
+		assertEq(t, st.Remind != nil, true)
+		return *st.Remind
+	}
+	assertEq(t, remind().Close, "") // October has no time
+	assertEq(t, remind().Silent, true)
+	d.closeCache.ok = false // the day's answer is kept; a new day or a periods change drops it
+	seedWindow(t, d, mskAt(2026, 10, 20, 12, 0), "notepad.exe", "Easy notes", 60)
+	assertEq(t, remind().Close, "2026-10")
+	d.S.CloseReminder = false
+	assertEq(t, remind().Close, "")
+	d.S.CloseReminder = true
+	assertEq(t, remind().Close, "2026-10")
+	assertEq(t, api.do("POST", "/v1/months/2026-10/close", nil, nil), http.StatusOK)
+	assertEq(t, remind().Close, "")
+	assertEq(t, api.do("POST", "/v1/months/2026-10/reopen", nil, nil), http.StatusNoContent)
+	assertEq(t, remind().Close, "2026-10") // the cache follows periods.json
+	d.S.SilentWarning = false
+	assertEq(t, remind().Silent, false)
+}
+
+func TestStatusRemindCloseFailureKeepsStatus(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 18, 12, 0) })
+	must(t, os.MkdirAll(filepath.Join(d.Home, "raw"), 0o755))
+	must(t, os.Mkdir(filepath.Join(d.Home, "raw", "2026-10-15.jsonl"), 0o755)) // a day file that cannot be read: only October reads it
+	var st struct {
+		Version string `json:"version"`
+		Remind  *struct {
+			Close string `json:"close"`
+		} `json:"remind"`
+	}
+	assertEq(t, api.do("GET", "/v1/status", nil, &st), http.StatusOK)
+	assertEq(t, st.Version != "", true)
+	assertEq(t, st.Remind != nil && st.Remind.Close == "", true)
+}

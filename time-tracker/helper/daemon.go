@@ -36,12 +36,19 @@ type Daemon struct {
 	// mu guards everything above and the trackers. The poll loop, the agent stream and every HTTP
 	// handler hold it, and closed spans reach the store before it is released, so a timeline never
 	// sees a span neither open nor stored.
-	mu       sync.Mutex
-	tracker  Tracker
-	agents   AgentTracker
-	cfgMod   time.Time
-	setMod   time.Time
-	calMod   time.Time
+	mu          sync.Mutex
+	tracker     Tracker
+	agents      AgentTracker
+	cfgMod      time.Time
+	setMod      time.Time
+	calMod      time.Time
+	commitCache map[[2]int64]commitsAt
+	recent      []Commit
+	closeCache  struct { // remindClose's answer for a local day and periods.json as read
+		day, month string
+		key        [2]int64
+		ok         bool
+	}
 	quit     chan struct{}
 	quitOnce sync.Once
 
@@ -169,6 +176,8 @@ func (d *Daemon) loadSettings() error {
 	}
 	d.S, d.setErr = s, nil
 	d.tracker.PollMs = int64(s.PollSeconds) * 1000
+	d.tracker.Hidden = s.HiddenTitles
+	d.agents.Cap = waitCap(s)
 	return nil
 }
 
@@ -236,14 +245,21 @@ func (d *Daemon) recoverOpen() error {
 	return nil
 }
 
-// Run polls Windows every poll_seconds and follows the agents until ctx is done or /v1/quit.
+// Run polls Windows every poll_seconds and follows the agents and the commits until ctx is done or /v1/quit.
 func (d *Daemon) Run(ctx context.Context) error {
+	var commits sync.WaitGroup
+	defer commits.Wait() // after cancel: its git is killed, so this is quick
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if err := d.recoverOpen(); err != nil {
 		return err
 	}
 	go followAgents(ctx, d.agentsSeen, d.agentsLost)
+	commits.Add(1)
+	go func() {
+		defer commits.Done()
+		d.followCommits(ctx)
+	}()
 	for {
 		d.poll()
 		d.mu.Lock()
@@ -288,6 +304,7 @@ func (d *Daemon) poll() {
 		s.Server = minecraftServer(d.S.MinecraftLogs)
 	}
 	d.appendSpans(d.tracker.Feed(s))
+	d.appendSpans(d.agents.Expire(now))
 	if err := d.Store.SaveOpen(d.openSpans(now), d.tracker.lastSeen(now)); err != nil {
 		log.Printf("open.json: %v", err)
 	}

@@ -21,7 +21,8 @@ type monthRow struct {
 	Fact     int64    `json:"fact"` // counted toward the goal
 	Agents   int64    `json:"agents"`
 	Current  bool     `json:"current,omitempty"`
-	Notes    []string `json:"notes"` // the project's segment notes in the row, in time order, repeats dropped
+	Notes    []string `json:"notes"`   // the project's segment notes in the row, in time order, repeats dropped
+	Commits  []string `json:"commits"` // the project's commit messages in the row, in time order, repeats dropped
 }
 
 // monthReport is a project's month: the one place its minutes are added up for the screen, the text and the CSV.
@@ -54,19 +55,20 @@ func daySpan(a, b time.Time, dash string) string {
 
 // buildMonth fills the rows (week | day), their total, the month's plan and its holidays from the month's
 // plan days; d.monthReport adds the goal, pay, activities, days off and calendar gaps.
-func buildMonth(project, month, rows, today string, days []planDay, notes []Segment, s Settings) monthReport {
+func buildMonth(project, month, rows, today string, days []planDay, notes []Segment, commits []Commit, s Settings) monthReport {
 	first, _ := time.Parse("2006-01", month)
 	last := first.AddDate(0, 1, -1)
 	date := func(t time.Time) string { return t.Format(time.DateOnly) }
 	whole := sumGoal(days, project, today)
 	m := monthReport{Project: project, Month: month, Today: today, Running: date(first) <= today && today <= date(last),
-		Rows: []monthRow{}, Total: monthRow{Notes: []string{}}, Plan: whole.Plan, PlanDays: whole.Days, Holidays: []string{}}
+		Rows: []monthRow{}, Total: monthRow{Notes: []string{}, Commits: []string{}}, Plan: whole.Plan, PlanDays: whole.Days, Holidays: []string{}}
 	for _, pd := range days {
 		if pd.Holiday {
 			m.Holidays = append(m.Holidays, pd.Day)
 		}
 	}
 	notes = slices.SortedStableFunc(slices.Values(notes), func(a, b Segment) int { return cmp.Compare(a.Start, b.Start) })
+	commits = slices.SortedStableFunc(slices.Values(commits), func(a, b Commit) int { return cmp.Compare(a.At, b.At) })
 	var cum int64 // the plan up to the row's end in 1/planUnit minutes: rows round it once, so they add up to the plan to date
 	for t := first; !t.After(last) && date(t) <= today; {
 		end := t
@@ -81,7 +83,7 @@ func buildMonth(project, month, rows, today string, days []planDay, notes []Segm
 			upTo, _ = time.Parse(time.DateOnly, today)
 		}
 		r := monthRow{Label: daySpan(t, end, " – "), Text: daySpan(t, upTo, "–"), From: date(t), To: date(upTo),
-			Current: date(upTo) == today, Notes: []string{}}
+			Current: date(upTo) == today, Notes: []string{}, Commits: []string{}}
 		in := slices.DeleteFunc(slices.Clone(days), func(pd planDay) bool { return pd.Day < r.From || pd.Day > r.To })
 		sum := sumGoal(in, project, today)
 		r.Me, r.Fact = sum.Me, sum.Fact
@@ -99,6 +101,11 @@ func buildMonth(project, month, rows, today string, days []planDay, notes []Segm
 		for _, n := range notes {
 			if day := s.DayOf(n.Start); n.Project == project && n.Note != "" && r.From <= day && day <= r.To && !slices.Contains(r.Notes, n.Note) {
 				r.Notes = append(r.Notes, n.Note)
+			}
+		}
+		for _, c := range commits {
+			if day := s.DayOf(c.At); c.Project == project && r.From <= day && day <= r.To && !slices.Contains(r.Commits, c.Msg) {
+				r.Commits = append(r.Commits, c.Msg)
 			}
 		}
 		m.Rows = append(m.Rows, r)
@@ -199,7 +206,7 @@ func (d *Daemon) monthReport(project, month, rows string) (monthReport, error) {
 	if err != nil {
 		return monthReport{}, err
 	}
-	m := buildMonth(project, month, rows, today, days, tl.Me, d.S)
+	m := buildMonth(project, month, rows, today, days, tl.Me, d.commits(from, to), d.S) // closed months read commits live: notes, not numbers
 	rec, err := d.monthRecord(month)
 	if err != nil {
 		return monthReport{}, err

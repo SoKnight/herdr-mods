@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // apiError is an error answer: its status and JSON body.
@@ -122,6 +124,7 @@ func newServer(d *Daemon) http.Handler {
 		"PUT /v1/rules/{id}":             d.putRule,
 		"DELETE /v1/rules/{id}":          d.deleteRule,
 		"POST /v1/rules/preview":         read(d.postRulePreview),
+		"GET /v1/commits":                read(d.getCommits),
 		"GET /v1/hints":                  read(d.getHints),
 		"GET /v1/history":                d.getHistory,
 		"POST /v1/history/{id}/undo":     d.postUndo,
@@ -142,6 +145,8 @@ func newServer(d *Daemon) http.Handler {
 		"POST /v1/months/{month}/close":  read(d.postMonthClose), // a snapshot by the defaults' rules would be wrong for good
 		"POST /v1/months/{month}/reopen": d.postMonthReopen,
 		"POST /v1/periods/{id}/reopen":   d.reopenPeriod,
+		"GET /v1/settings":               d.getSettings,
+		"PUT /v1/settings":               d.putSettings,
 		"POST /v1/quit":                  d.postQuit,
 	}
 	for pattern, f := range routes {
@@ -221,6 +226,7 @@ func (d *Daemon) getStatus(r *http.Request) (int, any, error) {
 	if err != nil {
 		return 0, nil, err
 	}
+	closeMonth := d.remindClose(now)
 	var project, name, activity string
 	var lastActive, sessionStart int64
 	state := "none"
@@ -248,8 +254,91 @@ func (d *Daemon) getStatus(r *http.Request) (int, any, error) {
 		me += RoundMinutes(p.Me, 1) * 60_000
 	}
 	return http.StatusOK, map[string]any{"version": version, "today_me_ms": me, "today_agents_ms": rep.Agents,
+		"agents_working": d.agentsWorking(), "waiting": d.longestWait(now), "today_waiting_ms": rep.Waiting,
 		"project": project, "project_name": name, "activity": activity, "state": state,
-		"session_start": sessionStart, "last_active": lastActive, "last_sample": d.lastSample()}, nil
+		"session_start": sessionStart, "last_active": lastActive, "last_sample": d.lastSample(),
+		"remind": map[string]any{"silent": d.S.SilentWarning, "close": closeMonth}}, nil
+}
+
+// remindClose is the previous month when Напоминания asks to close it: it is open and has my time; else "".
+// Kept for the local day and periods.json as stat, since /v1/status is polled; a failure is logged once and
+// kept as "" the same way, so an optional reminder never fails the status. Callers hold mu.
+func (d *Daemon) remindClose(now int64) string {
+	if !d.S.CloseReminder {
+		return ""
+	}
+	today := d.S.DayOf(now)
+	c := &d.closeCache
+	if key := d.Store.periodsKey(); !c.ok || c.day != today || c.key != key {
+		c.day, c.key, c.ok = today, key, true
+		var err error
+		if c.month, err = d.closeCandidate(today); err != nil {
+			log.Printf("close reminder: %v", err)
+			c.month = ""
+		}
+	}
+	return c.month
+}
+
+func (d *Daemon) closeCandidate(today string) (string, error) {
+	t, err := time.Parse(time.DateOnly, today)
+	if err != nil {
+		return "", err
+	}
+	month := t.AddDate(0, 0, -t.Day()).Format("2006-01") // the last day of the month before
+	rec, err := d.monthRecord(month)
+	if err != nil || rec != nil {
+		return "", err
+	}
+	_, _, from, to, err := monthSpan(d.S, month)
+	if err != nil {
+		return "", err
+	}
+	tl, _, err := d.timeline(from, to)
+	if err != nil {
+		return "", err
+	}
+	if Summarize(tl, d.S, d.order()).Me > 0 {
+		return month, nil
+	}
+	return "", nil
+}
+
+// agentsWorking counts the working agents outside Исключить and Досуг folders. Callers hold mu.
+func (d *Daemon) agentsWorking() int {
+	n := 0
+	for _, o := range d.agents.open {
+		if id, _ := d.Rules.FolderProject(o.Cwd, o.Start); !dropped(id) {
+			n++
+		}
+	}
+	return n
+}
+
+// longestWait is the live wait that began first and is still within the cap, as {project, name, since}; nil for none.
+// Waits in Исключить and Досуг folders are not shown. Callers hold mu.
+func (d *Daemon) longestWait(now int64) map[string]any {
+	var best *openWait
+	for _, w := range d.agents.waiting {
+		if now-w.since >= d.agents.Cap {
+			continue
+		}
+		if id, _ := d.Rules.FolderProject(w.sp.Cwd, w.sp.Start); dropped(id) {
+			continue
+		}
+		if best == nil || w.sp.Start < best.sp.Start {
+			best = w
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	id, _ := d.Rules.FolderProject(best.sp.Cwd, best.sp.Start)
+	name := id
+	if p := d.project(id); p != nil && p.Name != "" {
+		name = p.Name
+	}
+	return map[string]any{"project": id, "name": name, "since": best.sp.Start}
 }
 
 // listed gives empty lists as [] instead of null, so the mod can iterate them as is.
@@ -260,6 +349,7 @@ func listed(tl Timeline) Timeline {
 	tl.Me = nonNil(tl.Me)
 	tl.Leisure = nonNil(tl.Leisure)
 	tl.Agents = nonNil(tl.Agents)
+	tl.Waits = nonNil(tl.Waits)
 	return tl
 }
 
@@ -323,8 +413,12 @@ func (d *Daemon) sessions(me []Segment, now int64) ([]Session, error) {
 		return cmp.Compare(a.ID, b.ID)
 	})
 	out := Sessions(me, marks, int64(d.S.SessionIdleMinutes)*60_000, now)
+	var commits []Commit
+	if len(out) > 0 { // the background refresh's: git must not run under mu on a polled route
+		commits = d.recentCommits(out[0].Start, now+1)
+	}
 	for i := range out {
-		out[i] = describe(out[i], me, d.S, now)
+		out[i] = describe(out[i], me, commits, d.S, now)
 	}
 	return out, nil
 }

@@ -16,7 +16,7 @@ func TestBuildMonthWeeks(t *testing.T) {
 	rep := Report{Projects: []ProjectTotal{{Project: "u", Days: map[string]DayTotal{nov(1): ms(90), nov(2): ms(300), nov(7): ms(570), nov(16): ms(181)}}}}
 	days := planDays(novDays(), shipped(t), projects, nil, rep)
 	notes := []Segment{{Start: mskAt(2026, 11, 3, 12, 0), Project: "u", Note: "созвон по ТЗ"}, {Start: mskAt(2026, 11, 3, 15, 0), Project: "u", Note: "созвон по ТЗ"}, {Start: mskAt(2026, 11, 3, 16, 0), Project: "x", Note: "чужое"}}
-	m := buildMonth("u", "2026-11", "week", nov(16), days, notes, tsettings())
+	m := buildMonth("u", "2026-11", "week", nov(16), days, notes, nil, tsettings())
 	var got []string
 	for _, r := range m.Rows {
 		got = append(got, fmt.Sprint(r.Label, "|", r.Text, "|", r.Workdays, r.Plan, r.Me, r.Fact, r.Agents, r.Current, r.Notes))
@@ -28,14 +28,14 @@ func TestBuildMonthWeeks(t *testing.T) {
 		"16 – 22 ноя|16 ноя|1 390 181 181 362 true []",
 	}, "\n"))
 	assertEq(t, fmt.Sprint(m.Total.Workdays, m.Total.Plan, m.Total.Me, m.Total.Fact, m.Total.Agents, m.Plan, m.Running), "10 3900 1141 1141 2282 7800 true")
-	assertEq(t, len(buildMonth("u", "2026-11", "day", nov(16), days, nil, tsettings()).Rows), 16)
+	assertEq(t, len(buildMonth("u", "2026-11", "day", nov(16), days, nil, nil, tsettings()).Rows), 16)
 }
 
 func TestWeeklyGoalRowsAddUp(t *testing.T) {
 	projects := []Project{{ID: "t", Goals: []Goal{{From: "2026-11-01", Dir: "min", Minutes: 480, Period: "week"}}}}
 	days := planDays(novDays(), shipped(t), projects, nil, Report{})
 	for _, today := range []string{"2026-11-30", "2026-11-16"} {
-		m := buildMonth("t", "2026-11", "week", today, days, nil, tsettings())
+		m := buildMonth("t", "2026-11", "week", today, days, nil, nil, tsettings())
 		var sum int64
 		for _, r := range m.Rows {
 			sum += r.Plan
@@ -75,7 +75,7 @@ func TestMonthReportRoute(t *testing.T) {
 	var other map[string]json.RawMessage // a project with no goal, pay or time
 	assertEq(t, api.do("GET", "/v1/months/2026-11/report?project=other", nil, &other), http.StatusOK)
 	assertEq(t, fmt.Sprintf("%s %s %s %s", other["goal"], other["pay"], other["activities"], other["days_off"]), "null null {} []")
-	shape, _ = json.Marshal(buildMonth("u", "2026-12", "week", nov(16), nil, nil, tsettings())) // nothing before today
+	shape, _ = json.Marshal(buildMonth("u", "2026-12", "week", nov(16), nil, nil, nil, tsettings())) // nothing before today
 	assertEq(t, strings.Contains(string(shape), `"rows":[]`), true)
 
 	// A planned week without time keeps its deficit in the text only with the goal.

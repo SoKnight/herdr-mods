@@ -194,6 +194,9 @@ func (rs *Rules) Match(w window) (Rule, bool) {
 	return Rule{}, false
 }
 
+// dropped is a project id that takes no time into a report: the exclude and leisure targets.
+func dropped(id string) bool { return id == excludeID || id == leisureID }
+
 // FolderProject is the project of the first folder rule over path, for agents, which have only a folder.
 func (rs *Rules) FolderProject(path string, at int64) (id, why string) {
 	w := window{path: path, at: at}

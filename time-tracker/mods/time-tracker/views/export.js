@@ -11,13 +11,13 @@ const DOWN = "Сборщик не запущен";
 const ROWS = [{ id: "week", label: "по неделям" }, { id: "day", label: "по дням" }];
 
 // The export's switches as CLI flags.
-const flags = ({ notes, pay, goal, agents }) => [notes && "--notes", pay && "--pay", goal && "--goal", agents && "--agents"].filter(Boolean);
+const flags = ({ commits, notes, pay, goal, agents }) => [commits && "--commits", notes && "--notes", pay && "--pay", goal && "--goal", agents && "--agents"].filter(Boolean);
 
 // Writes {home}/Downloads/{project}_{month}.csv with the rows and parts asked for (Отчёт: notes, pay and goal,
-// agents as its column shows them); the answer is the panel's message.
-export async function saveCSV({ project, month, rows, notes = true, pay = true, goal = true, agents }) {
+// agents as its column shows them; commits only when asked); the answer is the panel's message.
+export async function saveCSV({ project, month, rows, commits, notes = true, pay = true, goal = true, agents }) {
   const path = `${home().replace(/\\/g, "/")}/Downloads/${exportFile(project, month)}`;
-  const x = await call(["export", "--project", project, "--month", month, "--rows", rows, "--format", "csv", ...flags({ notes, pay, goal, agents }), "--out", path]);
+  const x = await call(["export", "--project", project, "--month", month, "--rows", rows, "--format", "csv", ...flags({ commits, notes, pay, goal, agents }), "--out", path]);
   if (x.down) return { text: DOWN, error: true };
   if (x.error) return { text: x.error, error: true };
   return { text: `Сохранено: ${path}` };
@@ -35,6 +35,7 @@ export class ExportText {
   // close(cx) takes the dialog away.
   constructor({ project, name, month, rows, onDone, close }) {
     Object.assign(this, { project, name, month, rows, onDone, closeDialog: close });
+    this.commits = true;
     this.notes = true;
     this.pay = true;
     this.agents = false;
@@ -68,7 +69,7 @@ export class ExportText {
   saveCSV(cx) {
     if (this.busy) return;
     this.busy = true;
-    const opts = { project: this.project, month: this.month, rows: this.rows, notes: this.notes, pay: this.pay, goal: this.goal, agents: this.agents };
+    const opts = { project: this.project, month: this.month, rows: this.rows, commits: this.commits, notes: this.notes, pay: this.pay, goal: this.goal, agents: this.agents };
     cx.spawn(async (cx) => {
       const m = await saveCSV(opts);
       this.busy = false;
@@ -102,6 +103,7 @@ export class ExportText {
       .child(caption("Строки"))
       .child(Segmented({ id: "export-rows", options: ROWS, value: this.rows, onChange: (rows, cx) => this.set({ rows }, cx) }))
       .child(caption("Включить").mt(8))
+      .child(check("commits", "коммиты"))
       .child(check("notes", "мои заметки"))
       .child(check("pay", "оплату"))
       .child(check("agents", "агентов"))

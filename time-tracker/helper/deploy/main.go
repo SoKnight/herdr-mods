@@ -86,15 +86,24 @@ func dataHome() string {
 	return filepath.Join(os.Getenv("LOCALAPPDATA"), "herdr-time")
 }
 
-func port() int {
-	var s struct{ Port int }
+// readSettings takes the two keys deploy cares about from settings.json; missing means 47613 and on.
+func readSettings() (port int, autostart bool) {
+	s := struct {
+		Port      int
+		Autostart *bool
+	}{}
 	if b, err := os.ReadFile(filepath.Join(dataHome(), "settings.json")); err == nil {
 		_ = json.Unmarshal(b, &s)
 	}
 	if s.Port <= 0 {
-		return 47613
+		s.Port = 47613
 	}
-	return s.Port
+	return s.Port, s.Autostart == nil || *s.Autostart
+}
+
+func port() int {
+	p, _ := readSettings()
+	return p
 }
 
 // quitCollector asks a running collector to exit and waits for its port to close; none running is fine.
@@ -179,8 +188,10 @@ func install(appHome string) error {
 	if err := replace(fresh, installed); err != nil {
 		return err
 	}
-	if err := setAutostart(runKey(installed)); err != nil {
-		return err
+	if _, on := readSettings(); on {
+		if err := setAutostart(runKey(installed)); err != nil {
+			return err
+		}
 	}
 	if err := startDetached(installed); err != nil {
 		return err

@@ -152,10 +152,14 @@ export function progressText(goal, fact, plan) {
   return fact >= plan ? "цель выполнена" : `не хватает ${fmtMin(plan - fact)}`;
 }
 
-// One `goals` entry as a right-panel or card row.
-export function goalBlock(info) {
+// "агенты 5ч 43м", then ", ждали 38м" once agents have waited for me a minute; both ms.
+export const agentsText = (agents, waited = 0) => `агенты ${formatDuration(agents)}${waited >= 60_000 ? `, ждали ${formatDuration(waited)}` : ""}`;
+
+// One `goals` entry as a right-panel or card row; waits: the day's `timeline.waits`, for its project's ждали.
+export function goalBlock(info, waits = []) {
   const { goal, day, agents } = info;
-  const ag = agents >= 1 ? `агенты ${fmtMin(agents)}` : null;
+  const waited = waits.reduce((n, w) => n + (w.project === info.project ? w.end - w.start : 0), 0);
+  const ag = agents >= 1 ? agentsText(agents * 60_000, waited) : null;
   const fill = (s) => (s.plan ? Math.min(100, (s.fact / s.plan) * 100) : null);
   if (goal.period === "day") {
     return { value: fmtMin(day.me), goal: day.plan ? fmtMin(day.plan) : null, fill: fill(day), sub: day.plan ? [signed(day.balance), ag].filter(Boolean).join(" · ") : ag };

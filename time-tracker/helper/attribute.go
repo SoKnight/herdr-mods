@@ -21,6 +21,7 @@ type Timeline struct {
 	Me            []Segment  `json:"me"`
 	Leisure       []Segment  `json:"leisure"` // Досуг: matched by a leisure rule, not my time
 	Agents        []AgentSeg `json:"agents"`
+	Waits         []AgentSeg `json:"waits"` // agents waiting for me, in the present and clipped to power minus lock and nodata
 }
 
 // cursor finds the span covering t among spans sorted by Start, for t that never decreases.
@@ -121,7 +122,12 @@ func Attribute(raw Raw, rules *Rules, corr []Correction, s Settings, from, to in
 	sort.Slice(cuts, func(a, b int) bool { return cuts[a] < cuts[b] })
 
 	windows, locks, calls := newCursor(byKind["window"]), newCursor(byKind["lock"]), newCursor(byKind["call"])
-	input := newCursor(mergeSpans(byKind["input"], idle))
+	inputs := byKind["input"]
+	if s.VideoActivity {
+		// Video with sound in the foreground counts as being here, like input.
+		inputs = append(append([]Span(nil), inputs...), byKind["sound"]...)
+	}
+	input := newCursor(mergeSpans(inputs, idle))
 	// Presence is asked only while the computer is on and the collector saw it: a sleep or a nodata
 	// stretch is absence, so input on both sides of it is never glued across.
 	power, nodata := newCursor(mergeSpans(byKind["power"], 1)), newCursor(mergeSpans(byKind["nodata"], 1))
@@ -208,7 +214,38 @@ func Attribute(raw Raw, rules *Rules, corr []Correction, s Settings, from, to in
 	}
 	tl.Me = me
 	tl.Agents = unionAgents(agents)
+	tl.Waits = waitPieces(rules, byKind["wait"], mergeSpans(byKind["power"], 1),
+		append(append([]Span(nil), byKind["lock"]...), byKind["nodata"]...), from, to)
 	return tl
+}
+
+// waitPieces gives each wait its folder's project like agentPieces, keeps what lies inside power and
+// outside lock and nodata, and unions it. Corrections do not touch waits: waiting is not money.
+func waitPieces(rules *Rules, spans, power, absent []Span, from, to int64) []AgentSeg {
+	var out []AgentSeg
+	for _, p := range agentPieces(rules, spans, from, to) {
+		for _, pw := range power {
+			if s, e := max(p.Start, pw.Start), min(p.End, pw.End); s < e {
+				q := p
+				q.Start, q.End = s, e
+				out = append(out, q)
+			}
+		}
+	}
+	for _, ab := range absent {
+		var kept []AgentSeg
+		for _, p := range out {
+			splitBy(p.Start, p.End, ab.Start, ab.End, func(s, e int64, inside bool) {
+				if !inside {
+					q := p
+					q.Start, q.End = s, e
+					kept = append(kept, q)
+				}
+			})
+		}
+		out = kept
+	}
+	return unionAgents(out)
 }
 
 func clipMerge(spans []Span, from, to int64) []Interval {
@@ -297,7 +334,7 @@ func agentPieces(rules *Rules, spans []Span, from, to int64) []AgentSeg {
 			continue
 		}
 		id, why := rules.FolderProject(sp.Cwd, sp.Start)
-		if id == excludeID || id == leisureID {
+		if dropped(id) {
 			continue
 		}
 		if id == "" {

@@ -222,7 +222,11 @@ func (st *Store) RecoverOpen() ([]Span, error) {
 		return nil, os.Rename(path, path+".bad")
 	}
 	for i := range o.Spans {
-		o.Spans[i].End = o.At
+		if sp := &o.Spans[i]; sp.End > sp.Start {
+			sp.End = min(sp.End, o.At) // a wait saved clamped to its cap stays clamped
+		} else {
+			sp.End = o.At
+		}
 	}
 	return o.Spans, nil
 }
@@ -413,3 +417,12 @@ func (st *Store) AddPeriod(p Period) (Period, error) {
 	return addItem(st, "periods.json", p, perID)
 }
 func (st *Store) RemovePeriod(id int64) error { return removeItem(st, "periods.json", id, perID) }
+
+// periodsKey changes whenever periods.json does: its mtime and size now (zeros when it can't be read).
+func (st *Store) periodsKey() [2]int64 {
+	fi, err := os.Stat(filepath.Join(st.Dir, "periods.json"))
+	if err != nil {
+		return [2]int64{}
+	}
+	return [2]int64{fi.ModTime().UnixNano(), fi.Size()}
+}

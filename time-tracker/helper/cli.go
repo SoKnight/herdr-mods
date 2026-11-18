@@ -29,13 +29,14 @@ const usage = `herdr-time <команда> [--json]
   timeline [--day YYYY-MM-DD] [--fresh]   --fresh: без снимков закрытых периодов
   projects
   report --from --to [--project id]
-  export --project id --month YYYY-MM [--rows week|day] [--format text|csv] [--notes] [--pay] [--agents] [--goal] [--out файл]
+  export --project id --month YYYY-MM [--rows week|day] [--format text|csv] [--notes] [--pay] [--agents] [--goal] [--commits] [--out файл]
   correct add <json> | rm <id> | ls
   beat <json>
   inbox [--day YYYY-MM-DD]
   inbox apply <json>
   rules
   rule add <json> | set <id> <json> | rm <id> | preview <json>
+  commits [--days N]         мои коммиты из репозиториев в папках проектов
   hints [--name X] [--days N]
   history --from --to | undo <id>
   project add <json> | set <id> <json>
@@ -47,6 +48,8 @@ const usage = `herdr-time <команда> [--json]
   goals [--day YYYY-MM-DD]
   month report <YYYY-MM> --project id [--rows week|day]
   month state <YYYY-MM> | close <YYYY-MM> [--sent] | reopen <YYYY-MM>   закрыть месяц для всех проектов
+  settings                   настройки: сессия, паузы, начало суток, напоминания, скрытые заголовки
+  settings set <json>        изменить часть настроек, например '{"pause_minutes":20}'
   session [start|end]
   periods [--project id]
   reopen <id>
@@ -199,6 +202,7 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 	fs.BoolVar(&opts.Pay, "pay", false, "")
 	fs.BoolVar(&opts.Agents, "agents", false, "")
 	fs.BoolVar(&opts.Goal, "goal", false, "")
+	fs.BoolVar(&opts.Commits, "commits", false, "")
 	out := fs.String("out", "", "")
 	fresh := fs.Bool("fresh", false, "")
 	name := fs.String("name", "", "")
@@ -249,6 +253,11 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 	case cmd == "session" && (sub == "start" || sub == "end"):
 		body, _ := json.Marshal(map[string]string{"action": sub})
 		return apiCall{method: "POST", path: "/v1/session", body: body}, nil
+	case cmd == "settings" && sub == "set":
+		body, err := arg(1, "<json>")
+		return apiCall{method: "PUT", path: "/v1/settings", body: []byte(body), show: showSettings}, err
+	case cmd == "settings" && sub == "":
+		return apiCall{method: "GET", path: "/v1/settings", show: showSettings}, nil
 	case cmd == "projects":
 		return apiCall{method: "GET", path: "/v1/projects", show: showProjects}, nil
 	case cmd == "report":
@@ -269,7 +278,7 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 		return apiCall{method: "GET", path: "/v1/inbox?" + q.Encode(), show: showInbox}, nil
 	case cmd == "export":
 		body, err := json.Marshal(map[string]any{"project": *project, "month": *monthArg, "rows": *rows, "format": *format,
-			"notes": opts.Notes, "pay": opts.Pay, "agents": opts.Agents, "goal": opts.Goal})
+			"notes": opts.Notes, "pay": opts.Pay, "agents": opts.Agents, "goal": opts.Goal, "commits": opts.Commits})
 		return apiCall{method: "POST", path: "/v1/export", body: body, save: *out, show: showExport(*out)}, err
 	case cmd == "correct" && sub == "add":
 		body, err := arg(1, "<json>")
@@ -308,6 +317,11 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 			return apiCall{}, err
 		}
 		return apiCall{method: "GET", path: "/v1/history?" + q.Encode(), show: showHistory}, nil
+	case cmd == "commits":
+		now := time.Now().UnixMilli()
+		q.Set("from", strconv.FormatInt(now-int64(*days)*24*60*60_000, 10))
+		q.Set("to", strconv.FormatInt(now, 10))
+		return apiCall{method: "GET", path: "/v1/commits?" + q.Encode(), show: showCommits}, nil
 	case cmd == "hints":
 		q.Set("days", strconv.Itoa(*days))
 		if *name != "" {

@@ -19,10 +19,11 @@ var monthNames = [12]string{"январь", "февраль", "март", "ап�
 
 // exportOpts is what the text and the CSV carry besides my time.
 type exportOpts struct {
-	Notes  bool `json:"notes"`
-	Pay    bool `json:"pay"`
-	Agents bool `json:"agents"`
-	Goal   bool `json:"goal"`
+	Notes   bool `json:"notes"`
+	Pay     bool `json:"pay"`
+	Agents  bool `json:"agents"`
+	Goal    bool `json:"goal"`
+	Commits bool `json:"commits"`
 }
 
 // ruMin is mins with 0м for no time.
@@ -93,7 +94,7 @@ func exportText(name string, m monthReport, o exportOpts) string {
 	b.WriteString("\n")
 	for _, r := range m.Rows {
 		// a planned row without time keeps its deficit, so the rows add up to the header's разница
-		if r.Me == 0 && !(goal && r.Plan > 0) && (!o.Notes || len(r.Notes) == 0) {
+		if r.Me == 0 && !(goal && r.Plan > 0) && (!o.Notes || len(r.Notes) == 0) && (!o.Commits || len(r.Commits) == 0) {
 			continue
 		}
 		b.WriteString(r.Text + " · " + ruMin(r.Me))
@@ -104,6 +105,11 @@ func exportText(name string, m monthReport, o exportOpts) string {
 			b.WriteString(" · цель " + mins(r.Plan) + " · " + signed(r.Fact-r.Plan)) // mins(0) is —
 		}
 		b.WriteString("\n")
+		if o.Commits {
+			for _, c := range r.Commits {
+				b.WriteString("  — " + oneLine.Replace(c) + "\n")
+			}
+		}
 		if o.Notes {
 			for _, n := range r.Notes {
 				b.WriteString("  — " + oneLine.Replace(n) + "\n")
@@ -146,6 +152,9 @@ func exportCSV(m monthReport, o exportOpts) string {
 	}
 	if o.Notes {
 		cols = append(cols, column{"Заметки", func(r monthRow) string { return textCell(strings.Join(r.Notes, "; ")) }})
+	}
+	if o.Commits {
+		cols = append(cols, column{"Коммиты", func(r monthRow) string { return textCell(strings.Join(r.Commits, "; ")) }})
 	}
 	date := func(day string) string {
 		t, _ := time.Parse(time.DateOnly, day)

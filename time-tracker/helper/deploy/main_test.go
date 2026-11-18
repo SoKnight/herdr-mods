@@ -88,6 +88,21 @@ func TestDeployQuitsTheCollectorOnItsPortBeforeReplacing(t *testing.T) {
 	}
 }
 
+func TestAutostartOffSkipsTheRunValue(t *testing.T) {
+	f := fakeTools(t)
+	home := t.TempDir()
+	t.Setenv("HERDR_TIME_HOME", home)
+	if err := os.WriteFile(filepath.Join(home, "settings.json"), []byte(`{"autostart":false}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := install(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if f.runKey != "" || f.started == "" {
+		t.Fatalf("runKey %q started %q", f.runKey, f.started)
+	}
+}
+
 func TestRunKeyQuotesPathsWithSpaces(t *testing.T) {
 	got := runKey(`C:\Users\A B\herdr-time.exe`)
 	if got != `"C:\Users\A B\herdr-time.exe" run` {

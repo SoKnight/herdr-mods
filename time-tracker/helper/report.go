@@ -26,6 +26,7 @@ type Report struct {
 	Me       int64          `json:"me"`
 	Leisure  int64          `json:"leisure"` // Досуг, apart from my time
 	Agents   int64          `json:"agents"`
+	Waiting  int64          `json:"waiting"` // agents waiting for me, apart from every other total
 	Projects []ProjectTotal `json:"projects"`
 }
 
@@ -127,6 +128,13 @@ func Summarize(t Timeline, s Settings, order []string) Report {
 	}
 	for _, sp := range mergeSpans(all, 1) {
 		r.Agents += sp.End - sp.Start
+	}
+	var waits []Span
+	for _, w := range t.Waits {
+		waits = append(waits, Span{Start: w.Start, End: w.End})
+	}
+	for _, sp := range mergeSpans(waits, 1) {
+		r.Waiting += sp.End - sp.Start
 	}
 
 	// Projects in config order, unknown ids after them, "no project" last.

@@ -80,8 +80,11 @@ export function DragArea(view) {
 export function AgentsStrip(view, t, { from, to }) {
   const order = view.projects;
   const strip = div().relative().h(4).w_full().flex_none().rounded(2).overflow_hidden().bg(t.chrome);
-  if (view.width > 0)
+  if (view.width > 0) {
     strip.children(blocks(view, bars(items(view.data.timeline.agents, (s) => s.project), from, to, view.width, (v) => projectColor(v, order)), 4, (bar) => t[bar.color] ?? t.muted).map((el) => el.opacity(0.55)));
+    // Where an agent waited for me, light over the agents.
+    strip.children(blocks(view, bars(items(view.data.timeline.waits, () => "wait"), from, to, view.width, () => "foreground"), 4, () => t.foreground));
+  }
   return strip;
 }
 
@@ -100,6 +103,6 @@ export function Legend(t, leisure, agents = true) {
     .child(item(div().h(10).bg(t.muted), "я работал"))
     .child(item(div().h(10).bg(t.raised), "включён, без активности"))
     .child(item(div().h(10).bg(t.chrome).border_1().border_color(t.border), "выключен"))
-    .children(agents ? [item(div().h(4).bg(t.muted), "агенты")] : [])
+    .children(agents ? [item(div().h(4).bg(t.muted), "агенты"), item(div().h(4).bg(t.foreground), "агент ждёт тебя")] : [])
     .children(leisure ? [item(div().h(10).bg(t.raised).border_1().border_color(t.muted), "досуг")] : []);
 }

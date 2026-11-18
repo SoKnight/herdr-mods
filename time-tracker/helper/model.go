@@ -1,6 +1,6 @@
 package main
 
-// Span kinds: power, nodata, input, lock, window, call, agent, agents_unknown.
+// Span kinds: power, nodata, input, lock, window, call, sound, agent, agents_unknown.
 type Span struct {
 	Kind   string `json:"k"`
 	Start  int64  `json:"s"`
