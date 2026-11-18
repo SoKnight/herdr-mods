@@ -648,11 +648,14 @@ func TestStatusWaiting(t *testing.T) {
 	d.S.SessionIdleMinutes = 45
 	d.agents.Cap = waitCap(d.S)
 	seed(t, d, power(-10, 5))
+	d.Rules.rules = append(d.Rules.rules, Rule{ID: 99, Kind: "folder", Value: `C:\Games`, Project: leisureID})
 	now = at(-4)
 	d.agentsSeen(map[string]AgentState{
 		"t1": {Cwd: `C:\Dev\other`, Working: true},
 		"t2": {Cwd: `C:\Dev\easy`, Waiting: true, Since: at(-4)},
 		"t3": {Cwd: `C:\Dev\easy`, Waiting: true, Since: at(-3 * 24 * 60)}, // stale
+		"t4": {Cwd: `C:\Games`, Working: true},                             // Досуг: neither working nor waiting here
+		"t5": {Cwd: `C:\Games`, Waiting: true, Since: at(-5)},
 	})
 	now = at(0)
 	d.poll()

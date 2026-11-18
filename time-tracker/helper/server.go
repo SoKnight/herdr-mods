@@ -254,7 +254,7 @@ func (d *Daemon) getStatus(r *http.Request) (int, any, error) {
 		me += RoundMinutes(p.Me, 1) * 60_000
 	}
 	return http.StatusOK, map[string]any{"version": version, "today_me_ms": me, "today_agents_ms": rep.Agents,
-		"agents_working": len(d.agents.open), "waiting": d.longestWait(now), "today_waiting_ms": rep.Waiting,
+		"agents_working": d.agentsWorking(), "waiting": d.longestWait(now), "today_waiting_ms": rep.Waiting,
 		"project": project, "project_name": name, "activity": activity, "state": state,
 		"session_start": sessionStart, "last_active": lastActive, "last_sample": d.lastSample(),
 		"remind": map[string]any{"silent": d.S.SilentWarning, "close": closeMonth}}, nil
@@ -304,6 +304,17 @@ func (d *Daemon) closeCandidate(today string) (string, error) {
 	return "", nil
 }
 
+// agentsWorking counts the working agents outside Исключить and Досуг folders. Callers hold mu.
+func (d *Daemon) agentsWorking() int {
+	n := 0
+	for _, o := range d.agents.open {
+		if id, _ := d.Rules.FolderProject(o.Cwd, o.Start); !dropped(id) {
+			n++
+		}
+	}
+	return n
+}
+
 // longestWait is the live wait that began first and is still within the cap, as {project, name, since}; nil for none.
 // Waits in Исключить and Досуг folders are not shown. Callers hold mu.
 func (d *Daemon) longestWait(now int64) map[string]any {
@@ -312,7 +323,7 @@ func (d *Daemon) longestWait(now int64) map[string]any {
 		if now-w.since >= d.agents.Cap {
 			continue
 		}
-		if id, _ := d.Rules.FolderProject(w.sp.Cwd, w.sp.Start); id == excludeID || id == leisureID {
+		if id, _ := d.Rules.FolderProject(w.sp.Cwd, w.sp.Start); dropped(id) {
 			continue
 		}
 		if best == nil || w.sp.Start < best.sp.Start {
