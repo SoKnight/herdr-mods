@@ -47,6 +47,8 @@ const usage = `herdr-time <команда> [--json]
   goals [--day YYYY-MM-DD]
   month report <YYYY-MM> --project id [--rows week|day]
   month state <YYYY-MM> | close <YYYY-MM> [--sent] | reopen <YYYY-MM>   закрыть месяц для всех проектов
+  settings                   настройки: сессия, паузы, начало суток, напоминания, скрытые заголовки
+  settings set <json>        изменить часть настроек, например '{"pause_minutes":20}'
   session [start|end]
   periods [--project id]
   reopen <id>
@@ -249,6 +251,11 @@ func buildCall(s Settings, cmd string, args []string) (apiCall, error) {
 	case cmd == "session" && (sub == "start" || sub == "end"):
 		body, _ := json.Marshal(map[string]string{"action": sub})
 		return apiCall{method: "POST", path: "/v1/session", body: body}, nil
+	case cmd == "settings" && sub == "set":
+		body, err := arg(1, "<json>")
+		return apiCall{method: "PUT", path: "/v1/settings", body: []byte(body), show: showSettings}, err
+	case cmd == "settings" && sub == "":
+		return apiCall{method: "GET", path: "/v1/settings", show: showSettings}, nil
 	case cmd == "projects":
 		return apiCall{method: "GET", path: "/v1/projects", show: showProjects}, nil
 	case cmd == "report":

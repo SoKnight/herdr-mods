@@ -375,3 +375,14 @@ func showProjects(w io.Writer, resp []byte) error {
 	}
 	return nil
 }
+
+func showSettings(w io.Writer, resp []byte) error {
+	var s editableSettings
+	if err := json.Unmarshal(resp, &s); err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "сессия заканчивается после простоя  %d мин\nпаузы в зачёт сессии до  %d мин\nсутки начинаются в  %s\n", s.SessionIdleMinutes, s.PauseMinutes, s.DayStart)
+	fmt.Fprintf(w, "видео со звуком: %t  автозапуск: %t  молчание сборщика: %t  напоминание о закрытии месяца: %t\n", s.VideoActivity, s.Autostart, s.SilentWarning, s.CloseReminder)
+	fmt.Fprintf(w, "скрытые заголовки: %s\n", strings.Join(s.HiddenTitles, ", "))
+	return nil
+}

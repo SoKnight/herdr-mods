@@ -142,6 +142,8 @@ func newServer(d *Daemon) http.Handler {
 		"POST /v1/months/{month}/close":  read(d.postMonthClose), // a snapshot by the defaults' rules would be wrong for good
 		"POST /v1/months/{month}/reopen": d.postMonthReopen,
 		"POST /v1/periods/{id}/reopen":   d.reopenPeriod,
+		"GET /v1/settings":               d.getSettings,
+		"PUT /v1/settings":               d.putSettings,
 		"POST /v1/quit":                  d.postQuit,
 	}
 	for pattern, f := range routes {

@@ -335,7 +335,7 @@ func TestDefaultSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertEq(t, string(data), `{"idle_minutes":5,"carry_minutes":15,"port":47613,"poll_seconds":5,"day_start":"06:00","session_idle_minutes":45,"pause_minutes":15,"minecraft_logs":["%APPDATA%\\.minecraft\\logs\\latest.log"]}`)
+	assertEq(t, string(data), `{"idle_minutes":5,"carry_minutes":15,"port":47613,"poll_seconds":5,"day_start":"06:00","session_idle_minutes":45,"pause_minutes":15,"minecraft_logs":["%APPDATA%\\.minecraft\\logs\\latest.log"],"video_activity":true,"autostart":true,"silent_warning":true,"close_reminder":true,"hidden_titles":[]}`)
 	var back Settings
 	if err := json.Unmarshal(data, &back); err != nil {
 		t.Fatal(err)
