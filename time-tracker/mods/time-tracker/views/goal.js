@@ -4,7 +4,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex, Input, InputState } from "gpui-base";
 import { theme } from "herdr";
 import { call } from "../client.js";
-import { parseHours, parseDay, hoursText, goalOn, goalVersion, dayTitle, dayString, fmtMin, money, parseMoney, payOn, monthOf, dialogWrites, MONTH_NAMES } from "../format.js";
+import { parseHours, parseDay, goalFromNote, hoursText, goalOn, goalVersion, dayTitle, dayString, fmtMin, money, parseMoney, payOn, monthOf, dialogWrites, MONTH_NAMES } from "../format.js";
 import { projectColor } from "../lanes.js";
 import { monthStartTitle } from "../rules.js";
 import { Dialog, Dropdown, Check, Button, Icon, Message, Segmented, TEXT } from "../ui.js";
@@ -172,6 +172,7 @@ export class GoalEdit {
     const labelOf = (items, id) => items.find((it) => it.id === id)?.label ?? "";
     const from = this.froms.find((f) => f.day === this.from);
     const typed = this.fromOther && this.fromDay();
+    const fromNote = this.fromDay() ? goalFromNote(this.project.goals, this.fromDay()) : null;
     // the buttons name the day they act from
     const since = this.fromOther ? (typed ? `с ${dayTitle(typed).split(", ")[1]}` : "с даты") : `с ${from?.label ?? this.from}`;
     const versions = [...(this.project.goals ?? [])].sort((a, b) => b.from.localeCompare(a.from));
@@ -248,6 +249,7 @@ export class GoalEdit {
           )
           .child(Link({ id: "goal-history", label: "история", onClick: (cx) => ((this.showVersions = !this.showVersions), cx.notify()) }).text_size(TEXT.small)),
       )
+      .when(Boolean(fromNote), (el) => el.child(div().flex_none().whitespace_normal().text_size(TEXT.small).text_color(t.ansi3).child(fromNote)))
       .when(this.showVersions, (el) =>
         el.child(
           v_flex()

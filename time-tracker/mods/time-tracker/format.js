@@ -137,6 +137,18 @@ export function goalOn(goals, day) {
   return g && !g.off ? g : null;
 }
 
+// What saving a goal from `day` does to the other versions: an earlier goal stays in force up to it,
+// later versions are replaced. null when there is nothing to say.
+export function goalFromNote(goals, day) {
+  const short = (d) => dayTitle(d).split(", ")[1];
+  const before = goalOn((goals ?? []).filter((v) => v.from < day), day);
+  const later = (goals ?? []).filter((v) => v.from > day);
+  const notes = [];
+  if (before) notes.push(`С ${short(before.from)} уже действует цель — она останется до ${short(day)}.`);
+  if (later.length) notes.push(`Версии с ${short(later.map((v) => v.from).sort()[0])} будут заменены.`);
+  return notes.length ? notes.join(" ") : null;
+}
+
 const PERIOD_SHORT = { day: "д", week: "нед", month: "мес" };
 const PERIOD_LINE = { day: "день", week: "нед.", month: "мес." };
 const PERIOD_IN = { day: "в день", week: "в неделю", month: "в месяц" };
