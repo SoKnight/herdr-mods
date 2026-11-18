@@ -17,7 +17,7 @@ export function Side(view, t, { caption, lines, session = false }) {
   const goals = view.goals ?? [];
   const base = (id) => ({ name: view.name(id), color: t[projectColor(id, view.projects)] ?? t.muted, other: !id });
   const against = (info, fill = 0) => {
-    const b = goalBlock(info);
+    const b = goalBlock(info, view.data.timeline?.waits); // never on a session: these are the day's waits, as the goals are
     return ProjectBlock(t, { ...base(info.project), value: b.value, goal: b.goal, fill: b.fill ?? fill, sub: b.sub });
   };
   const block = (p) => {

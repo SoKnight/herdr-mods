@@ -17,6 +17,9 @@ const OPEN_DELAY = 350; // ms, so passing over the bar doesn't flash it
 const CLOSE_DELAY = 300; // ms, lets the pointer cross from the chip to the card
 const PAD = 12; // px each side of the chip
 
+// " 4м" after a wait's words; nothing in its first minute, which would read "—".
+const minuteOn = (ms) => (ms >= 60_000 ? ` ${formatDuration(ms)}` : "");
+
 // The layout block that holds the chip.
 function findBlock(node) {
   if (!node) return null;
@@ -146,12 +149,19 @@ export class Status {
         return chip.child(div().text_color(t.muted).child(Icon("play", 12))).child(text(t.muted, formatDuration(c.me)));
       case "away":
         return chip.child(clock(t.dim)).child(text(t.dim, `${formatDuration(c.me)} · отошёл ${formatDuration(c.away)}`));
+      case "waiting":
+        return chip.child(clock()).child(text(t.foreground, formatDuration(c.me))).child(text(t.dim, "·"))
+          .child(h_flex().flex_none().h(18).px(6).gap(4).items_center().rounded(4).bg(t.foreground).text_color(t.chrome).font_weight(500)
+            .child(Icon("bot", 12)).child(div().whitespace_nowrap().child(`ждёт${minuteOn(c.wait)}`)));
       default: {
         const order = this.catalog?.projects ?? [];
         return chip.child(clock()).child(text(t.foreground, formatDuration(c.me)))
           .when(Boolean(c.project), (el) =>
             el.child(text(t.dim, "·")).child(div().size(7).rounded(3.5).flex_none().bg(t[projectColor(c.project, order)] ?? t.muted))
-              .child(text(t.muted, c.name || c.project)));
+              .child(text(t.muted, c.name || c.project)))
+          .when(c.agents > 0, (el) =>
+            el.child(text(t.dim, "·")).child(div().relative().flex_none().text_color(t.muted).accessibility_label("Агент работает").child(Icon("bot", 13))
+              .child(div().absolute().top(-2).right(-3).size(5).rounded(2.5).bg(t.ansi2))));
       }
     }
   }
@@ -179,12 +189,23 @@ export class Status {
       : projects.map((p) => ProjectBlock(t, { name: this.name(p.project), color: color(p.project), value: formatDuration(p.me), fill: (p.me / max) * 100, other: !p.project }));
     const ahead = goals.find((g) => g.goal.dir === "min" && g.month.plan > 0);
     const session = s?.session_start > 0 ? `сессия с ${hhmm(s.session_start)}` : "сессии нет";
+    // The agents now, from the live status: the one waiting longest, else whether one works.
+    const w = s?.waiting, wait = w ? Date.now() - w.since : 0;
+    const agentRow = (label, right) =>
+      h_flex().gap(8).items_center().child(div().text_color(t.muted).child(Icon("bot", 13))).child(label).child(div().flex_1())
+        .when(Boolean(right), (el) => el.child(div().text_size(TEXT.small).text_color(t.muted).child(right)));
+    const agents = w
+      ? agentRow("агент ждёт ответа", `${w.name || this.name(w.project)}${wait >= 60_000 ? ` · ${formatDuration(wait)}` : ""}`)
+      : s?.agents_working > 0 ? agentRow("агент работает") : null;
+    const waited = s?.today_waiting_ms >= 60_000 ? `за сегодня агенты ждали тебя ${formatDuration(s.today_waiting_ms)}` : null;
     return body
       .child(h_flex().items_center().child(div().font_semibold().child("Сегодня")).child(div().flex_1()).child(div().font_semibold().child(formatDuration(total))))
       .child(div().text_size(TEXT.small).text_color(t.dim).child(`${session} · агенты ${formatDuration(r.agents)}`))
       .child(rule())
       .child(v_flex().gap(12).children(blocks))
       .when(Boolean(ahead), (el) => el.child(div().text_size(TEXT.small).text_color(t.dim).whitespace_normal().child(forecastLine(ahead, this.name(ahead.project), this.goals.day))))
+      .when(Boolean(agents || waited), (el) =>
+        el.child(rule()).child(v_flex().gap(4).children([agents, waited && div().text_size(TEXT.small).text_color(t.dim).child(waited)].filter(Boolean))))
       .child(rule())
       .child(div().id("time-card-open").text_size(TEXT.small).text_color(t.muted).cursor_pointer().hover((e) => e.text_color(t.foreground)).on_click(() => this.openPanel()).child("Открыть панель ›"));
   }

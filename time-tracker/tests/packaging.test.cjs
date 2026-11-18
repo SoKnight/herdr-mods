@@ -68,3 +68,7 @@ test('the Настройки screen is in and has its icon', () => {
   assert.doesNotMatch(fs.readFileSync(path.join(runtime, 'main.js'), 'utf8'), /Экран настроек появится позже/);
   assert.ok(fs.existsSync(path.join(runtime, 'views/settings.js')));
 });
+
+test('the commits chip and row have their icon', () => {
+  assert.match(fs.readFileSync(path.join(runtime, 'icons', 'git-commit-horizontal.svg'), 'utf8'), /^<!-- @license lucide-static v1\.68\.0 - ISC -->/);
+});

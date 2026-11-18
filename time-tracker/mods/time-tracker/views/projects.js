@@ -55,6 +55,7 @@ export class Projects {
     this.projects = []; // [{id, name, color, archived?}] in config order
     this.rules = []; // [{id, kind, value, title?, project, from?, ms, windows}] in priority order
     this.suggestions = []; // [{kind, value, ms}] Другое of the last 3 days, read while there are no projects
+    this.commits = null; // [{at, project, repo, msg}] of the last 7 days, read when the screen opens
     this.other = 0; // today's Другое, ms
     this.today = null; // the collector's day, from `timeline`
     this.selected = null; // a project id, "exclude" or "leisure"
@@ -73,7 +74,10 @@ export class Projects {
   // Read again on showing; a hidden panel reads nothing.
   tick(cx) {
     const shown = Boolean(props()?.overlay) || panelShown(layout());
-    if (shown && !this.wasShown) this.load(cx);
+    if (shown && !this.wasShown) {
+      this.load(cx);
+      this.readCommits(cx);
+    }
     this.wasShown = shown;
   }
 
@@ -103,6 +107,14 @@ export class Projects {
         if (seq === this.seq) (this.loading = false), (this.loaded = true);
         cx.notify();
       }
+    });
+  }
+
+  readCommits(cx) {
+    cx.spawn(async (cx) => {
+      const r = await call(["commits", "--days", "7"]);
+      this.commits = Array.isArray(r.commits) ? r.commits : r.down || r.error ? null : [];
+      cx.notify();
     });
   }
 
@@ -321,8 +333,25 @@ export class Projects {
           .text_color(t.muted)
           .child(Icon("bot", 14))
           .child("агенты по папке проекта"),
-      ).child(this.goalRow(t, p)).child(this.payRow(t, p));
+      ).child(this.commitsRow(t, p)).child(this.goalRow(t, p)).child(this.payRow(t, p));
     return col;
+  }
+
+  commitsRow(t, p) {
+    const n = this.commits?.filter((c) => c.project === p.id).length;
+    return h_flex()
+      .flex_none()
+      .h(40)
+      .gap(10)
+      .items_center()
+      .border_t(1)
+      .border_color(t.border)
+      .text_size(TEXT.small)
+      .text_color(t.muted)
+      .child(Icon("git-commit-horizontal", 14))
+      .child("коммиты из репозиториев в папке → заметки")
+      .child(div().flex_1())
+      .when(n !== undefined, (el) => el.child(div().flex_none().text_color(t.dim).child(`${n} за 7 дней`)));
   }
 
   goalRow(t, p) {

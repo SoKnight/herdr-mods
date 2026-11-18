@@ -3,7 +3,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { formatDuration, hhmm, shareText } from "../format.js";
 import { projectColor } from "../lanes.js";
-import { TEXT } from "../ui.js";
+import { Icon, TEXT } from "../ui.js";
 import { Link } from "./menu.js";
 
 export function StretchList(view, t, stretches, { row, gap }) {
@@ -35,6 +35,8 @@ export function StretchList(view, t, stretches, { row, gap }) {
         .child(div().flex_none().font_medium().child(view.name(s.project)))
         .when(Boolean(share), (el) => el.child(div().min_w(0).truncate().text_size(TEXT.small).text_color(t.dim).child(share)))
         .child(div().flex_1())
+        .when(s.commits > 0, (el) =>
+          el.child(h_flex().flex_none().gap(4).items_center().text_size(TEXT.small).text_color(t.dim).accessibility_label("Коммиты").child(Icon("git-commit-horizontal", 14)).child(String(s.commits))))
         .when(s.current, (el) => el.child(div().flex_none().px(6).py(1).rounded(4).bg(t.ansi2).text_color(t.background).text_size(TEXT.caption).child("сейчас")))
         .child(div().w(60).flex_none().flex().justify_end().font_medium().child(formatDuration(s.me))),
     );

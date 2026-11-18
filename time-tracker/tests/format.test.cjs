@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/format.js'), 'utf8');
-const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs, fmtMin, signed, roundRows, parseHours, hoursText, goalOn, goalShort, goalLine, goalVersion, weeklyTotal, progressText, goalBlock, forecastLine, weekDays, weekTitle, weekRelative, mainGoal, dayDiff, weekRows, monthGrid, cellBars, offTitle, workdaysText, offReduce, money, parseMoney, monthOptions, goalStrip, reportFootnote, exportFile, payOn, payShort, dialogWrites, monthTitle, monthGenitive, closedText, offDaysText };`)();
+const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs, fmtMin, signed, roundRows, parseHours, hoursText, goalOn, goalShort, goalLine, goalVersion, weeklyTotal, progressText, goalBlock, forecastLine, weekDays, weekTitle, weekRelative, mainGoal, dayDiff, weekRows, monthGrid, cellBars, offTitle, workdaysText, offReduce, money, parseMoney, monthOptions, goalStrip, reportFootnote, exportFile, payOn, payShort, dialogWrites, monthTitle, monthGenitive, closedText, offDaysText, agentsText };`)();
 const rcode = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/rules.js'), 'utf8');
 const R = new Function(`${rcode.replace(/^export /gm, '')}
 return { ruleText, targetName };`)();
@@ -243,6 +243,15 @@ test('goal rows and the forecast', () => {
   assert.deepEqual(F.goalBlock(tr), { value: '36м', goal: '8ч в нед.', fill: 7.5, sub: 'за неделю 36м' });
   const weekend = { ...u, day: sum({ me: 60, fact: 60, balance: 60 }), agents: 0 };
   assert.deepEqual(F.goalBlock(weekend), { value: '1ч', goal: null, fill: null, sub: null });
+  // ждали: this project's waits of the day, once they make a minute.
+  const M = 60_000;
+  const waits = [{ start: 0, end: 30 * M, project: 'u' }, { start: 40 * M, end: 48 * M, project: 'u' }, { start: 0, end: 90 * M, project: 't' }];
+  assert.equal(F.goalBlock(u, waits).sub, '−3ч 29м · агенты 5ч 43м, ждали 38м');
+  assert.equal(F.goalBlock(u, [{ start: 0, end: 59_000, project: 'u' }]).sub, '−3ч 29м · агенты 5ч 43м');
+  assert.equal(F.goalBlock(tr, waits).sub, 'за неделю 36м');
+  assert.equal(F.agentsText(343 * M, 38 * M), 'агенты 5ч 43м, ждали 38м');
+  assert.equal(F.agentsText(343 * M, 59_999), 'агенты 5ч 43м');
+  assert.equal(F.agentsText(0, 0), 'агенты —');
   assert.equal(F.forecastLine({ ...u, day: { ...u.day }, month: sum({ plan: 7800, forecast: 4901 }) }, 'Universe', '2026-11-16'), 'прогноз ноября по Universe ≈ 81ч 41м из 130ч');
 });
 
