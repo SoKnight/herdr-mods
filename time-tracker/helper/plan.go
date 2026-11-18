@@ -31,14 +31,15 @@ type DayOff struct {
 }
 
 type planDay struct {
-	Day     string             `json:"day"`
-	Work    bool               `json:"work"` // a working day by the production calendar
-	Holiday bool               `json:"holiday,omitempty"`
-	Off     string             `json:"off,omitempty"` // the kind of a day off on it
-	Me      map[string]int64   `json:"me"`            // my minutes by project ("" = Другое), rounded per day
-	Agents  map[string]int64   `json:"agents"`        // agents' minutes by project, rounded per day
-	Plan    map[string]float64 `json:"plan"`          // planned minutes of every project with a goal that day
-	Fact    map[string]int64   `json:"fact"`          // its minutes that count toward that goal
+	Day       string             `json:"day"`
+	Work      bool               `json:"work"` // a working day by the production calendar
+	Holiday   bool               `json:"holiday,omitempty"`
+	Off       string             `json:"off,omitempty"` // the kind of a day off on it
+	Me        map[string]int64   `json:"me"`            // my minutes by project ("" = Другое), rounded per day
+	Agents    map[string]int64   `json:"agents"`        // agents' minutes by project, rounded per day
+	AgentsAny int64              `json:"agents_any"`    // minutes at least one agent worked: projects in parallel count once
+	Plan      map[string]float64 `json:"plan"`          // planned minutes of every project with a goal that day
+	Fact      map[string]int64   `json:"fact"`          // its minutes that count toward that goal
 }
 
 type goalSum struct {
@@ -136,6 +137,7 @@ func planDays(days []string, cal Calendar, projects []Project, off []DayOff, rep
 				}
 			}
 		}
+		d.AgentsAny = RoundMinutes(rep.AgentDays[day], 1)
 		for _, p := range rep.Projects {
 			t := p.Days[day]
 			if m := RoundMinutes(t.Me, 1); m != 0 {

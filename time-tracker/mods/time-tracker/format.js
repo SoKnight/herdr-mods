@@ -191,6 +191,9 @@ export function progressText(goal, fact, plan) {
   return fact >= plan ? "цель выполнена" : `не хватает ${fmtMin(plan - fact)}`;
 }
 
+// A plan day's agent minutes: the time at least one worked (parallel projects once); their sum from an old collector.
+export const agentsAny = (d) => d.agents_any ?? Object.values(d.agents ?? {}).reduce((n, v) => n + v, 0);
+
 // "агенты 5ч 43м", then ", ждали 38м" once agents have waited for me a minute; both ms.
 export const agentsText = (agents, waited = 0) => `агенты ${formatDuration(agents)}${waited >= 60_000 ? `, ждали ${formatDuration(waited)}` : ""}`;
 
@@ -439,7 +442,7 @@ export function weekRows(plan, main) {
       label: `${WEEKDAYS[new Date(y, m - 1, dd).getDay()]} ${dd}`,
       weekend: !d.work,
       me: sumOf(d.me),
-      agents: sumOf(d.agents),
+      agents: agentsAny(d),
       diff: main ? dayDiff(d, main, plan.today) : { text: "" },
     };
   });

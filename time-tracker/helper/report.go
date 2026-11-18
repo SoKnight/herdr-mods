@@ -22,12 +22,13 @@ type ProjectTotal struct {
 }
 
 type Report struct {
-	Uptime   int64          `json:"uptime"`
-	Me       int64          `json:"me"`
-	Leisure  int64          `json:"leisure"` // Досуг, apart from my time
-	Agents   int64          `json:"agents"`
-	Waiting  int64          `json:"waiting"` // agents waiting for me, apart from every other total
-	Projects []ProjectTotal `json:"projects"`
+	Uptime    int64            `json:"uptime"`
+	Me        int64            `json:"me"`
+	Leisure   int64            `json:"leisure"` // Досуг, apart from my time
+	Agents    int64            `json:"agents"`
+	AgentDays map[string]int64 `json:"agent_days"` // per day, the time at least one agent worked
+	Waiting   int64            `json:"waiting"`    // agents waiting for me, apart from every other total
+	Projects  []ProjectTotal   `json:"projects"`
 }
 
 // Divergence says a closed period no longer matches what fresh rules would give.
@@ -126,8 +127,10 @@ func Summarize(t Timeline, s Settings, order []string) Report {
 			})
 		}
 	}
+	r.AgentDays = map[string]int64{}
 	for _, sp := range mergeSpans(all, 1) {
 		r.Agents += sp.End - sp.Start
+		byDay(s, sp.Start, sp.End, func(d string, ms int64) { r.AgentDays[d] += ms })
 	}
 	var waits []Span
 	for _, w := range t.Waits {

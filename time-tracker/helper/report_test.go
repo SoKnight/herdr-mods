@@ -52,6 +52,11 @@ func TestAgentsTotalIsUnionAcrossProjects(t *testing.T) {
 	}}
 	r := Summarize(tl, tsettings(), []string{"easylauncher", "universe"})
 	assertEq(t, r.Agents, int64(40*minMs))
+	var days int64
+	for _, ms := range r.AgentDays {
+		days += ms
+	}
+	assertEq(t, days, int64(40*minMs)) // per day too: parallel projects once
 	assertEq(t, r.Projects[0].Agents, int64(30*minMs))
 	assertEq(t, r.Projects[1].Agents, int64(30*minMs))
 }

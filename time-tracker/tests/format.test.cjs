@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const code = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/format.js'), 'utf8');
-const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs, fmtMin, signed, roundRows, parseHours, hoursText, goalOn, goalShort, goalLine, goalVersion, weeklyTotal, progressText, goalBlock, forecastLine, weekDays, weekTitle, weekRelative, mainGoal, dayDiff, weekRows, monthGrid, cellBars, offTitle, workdaysText, offReduce, money, parseMoney, monthOptions, goalStrip, reportFootnote, exportFile, payOn, payShort, dialogWrites, monthTitle, monthGenitive, closedText, offDaysText, agentsText, parseDay, goalFromNote, goalNow, goalReplaceText, goalRemoveText };`)();
+const F = new Function(`${code.replace(/^export /gm, '')}\nreturn { formatDuration, activityLabel, parseResult, weekRange, monthRange, sessionNote, catalog, plural, dayTitle, shareText, stamp, appliedRange, historyEntries, parseClock, manualRange, overlapMs, fmtMin, signed, roundRows, parseHours, hoursText, goalOn, goalShort, goalLine, goalVersion, weeklyTotal, progressText, goalBlock, forecastLine, weekDays, weekTitle, weekRelative, mainGoal, dayDiff, weekRows, monthGrid, cellBars, offTitle, workdaysText, offReduce, money, parseMoney, monthOptions, goalStrip, reportFootnote, exportFile, payOn, payShort, dialogWrites, monthTitle, monthGenitive, closedText, offDaysText, agentsText, parseDay, goalFromNote, goalNow, goalReplaceText, goalRemoveText, agentsAny };`)();
 const rcode = fs.readFileSync(path.join(__dirname, '../mods/time-tracker/rules.js'), 'utf8');
 const R = new Function(`${rcode.replace(/^export /gm, '')}
 return { ruleText, targetName };`)();
@@ -366,4 +366,9 @@ test('goal dialog says what is in force and asks before replacing or removing', 
   assert.equal(F.goalReplaceText([g('2026-11-16')], '2026-11-16'), null);
   assert.equal(F.goalRemoveText([g('2026-11-16')], '2026-11-16'), 'Цели не будет с 16 ноября. Убрать?');
   assert.equal(F.goalRemoveText([g('2026-10-01'), g('2026-11-16')], '2026-11-16'), 'Цели не будет с 16 ноября, до этого остаётся цель с 1 октября. Убрать?');
+});
+
+test('agentsAny counts parallel projects once', () => {
+  assert.equal(F.agentsAny({ agents: { u: 400, '': 1400 }, agents_any: 1416 }), 1416);
+  assert.equal(F.agentsAny({ agents: { u: 400, t: 20 } }), 420); // an old collector
 });
