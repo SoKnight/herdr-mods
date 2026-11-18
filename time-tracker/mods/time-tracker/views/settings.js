@@ -34,14 +34,14 @@ export class SettingsView {
 
   // Reads the settings on coming to the tab; after that only the last sample, so typing is never overwritten.
   tick(cx) {
-    const first = !this.wasShown || this.down;
-    this.wasShown = true;
+    const first = !this.wasShown || !this.s || this.down;
     cx.spawn(async (cx) => {
       const [st, set] = await Promise.all([call(["status"]), first ? call(["settings"]) : null]);
       this.lastSample = st.last_sample ?? this.lastSample;
+      if (st.down) this.down = true;
       if (set) {
         this.down = Boolean(set.down || st.down);
-        if (!this.down && !set.error) this.take(set);
+        if (!this.down && !set.error) (this.take(set), (this.wasShown = true), (this.errors.time = null));
         else if (set.error) this.errors.time = set.error;
       }
       cx.notify();
@@ -96,7 +96,7 @@ export class SettingsView {
   startAdding(cx) {
     this.adding = true;
     cx.notify();
-    this.add.focus();
+    cx.timer.after(0, () => this.adding && this.add.focus()); // once the input is drawn
   }
 
   render() {
