@@ -116,6 +116,8 @@ func TestTrackerOpenStopsAtTheLastPollAfterSleep(t *testing.T) {
 func TestHiddenTitle(t *testing.T) {
 	assertEq(t, hiddenTitle([]string{"KeePassXC.exe"}, "keepassxc.exe", "db.kdbx"), true)
 	assertEq(t, hiddenTitle([]string{"*банк*"}, "chrome.exe", "Сбер БАНК онлайн"), true)
+	assertEq(t, hiddenTitle([]string{"*банк*"}, "chrome.exe", "Входящие 1/3 — банк"), true)
+	assertEq(t, hiddenTitle([]string{"*банк*"}, "x", `C:\банк\a`), true)
 	assertEq(t, hiddenTitle([]string{"Telegram.exe"}, "chrome.exe", "Telegram.exe guide"), false)
 	assertEq(t, hiddenTitle([]string{"["}, "x", "["), false)
 }

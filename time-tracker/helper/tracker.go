@@ -37,11 +37,14 @@ func (t *Tracker) callExe(s Sample) string {
 	return ""
 }
 
+// slashFree maps / and \ to look-alikes that titles never hold, so path.Match's * spans them and \ is no escape.
+var slashFree = strings.NewReplacer("/", "∕", `\`, "⧵")
+
 // hiddenTitle tells whether a pattern matches the exe or the title, ignoring case; a bad pattern matches nothing.
 func hiddenTitle(patterns []string, exe, title string) bool {
-	exe, title = strings.ToLower(exe), strings.ToLower(title)
+	exe, title = slashFree.Replace(strings.ToLower(exe)), slashFree.Replace(strings.ToLower(title))
 	for _, p := range patterns {
-		p = strings.ToLower(p)
+		p = slashFree.Replace(strings.ToLower(p))
 		if ok, err := path.Match(p, exe); ok && err == nil {
 			return true
 		}

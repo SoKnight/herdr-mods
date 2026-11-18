@@ -56,6 +56,9 @@ func guid(s string) *windows.GUID {
 // comObj is a COM interface pointer: its first word points at the vtable.
 type comObj struct{ vtbl *[32]uintptr }
 
+// call keeps the out-pointers its callers pass as uintptr(unsafe.Pointer(&x)) alive and unmoved, as LazyProc.Call does.
+//
+//go:uintptrescapes
 func (o *comObj) call(method int, args ...uintptr) error {
 	r, _, _ := syscall.SyscallN(o.vtbl[method], append([]uintptr{uintptr(unsafe.Pointer(o))}, args...)...)
 	if int32(r) < 0 {
