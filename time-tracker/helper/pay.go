@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -140,6 +141,7 @@ func (d *Daemon) postBonus(r *http.Request) (int, any, error) {
 	if b.Day < 1 || b.Day > month.AddDate(0, 1, -1).Day() {
 		return 0, nil, fail(http.StatusBadRequest, "day: want a day of that month")
 	}
+	b.Title = strings.TrimSpace(b.Title)
 	if n := utf8.RuneCountInString(b.Title); n < 1 || n > 200 {
 		return 0, nil, fail(http.StatusBadRequest, "title: want 1..200 characters")
 	}

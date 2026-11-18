@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -77,4 +78,33 @@ func TestPayChangesAreLoggedAndUndone(t *testing.T) {
 	assertEq(t, len(d.project("easy").Pay), 1)
 	assertEq(t, undo(set.ID), http.StatusNoContent)
 	assertEq(t, len(d.project("easy").Pay), 0)
+}
+
+func TestBonusTitleAndIDs(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	bonus := func(title string, out any) int {
+		return api.do("POST", "/v1/bonuses", map[string]any{"project": "easy", "month": "2026-11", "day": 12, "title": title, "amount": 1}, out)
+	}
+	var b Bonus
+	assertEq(t, bonus(strings.Repeat("ж", 200), &b), http.StatusCreated)
+	assertEq(t, bonus(strings.Repeat("ж", 201), nil), http.StatusBadRequest)
+	assertEq(t, bonus("   ", nil), http.StatusBadRequest)
+	assertEq(t, bonus(" "+strings.Repeat("ж", 200)+"\n", nil), http.StatusCreated)
+	assertEq(t, bonus("  Релиз  ", &b), http.StatusCreated)
+	assertEq(t, b.Title, "Релиз")
+	assertEq(t, api.do("DELETE", fmt.Sprintf("/v1/bonuses/%d", b.ID), nil, nil), http.StatusNoContent)
+	assertEq(t, bonus("Ещё", &b), http.StatusCreated)
+	assertEq(t, b.ID, int64(4)) // 3 was removed: never handed out again
+}
+
+func TestReportGoalOffAllMonth(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 16, 12, 0) })
+	api.do("PUT", "/v1/projects/easy/goal", map[string]any{"from": "2026-10-01", "dir": "min", "minutes": 390, "period": "day", "weekdays": []int{1, 2, 3, 4, 5}}, nil)
+	assertEq(t, api.do("PUT", "/v1/projects/easy/goal", map[string]any{"from": "2026-11-01", "off": true}, nil), http.StatusOK)
+	var m map[string]json.RawMessage
+	assertEq(t, api.do("GET", "/v1/months/2026-11/report?project=easy", nil, &m), http.StatusOK)
+	assertEq(t, string(m["goal"]), "null")
 }
