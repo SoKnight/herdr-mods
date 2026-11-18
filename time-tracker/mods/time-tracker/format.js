@@ -137,10 +137,27 @@ export function goalOn(goals, day) {
   return g && !g.off ? g : null;
 }
 
+const dayShort = (d) => dayTitle(d).split(", ")[1]; // "2026-11-16" → "16 ноября"
+
+// The goal dialog's top line: the goal in force today.
+export const goalNow = (current) => (current ? `Сейчас: ${goalVersion(current).replace(/^(с .+?) — (.+)$/, "$2, $1")}` : "Сейчас цели нет.");
+
+// Asked before a goal is saved from `day` when versions after it would be replaced; null: nothing to ask.
+export function goalReplaceText(goals, day) {
+  const later = (goals ?? []).filter((v) => v.from > day).map((v) => v.from).sort();
+  return later.length ? `Цель с ${dayShort(day)} заменит версии с ${dayShort(later[0])}. Сохранить?` : null;
+}
+
+// Asked before a goal is removed from `day`: what is left before it.
+export function goalRemoveText(goals, day) {
+  const before = goalOn((goals ?? []).filter((v) => v.from < day), day);
+  return `Цели не будет с ${dayShort(day)}${before ? `, до этого остаётся цель с ${dayShort(before.from)}` : ""}. Убрать?`;
+}
+
 // What saving a goal from `day` does to the other versions: an earlier goal stays in force up to it,
 // later versions are replaced. null when there is nothing to say.
 export function goalFromNote(goals, day) {
-  const short = (d) => dayTitle(d).split(", ")[1];
+  const short = dayShort;
   const before = goalOn((goals ?? []).filter((v) => v.from < day), day);
   const later = (goals ?? []).filter((v) => v.from > day);
   const notes = [];

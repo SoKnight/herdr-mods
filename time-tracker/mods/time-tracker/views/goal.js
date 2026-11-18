@@ -4,7 +4,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex, Input, InputState } from "gpui-base";
 import { theme } from "herdr";
 import { call } from "../client.js";
-import { parseHours, parseDay, goalFromNote, hoursText, goalOn, goalVersion, dayTitle, dayString, fmtMin, money, parseMoney, payOn, monthOf, dialogWrites, MONTH_NAMES } from "../format.js";
+import { parseHours, parseDay, goalFromNote, goalNow, goalReplaceText, goalRemoveText, hoursText, goalOn, goalVersion, dayTitle, dayString, fmtMin, money, parseMoney, payOn, monthOf, dialogWrites, MONTH_NAMES } from "../format.js";
 import { projectColor } from "../lanes.js";
 import { monthStartTitle } from "../rules.js";
 import { Dialog, Dropdown, Check, Button, Icon, Message, Segmented, TEXT } from "../ui.js";
@@ -48,13 +48,16 @@ export class GoalEdit {
       { id: "today", day: today, label: `сегодня, ${dayTitle(today).split(", ")[1]}` },
       { id: "next", day: next, label: `${monthStartTitle(next)} ${next.slice(0, 4)}` },
     ];
-    this.from = this.froms[0].day;
+    // A goal in force: changes start where it does, so a save edits it rather than adding a version.
+    if (g && !this.froms.some((f) => f.day === g.from)) this.froms.unshift({ id: "current", day: g.from, label: `${dayTitle(g.from).split(", ")[1]} ${g.from.slice(0, 4)}, как сейчас` });
+    this.from = g?.from ?? this.froms[0].day;
     this.fromOther = false; // «другая дата…»: the day is typed into fromText
     this.fromText = InputState.new({ placeholder: "ДД.ММ" });
     this.fromText.on("submit", (_e, cx) => this.save(cx));
     this.openList = null; // the open dropdown: "dir" | "period" | "from"
     this.showVersions = false;
     this.error = null;
+    this.confirm = null; // { text, label, run(cx) }: asked before replacing or removing versions
     this.busy = false;
     this.closed = false; // close() ran: an answer still on its way must not close again
     this.opened = this.controls(); // what the controls showed: a side left as it was is not sent
@@ -73,7 +76,8 @@ export class GoalEdit {
   }
 
   // Sends `goal set` when the goal's controls were changed and `pay set` when the pay's were.
-  save(cx) {
+  save(cx, sure = false) {
+    this.confirm = null;
     const now = this.controls(), writes = dialogWrites(this.opened, now), steps = [];
     const from = this.fromDay();
     if (writes.goal && !from) {
@@ -84,6 +88,11 @@ export class GoalEdit {
       const minutes = parseHours(this.hours.value());
       if (minutes === null) {
         this.error = "Часы: число больше нуля, например 6,5";
+        return cx.notify();
+      }
+      const ask = !sure && goalReplaceText(this.project.goals, from);
+      if (ask) {
+        this.confirm = { text: ask, label: "Сохранить", run: (cx) => this.save(cx, true) };
         return cx.notify();
       }
       const goal = { from, dir: this.dir, minutes, period: this.period, weekdays: [...this.weekdays].sort((a, b) => a - b), calendar: this.calendar, weekends: this.weekends };
@@ -111,10 +120,15 @@ export class GoalEdit {
     this.finish(cx, steps, text);
   }
 
-  remove(cx) {
+  remove(cx, sure = false) {
+    this.confirm = null;
     const from = this.fromDay();
     if (!from) {
       this.error = "Дата: ДД.ММ, например 16.11";
+      return cx.notify();
+    }
+    if (!sure) {
+      this.confirm = { text: goalRemoveText(this.project.goals, from), label: "Убрать", run: (cx) => this.remove(cx, true) };
       return cx.notify();
     }
     this.finish(cx, [{ args: ["goal", "set", this.project.id, JSON.stringify({ from, off: true })] }], "Цель убрана.");
@@ -161,6 +175,7 @@ export class GoalEdit {
 
   toggleDay(n, cx) {
     if (!this.weekdays.delete(n)) this.weekdays.add(n);
+    this.confirm = null;
     cx.notify();
   }
 
@@ -168,19 +183,20 @@ export class GoalEdit {
     const t = theme();
     const caption = (text) => div().flex_none().text_size(TEXT.small).text_color(t.dim).child(text);
     const dropdown = (id, label, items, pick) =>
-      Dropdown({ id: `goal-${id}`, label, open: this.openList === id, items, onToggle: (open, cx) => ((this.openList = open ? id : null), cx.notify()), onPick: (v, cx) => (pick(v, cx), (this.openList = null), cx.notify()) });
+      Dropdown({ id: `goal-${id}`, label, open: this.openList === id, items, onToggle: (open, cx) => ((this.openList = open ? id : null), cx.notify()), onPick: (v, cx) => (pick(v, cx), (this.openList = null), (this.confirm = null), cx.notify()) });
     const labelOf = (items, id) => items.find((it) => it.id === id)?.label ?? "";
     const from = this.froms.find((f) => f.day === this.from);
-    const typed = this.fromOther && this.fromDay();
     const fromNote = this.fromDay() ? goalFromNote(this.project.goals, this.fromDay()) : null;
     // the buttons name the day they act from
-    const since = this.fromOther ? (typed ? `с ${dayTitle(typed).split(", ")[1]}` : "с даты") : `с ${from?.label ?? this.from}`;
+    const day = this.fromDay();
+    const since = day ? `с ${dayTitle(day).split(", ")[1]}` : "с даты";
     const versions = [...(this.project.goals ?? [])].sort((a, b) => b.from.localeCompare(a.from));
     const goal = v_flex()
       .flex_1()
       .min_w(0)
       .gap(12)
       .child(caption("Цель"))
+      .child(div().flex_none().whitespace_normal().text_size(TEXT.small).child(goalNow(this.current)))
       .child(
         h_flex()
           .flex_none()
@@ -265,7 +281,22 @@ export class GoalEdit {
       .p(18)
       .gap(12)
       .child(h_flex().items_start().gap(28).child(goal).child(this.payColumn(t, caption)))
-      .when(Boolean(this.error), (el) => el.child(Message(this.error, true)));
+      .when(Boolean(this.error), (el) => el.child(Message(this.error, true)))
+      .when(Boolean(this.confirm), (el) =>
+        el.child(
+          h_flex()
+            .flex_none()
+            .gap(12)
+            .items_center()
+            .p(8)
+            .rounded(6)
+            .bg(t.raised)
+            .text_size(TEXT.small)
+            .child(div().flex_1().min_w(0).whitespace_normal().child(this.confirm.text))
+            .child(Link({ id: "goal-confirm-no", label: "Отмена", color: t.muted, onClick: (cx) => ((this.confirm = null), cx.notify()) }))
+            .child(Link({ id: "goal-confirm-yes", label: this.confirm.label, onClick: (cx) => this.confirm.run(cx) })),
+        ),
+      );
     return Dialog({
       id: "goal",
       width: 640,
