@@ -115,7 +115,7 @@ func (h *hcTerminals) agents() map[string]AgentState {
 	for addr, t := range h.terms {
 		if t.State == "live" && t.Status != nil && t.Status.App != "" {
 			st := t.Status.State
-			out[addr] = AgentState{Cwd: t.Cwd, Working: st == "working", Waiting: st == "blocked" || st == "done", Since: t.StatusMs}
+			out[addr] = AgentState{Cwd: t.Cwd, Working: st == "working", Waiting: st == "blocked", Since: t.StatusMs}
 		}
 	}
 	return out
@@ -131,7 +131,7 @@ type openWait struct {
 }
 
 // AgentTracker turns snapshots into agent and wait spans, and "unknown" spans while the stream is down.
-// A wait lasts at most Cap from its terminal's Since: a terminal left "done" for days is not waiting for me.
+// A wait lasts at most Cap from its terminal's Since: a terminal left "blocked" for days is not waiting for me.
 type AgentTracker struct {
 	Cap     int64
 	open    map[string]*Span // by terminal address

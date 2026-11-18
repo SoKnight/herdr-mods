@@ -110,9 +110,9 @@ func (r *lineReader) Read(p []byte) (int, error) {
 func TestReadEventsFollowsStatusDeltas(t *testing.T) {
 	got, err := feedEvents(t, []string{
 		hcSnap,
-		statusLine(11, "t1", "done"),
+		statusLine(11, "t1", "blocked"),
 		`{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":11}}`,
-		statusLine(12, "t1", "done"), // a new msg, the same state: still waiting since 11's time
+		statusLine(12, "t1", "blocked"), // a new msg, the same state: still waiting since 11's time
 		eventLine(13, "t1", "size"),
 		statusLine(14, "t1", "working"),
 	}, []int64{100, 200, 300, 400, 500, 600})
@@ -128,7 +128,7 @@ func TestReadEventsFollowsStatusDeltas(t *testing.T) {
 func TestReadEventsMembership(t *testing.T) {
 	got, err := feedEvents(t, []string{
 		hcSnap,
-		statusLine(9, "t1", "done"),     // older than the snapshot: already in it
+		statusLine(9, "t1", "blocked"),     // older than the snapshot: already in it
 		statusLine(11, "t2", "blocked"), // a terminal without status starts reporting one
 		eventLine(12, "t1", "finished"), // its program ended: not an agent any more
 		eventLine(13, "t2", "removed"),
@@ -142,7 +142,7 @@ func TestReadEventsMembership(t *testing.T) {
 
 	for _, line := range []string{eventLine(11, "t9", "created"), eventLine(11, "t1", "restarted"), eventLine(11, "t1", "lost"),
 		statusLine(11, "t9", "working"), `{"jsonrpc":"2.0","method":"missed","params":{"seq":11}}`} {
-		got, err := feedEvents(t, []string{hcSnap, line, statusLine(12, "t1", "done")}, []int64{100})
+		got, err := feedEvents(t, []string{hcSnap, line, statusLine(12, "t1", "blocked")}, []int64{100})
 		assertEq(t, err, errResnapshot) // a terminal the map cannot follow: hc runs again for a new snapshot
 		assertEq(t, len(got), 1)
 	}
@@ -184,10 +184,10 @@ func TestParseWaiting(t *testing.T) {
 	line := func(state string, ms string) string {
 		return `{"terminals":[{"address":"t1","cwd":"C:\\Dev","state":"live","status":{"app":"claude-code","state":"` + state + `"},"status_ms":` + ms + `}]}`
 	}
-	s := parseSnapshot(t, line("done", "5"))
+	s := parseSnapshot(t, line("blocked", "5"))
 	assertEq(t, s["t1"], AgentState{Cwd: `C:\Dev`, Waiting: true, Since: 5})
-	s = parseSnapshot(t, line("blocked", "7"))
-	assertEq(t, s["t1"].Waiting, true)
+	s = parseSnapshot(t, line("done", "7")) // finished its turn: nothing asked of me
+	assertEq(t, s["t1"].Waiting, false)
 	s = parseSnapshot(t, line("idle", "9"))
 	assertEq(t, s["t1"].Waiting, false)
 	assertEq(t, s["t1"].Working, false)
