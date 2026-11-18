@@ -100,6 +100,18 @@ func (a *AgentTracker) Feed(states map[string]AgentState, at int64) []Span {
 	return out
 }
 
+// Expire closes the waits that are past Since+Cap, ending them there, without waiting for a snapshot.
+func (a *AgentTracker) Expire(at int64) []Span {
+	var out []Span
+	for term, w := range a.waiting {
+		if at-w.since >= a.Cap {
+			out = append(out, finish(w.sp, w.since+a.Cap)...)
+			delete(a.waiting, term)
+		}
+	}
+	return out
+}
+
 // Lost closes every agent and wait span and starts an agents_unknown one.
 func (a *AgentTracker) Lost(at int64) []Span {
 	var out []Span

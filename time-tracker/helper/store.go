@@ -222,7 +222,11 @@ func (st *Store) RecoverOpen() ([]Span, error) {
 		return nil, os.Rename(path, path+".bad")
 	}
 	for i := range o.Spans {
-		o.Spans[i].End = o.At
+		if sp := &o.Spans[i]; sp.End > sp.Start {
+			sp.End = min(sp.End, o.At) // a wait saved clamped to its cap stays clamped
+		} else {
+			sp.End = o.At
+		}
 	}
 	return o.Spans, nil
 }

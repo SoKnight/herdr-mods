@@ -290,6 +290,7 @@ func (d *Daemon) poll() {
 		s.Server = minecraftServer(d.S.MinecraftLogs)
 	}
 	d.appendSpans(d.tracker.Feed(s))
+	d.appendSpans(d.agents.Expire(now))
 	if err := d.Store.SaveOpen(d.openSpans(now), d.tracker.lastSeen(now)); err != nil {
 		log.Printf("open.json: %v", err)
 	}

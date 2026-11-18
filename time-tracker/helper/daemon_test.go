@@ -294,3 +294,42 @@ func TestPollAddsMinecraftServer(t *testing.T) {
 	d.S.MinecraftLogs = []string{filepath.Join(t.TempDir(), "none.log")}
 	d.poll() // no log: no server, no error
 }
+
+func TestExpiredWaitSurvivesRecovery(t *testing.T) {
+	d := testDaemon(t)
+	now := at(0)
+	swap(t, &nowMs, func() int64 { return now })
+	swap(t, &bootAt, func(int64) int64 { return 0 })
+	swap(t, &logonAt, func() int64 { return 0 })
+	swap(t, &takeSample, func(ms int64) (Sample, error) { return Sample{At: ms, LastInput: ms, Exe: "idea64.exe"}, nil })
+	d.agents.Cap = waitCap(d.S)
+	d.agentsSeen(map[string]AgentState{"t1": {Cwd: `C:\Dev\easy`, Waiting: true, Since: at(0)}})
+	// no new snapshot; polls go on past the cap and save open.json
+	d.tracker.PollMs = 3600_000 // no sleep gap between the two polls
+	d.poll()
+	now = at(50)
+	d.poll()
+	waits := func() (out []Span) {
+		for _, sp := range mustLoad(t, d.Store, at(-10), at(300)).Spans {
+			if sp.Kind == "wait" {
+				out = append(out, sp)
+			}
+		}
+		return
+	}
+	got := waits()
+	assertEq(t, len(got), 1) // poll expired it
+	assertEq(t, got[0].End, at(45))
+
+	// a wait saved already clamped keeps its end through recovery
+	must(t, d.Store.SaveOpen([]Span{{Kind: "wait", Start: at(60), End: at(75), Term: "t2", Cwd: `C:\Dev\easy`}}, at(300)))
+	now = at(300)
+	must(t, d.recoverOpen())
+	var late Span
+	for _, sp := range waits() {
+		if sp.Term == "t2" {
+			late = sp
+		}
+	}
+	assertEq(t, late.End, at(75))
+}

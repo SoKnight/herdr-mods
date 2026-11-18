@@ -147,3 +147,13 @@ func TestWaitCutLostAndCwd(t *testing.T) {
 	assertEq(t, len(got), 1)
 	assertEq(t, got[0].Kind, "wait")
 }
+
+func TestExpireClosesPastCap(t *testing.T) {
+	a := AgentTracker{Cap: testCap}
+	a.Feed(waiting(`C:\Dev`, at(0)), at(1))
+	assertEq(t, len(a.Expire(at(44))), 0)
+	got := a.Expire(at(100))
+	assertEq(t, len(got), 1)
+	assertEq(t, got[0], Span{Kind: "wait", Start: at(0), End: at(45), Term: "t1", Cwd: `C:\Dev`})
+	assertEq(t, len(a.Open(at(100))), 0)
+}
