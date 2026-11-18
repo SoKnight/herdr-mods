@@ -13,8 +13,9 @@ import (
 
 // AgentState is one live agent terminal as seen in an `hc events` snapshot.
 type AgentState struct {
-	Cwd     string
-	Working bool
+	Cwd              string
+	Working, Waiting bool  // Waiting: blocked or done, i.e. waiting for me
+	Since            int64 // status_ms: when the terminal got its state
 }
 
 // parseEvent extracts live agent terminals from one `hc events` line.
@@ -29,6 +30,7 @@ func parseEvent(line []byte) (map[string]AgentState, error) {
 				App   string `json:"app"`
 				State string `json:"state"`
 			} `json:"status"`
+			StatusMs int64 `json:"status_ms"`
 		} `json:"terminals"`
 	}
 	if err := json.Unmarshal(line, &ev); err != nil {
@@ -40,15 +42,28 @@ func parseEvent(line []byte) (map[string]AgentState, error) {
 	out := map[string]AgentState{}
 	for _, t := range *ev.Terminals {
 		if t.State == "live" && t.Status != nil && t.Status.App != "" {
-			out[t.Address] = AgentState{Cwd: t.Cwd, Working: t.Status.State == "working"}
+			st := t.Status.State
+			out[t.Address] = AgentState{Cwd: t.Cwd, Working: st == "working", Waiting: st == "blocked" || st == "done", Since: t.StatusMs}
 		}
 	}
 	return out, nil
 }
 
-// AgentTracker turns snapshots into agent spans, and "unknown" spans while the stream is down.
+// waitCap is how long a terminal's wait counts: a session's idle limit.
+func waitCap(s Settings) int64 { return int64(s.SessionIdleMinutes) * 60_000 }
+
+// openWait is an open wait span and when its terminal began waiting.
+type openWait struct {
+	sp    Span
+	since int64
+}
+
+// AgentTracker turns snapshots into agent and wait spans, and "unknown" spans while the stream is down.
+// A wait lasts at most Cap from its terminal's Since: a terminal left "done" for days is not waiting for me.
 type AgentTracker struct {
+	Cap     int64
 	open    map[string]*Span // by terminal address
+	waiting map[string]*openWait
 	unknown *Span
 }
 
@@ -56,7 +71,7 @@ type AgentTracker struct {
 func (a *AgentTracker) Feed(states map[string]AgentState, at int64) []Span {
 	var out []Span
 	if a.open == nil {
-		a.open = map[string]*Span{}
+		a.open, a.waiting = map[string]*Span{}, map[string]*openWait{}
 	}
 	if a.unknown != nil {
 		out = append(out, finish(*a.unknown, at)...)
@@ -68,20 +83,33 @@ func (a *AgentTracker) Feed(states map[string]AgentState, at int64) []Span {
 			delete(a.open, term)
 		}
 	}
+	for term, w := range a.waiting {
+		if s, ok := states[term]; !ok || !s.Waiting || s.Cwd != w.sp.Cwd || at-w.since >= a.Cap {
+			out = append(out, finish(w.sp, min(at, w.since+a.Cap))...)
+			delete(a.waiting, term)
+		}
+	}
 	for term, s := range states {
 		if s.Working && a.open[term] == nil {
 			a.open[term] = &Span{Kind: "agent", Start: at, Term: term, Cwd: s.Cwd}
+		}
+		if s.Waiting && a.waiting[term] == nil && at-s.Since < a.Cap {
+			a.waiting[term] = &openWait{Span{Kind: "wait", Start: max(s.Since, at-a.Cap), Term: term, Cwd: s.Cwd}, s.Since}
 		}
 	}
 	return out
 }
 
-// Lost closes every agent span and starts an agents_unknown one.
+// Lost closes every agent and wait span and starts an agents_unknown one.
 func (a *AgentTracker) Lost(at int64) []Span {
 	var out []Span
 	for term, o := range a.open {
 		out = append(out, finish(*o, at)...)
 		delete(a.open, term)
+	}
+	for term, w := range a.waiting {
+		out = append(out, finish(w.sp, min(at, w.since+a.Cap))...)
+		delete(a.waiting, term)
 	}
 	if a.unknown == nil {
 		a.unknown = &Span{Kind: "agents_unknown", Start: at}
@@ -95,6 +123,13 @@ func (a *AgentTracker) Cut(at, resume int64) []Span {
 	for _, o := range a.open {
 		out = append(out, finish(*o, at)...)
 		o.Start = resume
+	}
+	for term, w := range a.waiting {
+		out = append(out, finish(w.sp, min(at, w.since+a.Cap))...)
+		w.sp.Start = resume
+		if resume >= w.since+a.Cap {
+			delete(a.waiting, term)
+		}
 	}
 	if a.unknown != nil {
 		out = append(out, finish(*a.unknown, at)...)
@@ -110,6 +145,12 @@ func (a *AgentTracker) Open(at int64) []Span {
 		sp := *o
 		sp.End = at
 		out = append(out, sp)
+	}
+	for _, w := range a.waiting {
+		if sp := w.sp; w.since+a.Cap > sp.Start {
+			sp.End = min(at, w.since+a.Cap)
+			out = append(out, sp)
+		}
 	}
 	if a.unknown != nil {
 		sp := *a.unknown

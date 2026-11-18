@@ -80,3 +80,70 @@ func TestAgentCutAcrossSleep(t *testing.T) {
 	assertEq(t, got[0], Span{Kind: "agents_unknown", Start: 0, End: 10_000})
 	assertEq(t, lost.Open(700_000)[0].Start, int64(600_000))
 }
+
+const testCap = 45 * minMs
+
+func TestParseWaiting(t *testing.T) {
+	line := func(state string, ms string) []byte {
+		return []byte(`{"terminals":[{"address":"t1","cwd":"C:\\Dev","state":"live","status":{"app":"claude-code","state":"` + state + `"},"status_ms":` + ms + `}]}`)
+	}
+	s, err := parseEvent(line("done", "5"))
+	must(t, err)
+	assertEq(t, s["t1"], AgentState{Cwd: `C:\Dev`, Waiting: true, Since: 5})
+	s, _ = parseEvent(line("blocked", "7"))
+	assertEq(t, s["t1"].Waiting, true)
+	s, _ = parseEvent(line("idle", "9"))
+	assertEq(t, s["t1"].Waiting, false)
+	assertEq(t, s["t1"].Working, false)
+}
+
+func waiting(cwd string, since int64) map[string]AgentState {
+	return map[string]AgentState{"t1": {Cwd: cwd, Waiting: true, Since: since}}
+}
+
+func TestWaitSpans(t *testing.T) {
+	a := AgentTracker{Cap: testCap}
+	a.Feed(working(`C:\Dev`), at(0))
+	got := a.Feed(waiting(`C:\Dev`, at(5)), at(5))
+	assertEq(t, len(got), 1)
+	assertEq(t, got[0], Span{Kind: "agent", Start: at(0), End: at(5), Term: "t1", Cwd: `C:\Dev`})
+	got = a.Feed(working(`C:\Dev`), at(9))
+	assertEq(t, len(got), 1)
+	assertEq(t, got[0], Span{Kind: "wait", Start: at(5), End: at(9), Term: "t1", Cwd: `C:\Dev`})
+	open := a.Open(at(12))
+	assertEq(t, len(open), 1)
+	assertEq(t, open[0], Span{Kind: "agent", Start: at(9), End: at(12), Term: "t1", Cwd: `C:\Dev`})
+}
+
+func TestStaleDoneIsNotWaiting(t *testing.T) {
+	a := AgentTracker{Cap: testCap}
+	a.Feed(waiting(`C:\Dev`, at(-3*24*60)), at(0))
+	assertEq(t, len(a.Open(at(1))), 0)
+
+	a.Feed(waiting(`C:\Dev`, at(-10)), at(0))
+	open := a.Open(at(1))
+	assertEq(t, len(open), 1)
+	assertEq(t, open[0].Start, at(-10))
+	assertEq(t, a.Open(at(100))[0].End, at(35)) // never past Since+cap
+
+	got := a.Feed(waiting(`C:\Dev`, at(-10)), at(50))
+	assertEq(t, len(got), 1)
+	assertEq(t, got[0], Span{Kind: "wait", Start: at(-10), End: at(35), Term: "t1", Cwd: `C:\Dev`})
+	assertEq(t, len(a.Open(at(60))), 0)
+	assertEq(t, len(a.Feed(waiting(`C:\Dev`, at(-10)), at(70))), 0) // and does not reopen
+}
+
+func TestWaitCutLostAndCwd(t *testing.T) {
+	a := AgentTracker{Cap: testCap}
+	a.Feed(waiting(`C:\A`, at(0)), at(0))
+	got := a.Feed(waiting(`C:\B`, at(0)), at(3))
+	assertEq(t, len(got), 1) // cwd changed: the old wait closes, a new one opens
+	assertEq(t, got[0].Cwd, `C:\A`)
+	got = a.Cut(at(5), at(20))
+	assertEq(t, len(got), 1)
+	assertEq(t, got[0].End, at(5))
+	assertEq(t, a.Open(at(25))[0].Start, at(20))
+	got = a.Lost(at(30))
+	assertEq(t, len(got), 1)
+	assertEq(t, got[0].Kind, "wait")
+}

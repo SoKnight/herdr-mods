@@ -561,3 +561,44 @@ func TestMinecraftRuleMatchesServer(t *testing.T) {
 	assertEq(t, tl.Me[0].Project, "tricky")
 	assertEq(t, tl.Me[0].Server, "play.tricky.net:25565")
 }
+
+func wait(term, cwd string, s, e int) Span {
+	return Span{Kind: "wait", Start: at(s), End: at(e), Term: term, Cwd: cwd}
+}
+
+func waitIntervals(tl Timeline, project string) []Interval {
+	var out []Interval
+	for _, w := range tl.Waits {
+		if w.Project == project {
+			out = append(out, Interval{w.Start, w.End})
+		}
+	}
+	return out
+}
+
+func TestTimelineWaits(t *testing.T) {
+	tl := attr(t, spans(wait("t1", `C:\Dev\easyx`, 0, 30), wait("t2", `C:\Dev\easyx`, 20, 50),
+		wait("t3", `C:\Elsewhere`, 100, 110), agent("t1", `C:\Dev\easyx`, 60, 70)))
+	if got := waitIntervals(tl, "easylauncher"); !reflect.DeepEqual(got, []Interval{m(0, 50)}) {
+		t.Errorf("waits = %v", got)
+	}
+	if got := waitIntervals(tl, ""); !reflect.DeepEqual(got, []Interval{m(100, 110)}) {
+		t.Errorf("other waits = %v", got)
+	}
+	rep := Summarize(tl, tsettings(), nil)
+	assertEq(t, rep.Waiting, int64(60*minMs))
+	assertEq(t, rep.Agents, int64(10*minMs)) // waiting never counts as agent time
+	assertEq(t, rep.Me, int64(0))
+
+	// clipped to power minus lock minus nodata
+	tl = attr(t, spans(power(5, 100), lock(10, 15), nodata(20, 25), wait("t1", `C:\Dev\easyx`, 0, 40)))
+	if got := waitIntervals(tl, "easylauncher"); !reflect.DeepEqual(got, []Interval{m(5, 10), m(15, 20), m(25, 40)}) {
+		t.Errorf("clipped waits = %v", got)
+	}
+	assertEq(t, len(attr(t, spans(wait("t1", `C:\Games`, 0, 5))).Waits), 1)
+}
+
+func TestWaitsSkipExcludedFolders(t *testing.T) {
+	tl := attrTargets(t, spans(wait("t1", `C:\Games`, 0, 10)))
+	assertEq(t, len(tl.Waits), 0)
+}

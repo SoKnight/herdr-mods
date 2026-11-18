@@ -250,8 +250,35 @@ func (d *Daemon) getStatus(r *http.Request) (int, any, error) {
 		me += RoundMinutes(p.Me, 1) * 60_000
 	}
 	return http.StatusOK, map[string]any{"version": version, "today_me_ms": me, "today_agents_ms": rep.Agents,
+		"agents_working": len(d.agents.open), "waiting": d.longestWait(now), "today_waiting_ms": rep.Waiting,
 		"project": project, "project_name": name, "activity": activity, "state": state,
 		"session_start": sessionStart, "last_active": lastActive, "last_sample": d.lastSample()}, nil
+}
+
+// longestWait is the live wait that began first and is still within the cap, as {project, name, since}; nil for none.
+// Waits in Исключить and Досуг folders are not shown. Callers hold mu.
+func (d *Daemon) longestWait(now int64) map[string]any {
+	var best *openWait
+	for _, w := range d.agents.waiting {
+		if now-w.since >= d.agents.Cap {
+			continue
+		}
+		if id, _ := d.Rules.FolderProject(w.sp.Cwd, w.sp.Start); id == excludeID || id == leisureID {
+			continue
+		}
+		if best == nil || w.sp.Start < best.sp.Start {
+			best = w
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	id, _ := d.Rules.FolderProject(best.sp.Cwd, best.sp.Start)
+	name := id
+	if p := d.project(id); p != nil && p.Name != "" {
+		name = p.Name
+	}
+	return map[string]any{"project": id, "name": name, "since": best.sp.Start}
 }
 
 // listed gives empty lists as [] instead of null, so the mod can iterate them as is.
@@ -262,6 +289,7 @@ func listed(tl Timeline) Timeline {
 	tl.Me = nonNil(tl.Me)
 	tl.Leisure = nonNil(tl.Leisure)
 	tl.Agents = nonNil(tl.Agents)
+	tl.Waits = nonNil(tl.Waits)
 	return tl
 }
 

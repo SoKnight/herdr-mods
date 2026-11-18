@@ -21,6 +21,7 @@ type Timeline struct {
 	Me            []Segment  `json:"me"`
 	Leisure       []Segment  `json:"leisure"` // Досуг: matched by a leisure rule, not my time
 	Agents        []AgentSeg `json:"agents"`
+	Waits         []AgentSeg `json:"waits"` // agents waiting for me, in the present and clipped to power minus lock and nodata
 }
 
 // cursor finds the span covering t among spans sorted by Start, for t that never decreases.
@@ -213,7 +214,38 @@ func Attribute(raw Raw, rules *Rules, corr []Correction, s Settings, from, to in
 	}
 	tl.Me = me
 	tl.Agents = unionAgents(agents)
+	tl.Waits = waitPieces(rules, byKind["wait"], mergeSpans(byKind["power"], 1),
+		append(append([]Span(nil), byKind["lock"]...), byKind["nodata"]...), from, to)
 	return tl
+}
+
+// waitPieces gives each wait its folder's project like agentPieces, keeps what lies inside power and
+// outside lock and nodata, and unions it. Corrections do not touch waits: waiting is not money.
+func waitPieces(rules *Rules, spans, power, absent []Span, from, to int64) []AgentSeg {
+	var out []AgentSeg
+	for _, p := range agentPieces(rules, spans, from, to) {
+		for _, pw := range power {
+			if s, e := max(p.Start, pw.Start), min(p.End, pw.End); s < e {
+				q := p
+				q.Start, q.End = s, e
+				out = append(out, q)
+			}
+		}
+	}
+	for _, ab := range absent {
+		var kept []AgentSeg
+		for _, p := range out {
+			splitBy(p.Start, p.End, ab.Start, ab.End, func(s, e int64, inside bool) {
+				if !inside {
+					q := p
+					q.Start, q.End = s, e
+					kept = append(kept, q)
+				}
+			})
+		}
+		out = kept
+	}
+	return unionAgents(out)
 }
 
 func clipMerge(spans []Span, from, to int64) []Interval {

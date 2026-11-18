@@ -628,3 +628,58 @@ func TestStatusSumsRoundedProjectMinutes(t *testing.T) {
 	assertEq(t, api.do("GET", "/v1/status", nil, &st), http.StatusOK)
 	assertEq(t, st.Me, int64(16*minMs)) // 11м + 5м, as День and Неделя count them
 }
+
+type waitStatus struct {
+	Working int `json:"agents_working"`
+	Waiting *struct {
+		Project string `json:"project"`
+		Name    string `json:"name"`
+		Since   int64  `json:"since"`
+	} `json:"waiting"`
+	TodayWaiting int64 `json:"today_waiting_ms"`
+}
+
+func TestStatusWaiting(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	now := at(0)
+	swap(t, &nowMs, func() int64 { return now })
+	swap(t, &takeSample, func(ms int64) (Sample, error) { return Sample{At: ms, LastInput: ms, Exe: "idea64.exe"}, nil })
+	d.S.SessionIdleMinutes = 45
+	d.agents.Cap = waitCap(d.S)
+	seed(t, d, power(-10, 5))
+	now = at(-4)
+	d.agentsSeen(map[string]AgentState{
+		"t1": {Cwd: `C:\Dev\other`, Working: true},
+		"t2": {Cwd: `C:\Dev\easy`, Waiting: true, Since: at(-4)},
+		"t3": {Cwd: `C:\Dev\easy`, Waiting: true, Since: at(-3 * 24 * 60)}, // stale
+	})
+	now = at(0)
+	d.poll()
+	var st waitStatus
+	assertEq(t, api.do("GET", "/v1/status", nil, &st), http.StatusOK)
+	assertEq(t, st.Working, 1)
+	assertEq(t, st.Waiting != nil, true)
+	assertEq(t, st.Waiting.Project, "easy")
+	assertEq(t, st.Waiting.Name, "Easy")
+	assertEq(t, st.Waiting.Since, at(-4))
+	assertEq(t, st.TodayWaiting, int64(4*minMs))
+
+	now = at(60) // past the cap with no snapshot since: still not a wait
+	st = waitStatus{}
+	assertEq(t, api.do("GET", "/v1/status", nil, &st), http.StatusOK)
+	assertEq(t, st.Waiting == nil, true)
+}
+
+func TestStaleDoneStatusIsNull(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	now := at(0)
+	swap(t, &nowMs, func() int64 { return now })
+	d.agents.Cap = waitCap(d.S)
+	d.agentsSeen(map[string]AgentState{"t17": {Cwd: `C:\Dev\easy`, Waiting: true, Since: at(-3 * 24 * 60)}})
+	var st waitStatus
+	assertEq(t, api.do("GET", "/v1/status", nil, &st), http.StatusOK)
+	assertEq(t, st.Waiting == nil, true)
+	assertEq(t, st.TodayWaiting, int64(0))
+}

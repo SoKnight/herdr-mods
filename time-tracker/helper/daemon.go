@@ -170,6 +170,7 @@ func (d *Daemon) loadSettings() error {
 	d.S, d.setErr = s, nil
 	d.tracker.PollMs = int64(s.PollSeconds) * 1000
 	d.tracker.Hidden = s.HiddenTitles
+	d.agents.Cap = waitCap(s)
 	return nil
 }
 
