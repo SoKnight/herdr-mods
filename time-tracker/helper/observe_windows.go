@@ -64,6 +64,7 @@ func logonTime() int64 {
 
 func sample(now int64) (Sample, error) {
 	s := Sample{At: now, Locked: locked(), CallExes: micUsers()}
+	s.SoundExes, _ = audibleExes() // no audio device or a COM failure: no sound, the sample still counts
 	var li struct{ Size, Time uint32 }
 	li.Size = uint32(unsafe.Sizeof(li))
 	if r, _, err := pGetLastInputInfo.Call(uintptr(unsafe.Pointer(&li))); r == 0 {
@@ -99,20 +100,28 @@ func foreground() (exe, title string) {
 		title = windows.UTF16ToString(tbuf[:n])
 	}
 	var pid uint32
-	if _, err := windows.GetWindowThreadProcessId(hwnd, &pid); err != nil || pid == 0 {
+	if _, err := windows.GetWindowThreadProcessId(hwnd, &pid); err != nil {
 		return
+	}
+	return imageName(pid), title
+}
+
+// imageName returns the exe file name of a process; empty on failure.
+func imageName(pid uint32) string {
+	if pid == 0 {
+		return ""
 	}
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
 	if err != nil {
-		return
+		return ""
 	}
 	defer windows.CloseHandle(h)
 	var pbuf [windows.MAX_PATH * 2]uint16
 	n := uint32(len(pbuf))
-	if windows.QueryFullProcessImageName(h, 0, &pbuf[0], &n) == nil {
-		exe = filepath.Base(windows.UTF16ToString(pbuf[:n]))
+	if windows.QueryFullProcessImageName(h, 0, &pbuf[0], &n) != nil {
+		return ""
 	}
-	return
+	return filepath.Base(windows.UTF16ToString(pbuf[:n]))
 }
 
 // micUsers lists the exes whose microphone session is still open.

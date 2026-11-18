@@ -113,6 +113,50 @@ func TestTrackerOpenStopsAtTheLastPollAfterSleep(t *testing.T) {
 	assertEq(t, find(tr.Open(3_600_000), "window").End, int64(5000))
 }
 
+func TestHiddenTitle(t *testing.T) {
+	assertEq(t, hiddenTitle([]string{"KeePassXC.exe"}, "keepassxc.exe", "db.kdbx"), true)
+	assertEq(t, hiddenTitle([]string{"*банк*"}, "chrome.exe", "Сбер БАНК онлайн"), true)
+	assertEq(t, hiddenTitle([]string{"Telegram.exe"}, "chrome.exe", "Telegram.exe guide"), false)
+	assertEq(t, hiddenTitle([]string{"["}, "x", "["), false)
+}
+
+func TestTrackerHidesTitles(t *testing.T) {
+	tr := &Tracker{PollMs: 5000, Hidden: []string{"*банк*"}}
+	closed := feed(tr, smp(0, 0, "chrome.exe", "банк 1"), smp(5000, 0, "chrome.exe", "банк 2"))
+	assertEq(t, count(closed, "window"), 0)
+	open := tr.Open(5000)
+	assertEq(t, count(open, "window"), 1)
+	w := find(open, "window")
+	assertEq(t, w.Title, "")
+	assertEq(t, w.Start, int64(0))
+}
+
+func TestTrackerSoundSpan(t *testing.T) {
+	tr := &Tracker{PollMs: 5000}
+	var closed []Span
+	for at := int64(0); at <= 15000; at += 5000 {
+		s := smp(at, 0, "chrome.exe", "YouTube")
+		if at < 15000 {
+			s.SoundExes = []string{"chrome.exe"}
+		}
+		closed = append(closed, tr.Feed(s)...)
+	}
+	assertEq(t, count(closed, "sound"), 1)
+	snd := find(closed, "sound")
+	assertEq(t, snd.Exe, "chrome.exe")
+	assertEq(t, snd.Start, int64(0))
+	assertEq(t, snd.End, int64(15000))
+
+	bg := &Tracker{PollMs: 5000}
+	s := smp(0, 0, "idea64.exe", "A")
+	s.SoundExes = []string{"spotify.exe"}
+	s2 := s
+	s2.At = 5000
+	closed = feed(bg, s, s2)
+	assertEq(t, count(closed, "sound"), 0)
+	assertEq(t, count(bg.Open(5000), "sound"), 0)
+}
+
 func TestTrackerSplitsWindowOnServer(t *testing.T) {
 	tr := Tracker{PollMs: 5000}
 	tr.Feed(Sample{At: at(0), Exe: "javaw.exe", Title: "Minecraft", Server: "a.net:1"})

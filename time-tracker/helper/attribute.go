@@ -121,7 +121,12 @@ func Attribute(raw Raw, rules *Rules, corr []Correction, s Settings, from, to in
 	sort.Slice(cuts, func(a, b int) bool { return cuts[a] < cuts[b] })
 
 	windows, locks, calls := newCursor(byKind["window"]), newCursor(byKind["lock"]), newCursor(byKind["call"])
-	input := newCursor(mergeSpans(byKind["input"], idle))
+	inputs := byKind["input"]
+	if s.VideoActivity {
+		// Video with sound in the foreground counts as being here, like input.
+		inputs = append(append([]Span(nil), inputs...), byKind["sound"]...)
+	}
+	input := newCursor(mergeSpans(inputs, idle))
 	// Presence is asked only while the computer is on and the collector saw it: a sleep or a nodata
 	// stretch is absence, so input on both sides of it is never glued across.
 	power, nodata := newCursor(mergeSpans(byKind["power"], 1)), newCursor(mergeSpans(byKind["nodata"], 1))

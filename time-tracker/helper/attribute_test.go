@@ -162,6 +162,21 @@ func TestCallCountsWithoutInput(t *testing.T) {
 	}
 }
 
+func TestSoundCountsAsActivity(t *testing.T) {
+	raw := spans(power(-60, 120), win("chrome.exe", "Видео", 0, 60), Span{Kind: "sound", Start: at(0), End: at(30), Exe: "chrome.exe"})
+	for _, video := range []bool{true, false} {
+		s := DefaultSettings()
+		s.Loc, s.VideoActivity = msk, video
+		tl := Attribute(raw, testRules(t), nil, s, at(-60), at(120))
+		if video {
+			assertMe(t, tl, 0, 30)
+			assertEq(t, segAt(t, tl, 10, 0).App, "chrome.exe")
+		} else {
+			assertMeIntervals(t, tl, nil)
+		}
+	}
+}
+
 func TestCallInBackgroundStillStudy(t *testing.T) {
 	tl := attr(t, spans(call(0, 60), win("firefox.exe", "Mozilla Firefox", 0, 60)))
 	assertMe(t, tl, 0, 60)
