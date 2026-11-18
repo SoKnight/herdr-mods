@@ -28,9 +28,10 @@ const LIST = `ConvertTo-Json -Compress -Depth 4 -InputObject @(foreach ($p in $a
 async function windowsDirectories(paths, on) {
   const r = await powershell(LIST, paths.map(nativePath), { on });
   if (r.code !== 0) throw new Error(r.stderr || "Cannot list this folder.");
-  return JSON.parse(r.stdout).map((result) => {
-    if (result.error) throw new Error(result.error);
-    return result.entries ?? [];
+  // The first folder's failure is the caller's; a later one that can't be read is null.
+  return JSON.parse(r.stdout).map((result, i) => {
+    if (result.error && !i) throw new Error(result.error);
+    return result.error ? null : (result.entries ?? []);
   });
 }
 
@@ -109,11 +110,16 @@ export const readMethods = {
         if (windowsHere(on)) {
           const lists = await windowsDirectories(paths.map((path) => joinPath(cwd, path)), on);
           if (this.key !== token) return;
-          paths.forEach((path, i) => this.entries.set(path, sortEntries(lists[i])));
+          paths.forEach((path, i) => (lists[i] ? this.entries.set(path, sortEntries(lists[i])) : this.dropFolder(path)));
         } else
           for (const path of paths) {
             if (this.key !== token) return;
-            await this.loadFolder(path, cwd, on, token);
+            try {
+              await this.loadFolder(path, cwd, on, token);
+            } catch (e) {
+              if (!path) throw e;
+              this.dropFolder(path);
+            }
           }
         await this.loadMarks(cwd, on, token);
         if (this.key === token) this.treeError = null;
@@ -124,6 +130,13 @@ export const readMethods = {
         cx.notify();
       }
     });
+  },
+
+  // An open folder that can no longer be read (deleted, renamed) is closed, so it can't
+  // fail every refresh after it.
+  dropFolder(path) {
+    this.folders.delete(path);
+    this.entries.delete(path);
   },
 
   async loadFolder(path, root, on, token) {

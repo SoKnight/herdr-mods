@@ -971,6 +971,27 @@ test('on Windows the tree lists with PowerShell, every open folder at once, and 
   assert.ok(lists[0].command.startsWith('[Console]::OutputEncoding'), 'UTF-8 out');
 });
 
+test('an open folder that was deleted is closed, and the rest of the tree still shows', async () => {
+  for (const [name, start, rootPath] of [['Windows', onWindows, 'C:\\proj'], ['elsewhere', ready, '/repo']]) {
+    const tree = { [rootPath]: [['d', 'src'], ['f', 'a.md']], [`${rootPath}${name === 'Windows' ? '\\' : '/'}src`]: [['f', 'main.go']] };
+    const h = await start({ tree });
+    click(h, 'files-row-src');
+    await h.flush();
+    delete tree[Object.keys(tree)[1]];
+    tree[rootPath] = [['f', 'a.md'], ['f', 'new.md']];
+    if (name !== 'Windows') {
+      const exec = h.context.exec;
+      h.context.exec = async (bin, args, o) => (bin === 'sh' && args.at(-1) === '/repo/src' ? { code: 1, stdout: '', stderr: 'gone' } : exec(bin, args, o));
+    }
+    h.mod.refresh(h.cx);
+    await h.flush();
+    const panel = strings(h.mod.render());
+    assert.match(panel, /new\.md/, name);
+    assert.doesNotMatch(panel, /Not a folder|gone/, name);
+    assert.equal(h.mod.folders.size, 0, name);
+  }
+});
+
 test('on Windows a row\'s menu copies Windows paths and shows it in File Explorer', async () => {
   const h = await onWindows();
   find(h.mod.render(), 'files-row-src').handlers.click({ click_count: 1 }, h.cx);
