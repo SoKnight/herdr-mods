@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"slices"
@@ -225,10 +226,7 @@ func (d *Daemon) getStatus(r *http.Request) (int, any, error) {
 	if err != nil {
 		return 0, nil, err
 	}
-	closeMonth, err := d.remindClose(now)
-	if err != nil {
-		return 0, nil, err
-	}
+	closeMonth := d.remindClose(now)
 	var project, name, activity string
 	var lastActive, sessionStart int64
 	state := "none"
@@ -263,45 +261,47 @@ func (d *Daemon) getStatus(r *http.Request) (int, any, error) {
 }
 
 // remindClose is the previous month when Напоминания asks to close it: it is open and has my time; else "".
-// Kept for the local day and periods.json as read, since /v1/status is polled. Callers hold mu.
-func (d *Daemon) remindClose(now int64) (string, error) {
+// Kept for the local day and periods.json as stat, since /v1/status is polled; a failure is logged once and
+// kept as "" the same way, so an optional reminder never fails the status. Callers hold mu.
+func (d *Daemon) remindClose(now int64) string {
 	if !d.S.CloseReminder {
-		return "", nil
+		return ""
 	}
 	today := d.S.DayOf(now)
-	if _, err := d.Store.Periods(); err != nil { // reads periods.json, so the key is current
-		return "", err
-	}
 	c := &d.closeCache
 	if key := d.Store.periodsKey(); !c.ok || c.day != today || c.key != key {
-		t, err := time.Parse(time.DateOnly, today)
-		if err != nil {
-			return "", err
-		}
-		month := t.AddDate(0, 0, -t.Day()).Format("2006-01") // the last day of the month before
-		c.day, c.key, c.month, c.ok = today, key, "", true
-		rec, err := d.monthRecord(month)
-		if err != nil {
-			c.ok = false
-			return "", err
-		}
-		if rec == nil {
-			_, _, from, to, err := monthSpan(d.S, month)
-			if err != nil {
-				c.ok = false
-				return "", err
-			}
-			tl, _, err := d.timeline(from, to)
-			if err != nil {
-				c.ok = false
-				return "", err
-			}
-			if Summarize(tl, d.S, d.order()).Me > 0 {
-				c.month = month
-			}
+		c.day, c.key, c.ok = today, key, true
+		var err error
+		if c.month, err = d.closeCandidate(today); err != nil {
+			log.Printf("close reminder: %v", err)
+			c.month = ""
 		}
 	}
-	return c.month, nil
+	return c.month
+}
+
+func (d *Daemon) closeCandidate(today string) (string, error) {
+	t, err := time.Parse(time.DateOnly, today)
+	if err != nil {
+		return "", err
+	}
+	month := t.AddDate(0, 0, -t.Day()).Format("2006-01") // the last day of the month before
+	rec, err := d.monthRecord(month)
+	if err != nil || rec != nil {
+		return "", err
+	}
+	_, _, from, to, err := monthSpan(d.S, month)
+	if err != nil {
+		return "", err
+	}
+	tl, _, err := d.timeline(from, to)
+	if err != nil {
+		return "", err
+	}
+	if Summarize(tl, d.S, d.order()).Me > 0 {
+		return month, nil
+	}
+	return "", nil
 }
 
 // longestWait is the live wait that began first and is still within the cap, as {project, name, since}; nil for none.

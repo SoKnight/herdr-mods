@@ -718,3 +718,20 @@ func TestStatusRemindClose(t *testing.T) {
 	d.S.SilentWarning = false
 	assertEq(t, remind().Silent, false)
 }
+
+func TestStatusRemindCloseFailureKeepsStatus(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 18, 12, 0) })
+	must(t, os.MkdirAll(filepath.Join(d.Home, "raw"), 0o755))
+	must(t, os.Mkdir(filepath.Join(d.Home, "raw", "2026-10-15.jsonl"), 0o755)) // a day file that cannot be read: only October reads it
+	var st struct {
+		Version string `json:"version"`
+		Remind  *struct {
+			Close string `json:"close"`
+		} `json:"remind"`
+	}
+	assertEq(t, api.do("GET", "/v1/status", nil, &st), http.StatusOK)
+	assertEq(t, st.Version != "", true)
+	assertEq(t, st.Remind != nil && st.Remind.Close == "", true)
+}

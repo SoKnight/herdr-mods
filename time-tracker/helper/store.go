@@ -418,9 +418,11 @@ func (st *Store) AddPeriod(p Period) (Period, error) {
 }
 func (st *Store) RemovePeriod(id int64) error { return removeItem(st, "periods.json", id, perID) }
 
-// periodsKey changes whenever periods.json does: its mtime and size as last read by AllPeriods.
+// periodsKey changes whenever periods.json does: its mtime and size now (zeros when it can't be read).
 func (st *Store) periodsKey() [2]int64 {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	return [2]int64{st.periodsTime.UnixNano(), st.periodsSize}
+	fi, err := os.Stat(filepath.Join(st.Dir, "periods.json"))
+	if err != nil {
+		return [2]int64{}
+	}
+	return [2]int64{fi.ModTime().UnixNano(), fi.Size()}
 }
