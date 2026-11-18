@@ -62,3 +62,9 @@ test('the Закрыть месяц dialog has its icons', () => {
   for (const icon of ['circle-alert', 'circle', 'circle-check'])
     assert.match(fs.readFileSync(path.join(runtime, 'icons', `${icon}.svg`), 'utf8'), /^<!-- @license lucide-static v1\.68\.0 - ISC -->/, icon);
 });
+
+test('the Настройки screen is in and has its icon', () => {
+  assert.match(fs.readFileSync(path.join(runtime, 'icons', 'eye-off.svg'), 'utf8'), /^<!-- @license lucide-static v1\.68\.0 - ISC -->/);
+  assert.doesNotMatch(fs.readFileSync(path.join(runtime, 'main.js'), 'utf8'), /Экран настроек появится позже/);
+  assert.ok(fs.existsSync(path.join(runtime, 'views/settings.js')));
+});
