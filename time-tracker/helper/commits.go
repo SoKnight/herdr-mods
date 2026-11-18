@@ -32,11 +32,19 @@ var gitLog = realGitLog
 
 var gitEmails sync.Map // repo -> user.email, for the process
 
+// gitCmd is git bound by ctx. WaitDelay: on Windows git.exe is a wrapper whose child keeps the stdout pipe open
+// after the kill, and Run would wait for it.
+func gitCmd(ctx context.Context, args ...string) *exec.Cmd {
+	cmd := hidden(exec.CommandContext(ctx, "git", args...))
+	cmd.WaitDelay = time.Second
+	return cmd
+}
+
 // gitOut runs git in repo for at most gitTimeout; a git killed by ctx gives ctx's error, not its exit.
 func gitOut(ctx context.Context, repo string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
-	cmd := hidden(exec.CommandContext(ctx, "git", append([]string{"-C", repo}, args...)...))
+	cmd := gitCmd(ctx, append([]string{"-C", repo}, args...)...)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
