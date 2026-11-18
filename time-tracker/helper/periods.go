@@ -245,6 +245,15 @@ func (d *Daemon) postMonthClose(r *http.Request) (int, any, error) {
 	for _, o := range offs {
 		p.OffIDs = append(p.OffIDs, o.ID)
 	}
+	cs, err := d.Store.Corrections()
+	if err != nil {
+		return 0, nil, err
+	}
+	for _, c := range cs {
+		if c.Start < to && from < c.End {
+			p.CorrIDs = append(p.CorrIDs, c.ID)
+		}
+	}
 	if p, err = d.Store.AddPeriod(p); err != nil {
 		return 0, nil, err
 	}
@@ -325,8 +334,7 @@ func (d *Daemon) undoMonth(ch Change) error {
 
 // changedSinceReopen tells whether the month the change reopen reopened was written to since, which the
 // record put back would hide: a correction in it, a day off overlapping it or a bonus of it added or
-// removed, a goal or pay change reaching it made or undone. A removed correction leaves no trace and is
-// not seen (TestUndoReopenAfterChangesIsRefused).
+// removed, a goal or pay change reaching it made or undone.
 func (d *Daemon) changedSinceReopen(reopen Change) (bool, error) {
 	first, last, from, to, err := monthSpan(d.S, reopen.Month)
 	if err != nil {
@@ -348,6 +356,11 @@ func (d *Daemon) changedSinceReopen(reopen Change) (bool, error) {
 	// The month refused these while closed, so any made since the reopen are new.
 	if slices.ContainsFunc(cs, func(c Correction) bool { return c.Made >= rec.Reopened && c.Start < to && from < c.End }) {
 		return true, nil
+	}
+	for _, id := range rec.CorrIDs { // removed since: the month refused that while closed
+		if !slices.ContainsFunc(cs, func(c Correction) bool { return c.ID == id }) {
+			return true, nil
+		}
 	}
 	offs, err := d.daysOffIn(first, last, "")
 	if err != nil {

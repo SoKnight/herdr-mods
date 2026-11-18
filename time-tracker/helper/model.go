@@ -86,6 +86,7 @@ type Period struct {
 	Pay      map[string]*payment `json:"pay,omitempty"`   // projects with pay or bonuses that month
 	Reopened int64               `json:"reopened,omitempty"`
 
-	GoalVersions map[string][]Goal `json:"goal_versions,omitempty"` // each project's goal versions at the close, for the plan's days
-	OffIDs       []int64           `json:"off_ids,omitempty"`       // the days off overlapping the month at the close
+	GoalVersions map[string][]Goal `json:"goal_versions,omitempty"`  // each project's goal versions at the close, for the plan's days
+	OffIDs       []int64           `json:"off_ids,omitempty"`        // the days off overlapping the month at the close
+	CorrIDs      []int64           `json:"correction_ids,omitempty"` // the corrections overlapping the month at the close
 }

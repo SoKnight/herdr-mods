@@ -359,6 +359,16 @@ func TestUndoReopenAfterChangesIsRefused(t *testing.T) {
 		code, _ := undoReopen(t, api)
 		assertEq(t, code, http.StatusConflict)
 	})
+	t.Run("correction removed", func(t *testing.T) {
+		d, api := november(t)
+		var c Correction
+		api.do("POST", "/v1/corrections", Correction{Kind: "exclude", Target: "me", Start: mskAt(2026, 11, 16, 12, 0), End: mskAt(2026, 11, 16, 12, 30)}, &c)
+		api.do("POST", "/v1/months/2026-11/close", nil, nil)
+		api.do("POST", "/v1/months/2026-11/reopen", nil, nil)
+		assertEq(t, api.do("DELETE", fmt.Sprintf("/v1/corrections/%d", c.ID), nil, nil), http.StatusNoContent)
+		code, _ := undoReopen(t, api)
+		assertEq(t, fmt.Sprint(code, monthRecordOf(t, d) == nil), fmt.Sprint(http.StatusConflict, true))
+	})
 	t.Run("goal set", func(t *testing.T) {
 		_, api := open(t)
 		api.do("PUT", "/v1/projects/easy/goal", map[string]any{"from": "2026-11-20", "dir": "min", "minutes": 480, "period": "day", "weekdays": []int{1, 2, 3, 4, 5}}, nil)
