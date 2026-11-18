@@ -238,7 +238,7 @@ test('goal rows and the forecast', () => {
   const day = { period: 'day', dir: 'min', minutes: 390 };
   const u = { project: 'u', goal: day, day: sum({ me: 181, plan: 390, fact: 181, balance: -209 }), week: sum({}), month: sum({ plan: 7800, forecast: 4901 }), agents: 343 };
   const b = F.goalBlock(u);
-  assert.deepEqual({ ...b, fill: Math.round(b.fill) }, { value: '3ч 1м', goal: '6ч 30м', fill: 46, sub: '−3ч 29м · агенты 5ч 43м' });
+  assert.deepEqual({ ...b, fill: Math.round(b.fill) }, { value: '3ч 1м', goal: '6ч 30м', fill: 46, sub: 'до цели 3ч 29м · агенты 5ч 43м' });
   const tr = { project: 't', goal: { period: 'week', dir: 'min', minutes: 480 }, day: sum({ me: 36 }), week: sum({ plan: 480, fact: 36 }), month: sum({}), agents: 0 };
   assert.deepEqual(F.goalBlock(tr), { value: '36м', goal: '8ч в нед.', fill: 7.5, sub: 'за неделю 36м' });
   const weekend = { ...u, day: sum({ me: 60, fact: 60, balance: 60 }), agents: 0 };
@@ -246,8 +246,8 @@ test('goal rows and the forecast', () => {
   // ждали: this project's waits of the day, once they make a minute.
   const M = 60_000;
   const waits = [{ start: 0, end: 30 * M, project: 'u' }, { start: 40 * M, end: 48 * M, project: 'u' }, { start: 0, end: 90 * M, project: 't' }];
-  assert.equal(F.goalBlock(u, waits).sub, '−3ч 29м · агенты 5ч 43м, ждали 38м');
-  assert.equal(F.goalBlock(u, [{ start: 0, end: 59_000, project: 'u' }]).sub, '−3ч 29м · агенты 5ч 43м');
+  assert.equal(F.goalBlock(u, waits).sub, 'до цели 3ч 29м · агенты 5ч 43м, ждали 38м');
+  assert.equal(F.goalBlock(u, [{ start: 0, end: 59_000, project: 'u' }]).sub, 'до цели 3ч 29м · агенты 5ч 43м');
   assert.equal(F.goalBlock(tr, waits).sub, 'за неделю 36м');
   assert.equal(F.agentsText(343 * M, 38 * M), 'агенты 5ч 43м, ждали 38м');
   assert.equal(F.agentsText(343 * M, 59_999), 'агенты 5ч 43м');

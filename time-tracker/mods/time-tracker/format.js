@@ -204,7 +204,10 @@ export function goalBlock(info, waits = []) {
   const ag = agents >= 1 ? agentsText(agents * 60_000, waited) : null;
   const fill = (s) => (s.plan ? Math.min(100, (s.fact / s.plan) * 100) : null);
   if (goal.period === "day") {
-    return { value: fmtMin(day.me), goal: day.plan ? fmtMin(day.plan) : null, fill: fill(day), sub: day.plan ? [signed(day.balance), ag].filter(Boolean).join(" · ") : ag };
+    // In words, not "−3ч 47м": what is left to the day's goal, or how far past it.
+    const b = day.balance;
+    const left = goal.dir === "max" ? progressText(goal, day.fact, day.plan) : Math.abs(b) < 1 ? "цель выполнена" : b < 0 ? `до цели ${fmtMin(-b)}` : `сверх цели ${fmtMin(b)}`;
+    return { value: fmtMin(day.me), goal: day.plan ? fmtMin(day.plan) : null, fill: fill(day), sub: day.plan ? [left, ag].filter(Boolean).join(" · ") : ag };
   }
   const [s, short, word] = goal.period === "week" ? [info.week, "нед.", "неделю"] : [info.month, "мес.", "месяц"];
   return { value: fmtMin(day.me), goal: `${fmtMin(s.plan)} в ${short}`, fill: fill(s), sub: `за ${word} ${fmtMin(s.fact)}` };
