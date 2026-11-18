@@ -143,7 +143,7 @@ export class Month {
     cx.spawn(async (cx) => {
       try {
         const r = await call(["dayoff", "add", JSON.stringify(body)]);
-        if (r.down || r.error) this.message = { text: r.down ? "Сборщик не запущен" : r.error, error: true };
+        if (r.down || r.error) this.message = { text: r.down ? "Сборщик не запущен" : r.error === "closed" ? "Месяц закрыт: ничего не записано." : r.error, error: true };
         else {
           this.message = { text: `Отмечено: ${offTitle(from, to)} · ${offLabel(kind)}.` };
           this.sel = null;

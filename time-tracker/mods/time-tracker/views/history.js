@@ -71,7 +71,8 @@ export class History {
         if (r.down || r.error) {
           this.message = { text: r.down ? "Сборщик не запущен" : r.error === "closed" ? "Месяц закрыт: ничего не записано." : r.error, error: true };
         } else {
-          this.message = { text: entry.kind === "month-close" ? `${monthTitle(entry.month)} открыт заново.` : "Отменено." };
+          const month = entry.month && monthTitle(entry.month);
+          this.message = { text: entry.kind === "month-close" ? `${month} открыт заново.` : entry.kind === "month-reopen" ? `${month} закрыт.` : "Отменено." };
           this.load(cx);
         }
       } finally {

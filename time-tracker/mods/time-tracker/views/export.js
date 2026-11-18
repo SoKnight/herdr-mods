@@ -60,7 +60,7 @@ export class ExportText {
   }
 
   set(change, cx) {
-    Object.assign(this, change, { message: null });
+    Object.assign(this, change, { message: null, text: null, error: null }); // Скопировать waits for the new text
     this.load(cx);
     cx.notify();
   }

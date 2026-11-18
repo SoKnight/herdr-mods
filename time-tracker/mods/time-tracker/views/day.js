@@ -392,13 +392,14 @@ export class Day {
   // Above the strip: an error, a reopen to confirm, closed months and exports the rules would change, the last message.
   notices(t) {
     const months = new Map();
-    for (const v of this.divergences) if (v.month) months.set(v.month, [...(months.get(v.month) ?? []), v]);
+    const divs = this.divergences.filter((v) => Math.round(v.delta_ms / 60_000) !== 0); // under a minute shows as 0: no strip
+    for (const v of divs) if (v.month) months.set(v.month, [...(months.get(v.month) ?? []), v]);
     return [
       this.silentSince !== null && this.silentView(t),
       this.error && Message(this.error, true),
       this.pending && this.confirmView(t),
       ...[...months].map(([month, list]) => this.monthDivergenceView(month, list, t)),
-      ...this.divergences.filter((v) => !v.month).map((v) => this.divergenceView(v, t)),
+      ...divs.filter((v) => !v.month).map((v) => this.divergenceView(v, t)),
       this.message && this.messageView(t),
     ].filter(Boolean);
   }

@@ -12,7 +12,7 @@ Say all of this before installing:
 - It writes `%LOCALAPPDATA%\herdr-time\`: raw samples, corrections, closed periods and month records (`periods.json`), bonuses (`bonuses.json`), sessions (`sessions.json`), `history.json` (rule, goal, pay and month changes), `calendar.json` (production calendar, copied once, yours to edit), `daysoff.json`, `projects.json` (projects, goals, pay and rules; a file from before rules is converted once and kept as `projects.v1.json`), optional `settings.json`, the spans still open (`open.json`; one that can't be read is moved to `open.json.bad`) and its log, `collector.log` (started afresh once over 1 MiB). With a broken `projects.json`, `settings.json` or `calendar.json` at start it keeps collecting on the defaults, and the panel shows the error until the file is fixed.
 - "Перезапустить" in the panel and `herdr-time restart` start the collector again, detached from the caller.
 - The installer adds a `herdr-time` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` so the collector starts with Windows, and starts it.
-- The mod runs `herdr-time.exe` with `--json` for every read and change, and saves a CSV into `Downloads` (`{project}_{YYYY-MM}.csv`); «Отчёт текстом» only copies to the clipboard.
+- The mod runs `herdr-time.exe` with `--json` for every read and change, and saves a CSV into `Downloads` (`{project}_{YYYY-MM}.csv`) from Отчёт and from «Отчёт текстом», which also copies to the clipboard.
 
 ## Install
 
