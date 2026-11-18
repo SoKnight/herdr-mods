@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -112,19 +113,28 @@ type commitsAt struct {
 	list []Commit
 }
 
-// commits are my commits in from..to under the folder rules' projects, by time, cached for 60 s.
-// A missing git or a broken repo leaves its commits out. Callers hold mu.
-func (d *Daemon) commits(from, to int64) []Commit {
-	key, now := [2]int64{from, to}, nowMs()
-	if c, ok := d.commitCache[key]; ok && now-c.at < 60_000 {
-		return c.list
-	}
-	out := []Commit{}
-	for _, repo := range repoDirs(d.Rules) {
-		list, err := gitLog(context.Background(), repo, from, to)
-		if err != nil {
-			continue
+// commitBudget bounds an on-demand commits call over all its repos: it runs under d.mu.
+var commitBudget = 10 * time.Second
+
+// repoCommits asks git for each repo's commits in from..to until ctx is done; a failing repo gives none.
+func repoCommits(ctx context.Context, repos []string, from, to int64) map[string][]Commit {
+	out := map[string][]Commit{}
+	for _, repo := range repos {
+		if ctx.Err() != nil {
+			break
 		}
+		if list, err := gitLog(ctx, repo, from, to); err == nil {
+			out[repo] = list
+		}
+	}
+	return out
+}
+
+// attach gives each repo's commits the project of their folder rule, leaves out Исключить and Досуг,
+// and sorts them by time. Callers hold mu.
+func (d *Daemon) attach(byRepo map[string][]Commit) []Commit {
+	out := []Commit{}
+	for repo, list := range byRepo {
 		for _, c := range list {
 			if id, _ := d.Rules.FolderProject(repo, c.At); id != "" && !dropped(id) {
 				c.Project, c.Repo = id, filepath.Base(repo)
@@ -132,7 +142,26 @@ func (d *Daemon) commits(from, to int64) []Commit {
 			}
 		}
 	}
-	slices.SortStableFunc(out, func(a, b Commit) int { return cmp.Compare(a.At, b.At) })
+	slices.SortStableFunc(out, func(a, b Commit) int {
+		return cmp.Or(cmp.Compare(a.At, b.At), cmp.Compare(a.Repo, b.Repo), cmp.Compare(a.Msg, b.Msg))
+	})
+	return out
+}
+
+// commits are my commits in from..to under the folder rules' projects, by time, cached for 60 s: for the
+// month report, export and /v1/commits. git gets commitBudget for all repos; a cut-short answer is not
+// cached. A missing git or a broken repo leaves its commits out. Callers hold mu.
+func (d *Daemon) commits(from, to int64) []Commit {
+	key, now := [2]int64{from, to}, nowMs()
+	if c, ok := d.commitCache[key]; ok && now-c.at < 60_000 {
+		return c.list
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), commitBudget)
+	defer cancel()
+	out := d.attach(repoCommits(ctx, repoDirs(d.Rules), from, to))
+	if ctx.Err() != nil {
+		return out
+	}
 	if len(d.commitCache) > 32 {
 		clear(d.commitCache)
 	}
@@ -140,6 +169,44 @@ func (d *Daemon) commits(from, to int64) []Commit {
 		d.commitCache = map[[2]int64]commitsAt{}
 	}
 	d.commitCache[key] = commitsAt{now, out}
+	return out
+}
+
+const recentMs = 48 * 60 * 60_000
+
+// refreshCommits reads the commits since the start of the hour 48 h back into d.recent, running git
+// without mu: the polled session, status and timeline read only that, and git never holds the billing lock.
+func (d *Daemon) refreshCommits(ctx context.Context) {
+	d.mu.Lock()
+	rules := d.Rules // compiled rules are never changed in place, only replaced
+	d.mu.Unlock()
+	from := (nowMs() - recentMs) / 3_600_000 * 3_600_000
+	byRepo := repoCommits(ctx, repoDirs(rules), from, math.MaxInt64)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.recent = d.attach(byRepo)
+}
+
+// followCommits refreshes the recent commits every minute until ctx is done.
+func (d *Daemon) followCommits(ctx context.Context) {
+	for ctx.Err() == nil {
+		d.refreshCommits(ctx)
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Minute):
+		}
+	}
+}
+
+// recentCommits are the refreshed commits in from..to: none before the first refresh or before its
+// 48 hours. Callers hold mu.
+func (d *Daemon) recentCommits(from, to int64) []Commit {
+	var out []Commit
+	for _, c := range d.recent {
+		if from <= c.At && c.At < to {
+			out = append(out, c)
+		}
+	}
 	return out
 }
 

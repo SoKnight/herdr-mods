@@ -43,6 +43,7 @@ type Daemon struct {
 	setMod      time.Time
 	calMod      time.Time
 	commitCache map[[2]int64]commitsAt
+	recent      []Commit
 	closeCache  struct { // remindClose's answer for a local day and periods.json as read
 		day, month string
 		key        [2]int64
@@ -244,14 +245,21 @@ func (d *Daemon) recoverOpen() error {
 	return nil
 }
 
-// Run polls Windows every poll_seconds and follows the agents until ctx is done or /v1/quit.
+// Run polls Windows every poll_seconds and follows the agents and the commits until ctx is done or /v1/quit.
 func (d *Daemon) Run(ctx context.Context) error {
+	var commits sync.WaitGroup
+	defer commits.Wait() // after cancel: its git is killed, so this is quick
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if err := d.recoverOpen(); err != nil {
 		return err
 	}
 	go followAgents(ctx, d.agentsSeen, d.agentsLost)
+	commits.Add(1)
+	go func() {
+		defer commits.Done()
+		d.followCommits(ctx)
+	}()
 	for {
 		d.poll()
 		d.mu.Lock()

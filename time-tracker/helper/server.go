@@ -414,8 +414,8 @@ func (d *Daemon) sessions(me []Segment, now int64) ([]Session, error) {
 	})
 	out := Sessions(me, marks, int64(d.S.SessionIdleMinutes)*60_000, now)
 	var commits []Commit
-	if len(out) > 0 { // to the next minute, so the 60 s cache holds between polls
-		commits = d.commits(out[0].Start, (now/60_000+1)*60_000)
+	if len(out) > 0 { // the background refresh's: git must not run under mu on a polled route
+		commits = d.recentCommits(out[0].Start, now+1)
 	}
 	for i := range out {
 		out[i] = describe(out[i], me, commits, d.S, now)

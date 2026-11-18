@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -65,11 +67,68 @@ func TestCommitsWithoutGit(t *testing.T) {
 	now := mskAt(2026, 11, 10, 12, 0)
 	swap(t, &nowMs, func() int64 { return now })
 	assertEq(t, len(d.commits(0, now)), 0)
+	d.refreshCommits(context.Background())
+	assertEq(t, calls, 2)
+	assertEq(t, len(d.recent), 0)
 	seedWindow(t, d, mskAt(2026, 11, 10, 10, 0), "idea64.exe", "x", 60)
 	api := serve(t, d)
 	assertEq(t, api.do("GET", "/v1/timeline", nil, nil), 200)
 	assertEq(t, api.do("GET", "/v1/session", nil, nil), 200)
-	assertEq(t, calls > 1, true) // the sessions asked
+}
+
+func TestSessionsReadRecentCommits(t *testing.T) {
+	d := testDaemon(t) // its title rules make the window Easy's
+	repo := filepath.Join(t.TempDir(), "r")
+	mkdirs(t, repo, ".git")
+	d.Rules.rules = append(d.Rules.rules, Rule{ID: 99, Kind: "folder", Value: repo, Project: "easy"})
+	now := mskAt(2026, 11, 10, 12, 7)
+	swap(t, &nowMs, func() int64 { return now })
+	start := mskAt(2026, 11, 10, 11, 0)
+	seedWindow(t, d, start, "idea64.exe", "Easy – Main.kt", 50)
+	var froms []int64
+	swap(t, &gitLog, func(_ context.Context, _ string, from, _ int64) ([]Commit, error) {
+		froms = append(froms, from)
+		return []Commit{{At: start + 10*minMs, Msg: "fix"}, {At: start - 30*24*60*minMs, Msg: "old"}}, nil
+	})
+	d.refreshCommits(context.Background())
+	assertEq(t, len(froms), 1)
+	assertEq(t, froms[0], mskAt(2026, 11, 8, 12, 0)) // the start of the hour 48 h back
+	assertEq(t, len(d.recent), 2)
+
+	swap(t, &gitLog, func(context.Context, string, int64, int64) ([]Commit, error) {
+		t.Error("git ran for a polled route") // it would hold the billing lock
+		return nil, nil
+	})
+	api := serve(t, d)
+	var s struct {
+		Session *Session `json:"session"`
+	}
+	assertEq(t, api.do("GET", "/v1/session", nil, &s), http.StatusOK)
+	assertEq(t, s.Session.Stretches[0].Commits, 1)
+	assertEq(t, api.do("GET", "/v1/status", nil, nil), http.StatusOK)
+	assertEq(t, api.do("GET", "/v1/timeline", nil, nil), http.StatusOK)
+}
+
+func TestCommitsStopAtBudget(t *testing.T) {
+	d, repo := repoDaemon(t, "easy")
+	other := filepath.Join(filepath.Dir(repo), "s")
+	mkdirs(t, other, ".git")
+	d.Rules.rules = append(d.Rules.rules, Rule{ID: 10, Kind: "folder", Value: other, Project: "easy"})
+	swap(t, &commitBudget, 100*time.Millisecond)
+	calls := 0
+	swap(t, &gitLog, func(ctx context.Context, _ string, _, _ int64) ([]Commit, error) {
+		calls++
+		select { // a stalled git, killed at its context's end
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Second):
+			return nil, errors.New("stalled")
+		}
+	})
+	began := time.Now()
+	assertEq(t, len(d.commits(0, 1000)), 0)
+	assertEq(t, time.Since(began) < 900*time.Millisecond, true)
+	assertEq(t, calls, 1) // the budget is the whole call's: the next repo is not asked
 }
 
 func TestCommitsRouteDropsOtherProjects(t *testing.T) {
