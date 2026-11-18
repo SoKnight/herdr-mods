@@ -187,12 +187,15 @@ func (d *Daemon) monthReport(project, month, rows string) (monthReport, error) {
 	if firstDay > today {
 		return monthReport{}, fail(http.StatusBadRequest, "month: not started yet")
 	}
-	days, _, err := d.planRange(firstDay, lastDay)
+	dayNames, err := dayList(firstDay, lastDay)
 	if err != nil {
 		return monthReport{}, err
 	}
-	// ponytail: planRange reads the month's timeline too; this second read is for notes and activities.
-	tl, _, err := d.timeline(from, to)
+	tl, _, err := d.timeline(from, to) // the plan's, and the notes' and activities'
+	if err != nil {
+		return monthReport{}, err
+	}
+	days, _, err := d.planOver(dayNames, tl)
 	if err != nil {
 		return monthReport{}, err
 	}

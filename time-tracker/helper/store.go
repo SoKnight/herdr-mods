@@ -17,6 +17,12 @@ type Store struct {
 	Dir string
 	S   Settings
 	mu  sync.Mutex
+
+	// periods.json decoded (a month record holds a month of segments), kept while the file's mtime and size
+	// stay as read; any write through addItems, removeItem or editItem drops it.
+	periods     []Period
+	periodsTime time.Time
+	periodsSize int64
 }
 
 func (st *Store) loc() *time.Location {
@@ -258,6 +264,7 @@ func addItems[T any](st *Store, file string, vs []T, id func(*T) *int64) ([]T, e
 	for i := range vs {
 		*id(&vs[i]) = next + int64(i)
 	}
+	st.periods = nil
 	return vs, writeJSON(path, append(all, vs...))
 }
 
@@ -286,6 +293,7 @@ func removeItem[T any](st *Store, file string, want int64, id func(*T) *int64) e
 	if err := writeJSON(path+".maxid", max(removed, want)); err != nil {
 		return err
 	}
+	st.periods = nil
 	return writeJSON(path, kept)
 }
 
@@ -359,6 +367,7 @@ func editItem[T any](st *Store, file string, want int64, id func(*T) *int64, f f
 			f(&all[i])
 		}
 	}
+	st.periods = nil
 	return writeJSON(path, all)
 }
 
@@ -377,7 +386,29 @@ func (st *Store) Periods() ([]Period, error) {
 	ps, err := st.AllPeriods()
 	return slices.DeleteFunc(ps, func(p Period) bool { return p.Reopened != 0 }), err
 }
-func (st *Store) AllPeriods() ([]Period, error) { return listItems[Period](st, "periods.json") }
+
+// AllPeriods are every record, reopened ones too. The slice is the caller's; the records' slices and maps
+// are shared with the cache and only read.
+func (st *Store) AllPeriods() ([]Period, error) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	path := filepath.Join(st.Dir, "periods.json")
+	fi, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return []Period{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if st.periods == nil || !fi.ModTime().Equal(st.periodsTime) || fi.Size() != st.periodsSize {
+		ps := []Period{}
+		if err := readJSON(path, &ps); err != nil {
+			return nil, err
+		}
+		st.periods, st.periodsTime, st.periodsSize = ps, fi.ModTime(), fi.Size()
+	}
+	return slices.Clone(st.periods), nil
+}
 func (st *Store) AddPeriod(p Period) (Period, error) {
 	return addItem(st, "periods.json", p, perID)
 }

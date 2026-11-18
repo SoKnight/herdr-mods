@@ -254,6 +254,11 @@ func (d *Daemon) planRange(first, last string) ([]planDay, frozenDays, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	return d.planOver(days, tl)
+}
+
+// planOver is planRange over days with their timeline tl, for a caller that needs tl too. Callers hold mu.
+func (d *Daemon) planOver(days []string, tl Timeline) ([]planDay, frozenDays, error) {
 	off, err := d.Store.DaysOff()
 	if err != nil {
 		return nil, nil, err

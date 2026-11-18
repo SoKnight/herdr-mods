@@ -214,11 +214,15 @@ func (d *Daemon) postMonthClose(r *http.Request) (int, any, error) {
 			return 0, nil, err
 		}
 	}
+	dayNames, err := dayList(first, last)
+	if err != nil {
+		return 0, nil, err
+	}
 	tl, _, err := d.timeline(from, to)
 	if err != nil {
 		return 0, nil, err
 	}
-	days, _, err := d.planRange(first, last)
+	days, _, err := d.planOver(dayNames, tl)
 	if err != nil {
 		return 0, nil, err
 	}

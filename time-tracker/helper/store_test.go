@@ -184,3 +184,45 @@ func TestSessionMarksIds(t *testing.T) {
 	assertEq(t, len(all), 2)
 	fileExists(t, st.Dir, "sessions.json")
 }
+
+// periods.json is decoded once while it stays as read: a file swapped behind the same size and mtime
+// still gives the cached records, which shows they were not decoded again.
+func TestPeriodsCache(t *testing.T) {
+	st := tempStore(t)
+	path := filepath.Join(st.Dir, "periods.json")
+	p, err := st.AddPeriod(Period{Project: "a", From: 1, To: 2})
+	must(t, err)
+	projects := func() string {
+		ps, err := st.AllPeriods()
+		must(t, err)
+		var out []string
+		for _, p := range ps {
+			out = append(out, fmt.Sprintf("%s %d", p.Project, p.Reopened))
+		}
+		return strings.Join(out, " ")
+	}
+	sameStamp := func(write func()) { // write, then put the file's mtime back
+		fi, err := os.Stat(path)
+		must(t, err)
+		write()
+		must(t, os.Chtimes(path, fi.ModTime(), fi.ModTime()))
+	}
+	ps, err := st.AllPeriods()
+	must(t, err)
+	ps[0].Project = "x" // a caller's copy
+	assertEq(t, projects(), "a 0")
+
+	b, err := os.ReadFile(path)
+	must(t, err)
+	sameStamp(func() { must(t, os.WriteFile(path, []byte(strings.Replace(string(b), `"a"`, `"b"`, 1)), 0o644)) })
+	assertEq(t, projects(), "a 0") // not read again
+	fi, err := os.Stat(path)
+	must(t, err)
+	must(t, os.Chtimes(path, fi.ModTime().Add(time.Second), fi.ModTime().Add(time.Second)))
+	assertEq(t, projects(), "b 0") // edited by hand
+
+	must(t, st.SetReopened(p.ID, 1111111111111))
+	assertEq(t, projects(), "b 1111111111111")
+	sameStamp(func() { must(t, st.SetReopened(p.ID, 2222222222222)) })
+	assertEq(t, projects(), "b 2222222222222") // the store's own write, however its stamp looks
+}
