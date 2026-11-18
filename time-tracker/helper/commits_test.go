@@ -4,6 +4,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -161,6 +163,33 @@ func TestGitLogReal(t *testing.T) {
 	assertEq(t, len(got), 1)
 	assertEq(t, got[0].Msg, "mine")
 	assertEq(t, got[0].At <= now && got[0].At > now-60_000, true)
+	// a stash and a note are my commits too, but not work
+	must(t, os.WriteFile(filepath.Join(repo, "f"), []byte("1"), 0o644))
+	git("add", "f")
+	git("commit", "-m", "with file")
+	must(t, os.WriteFile(filepath.Join(repo, "f"), []byte("2"), 0o644))
+	git("stash")
+	git("notes", "add", "-m", "note", "HEAD")
+	// authored inside the window, committed after its end (a rebase)
+	t0 := time.Now().Add(-48 * time.Hour).Unix()
+	late := time.Now().Add(24 * time.Hour).Unix()
+	cmd := exec.Command("git", "-C", repo, "-c", "commit.gpgsign=false", "-c", "user.name=T", "commit", "--allow-empty", "-m", "rebased")
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_SYSTEM="+os.DevNull,
+		"GIT_AUTHOR_DATE="+strconv.FormatInt(t0, 10)+" +0000", "GIT_COMMITTER_DATE="+strconv.FormatInt(late, 10)+" +0000")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	all, err := gitLog(repo, t0*1000-1000, t0*1000+60_000)
+	must(t, err)
+	assertEq(t, len(all), 1)
+	assertEq(t, all[0].Msg, "rebased")
+	got, err = gitLog(repo, 0, now+60_000)
+	must(t, err)
+	var msgs []string
+	for _, c := range got {
+		msgs = append(msgs, c.Msg)
+	}
+	assertEq(t, strings.Join(slices.Sorted(slices.Values(msgs)), "|"), "mine|rebased|with file")
 	none, err := gitLog(repo, 0, 1000)
 	must(t, err)
 	assertEq(t, len(none), 0)

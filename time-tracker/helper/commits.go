@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"net/http"
 	"os"
 	"os/exec"
@@ -11,7 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
+
+const gitTimeout = 5 * time.Second
 
 // Commit is one of my commits in a repo under a project's folder. They are notes, not numbers.
 type Commit struct {
@@ -27,7 +31,9 @@ var gitLog = realGitLog
 var gitEmails sync.Map // repo -> user.email, for the process
 
 func gitOut(repo string, args ...string) ([]byte, error) {
-	cmd := hidden(exec.Command("git", append([]string{"-C", repo}, args...)...))
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout) // git runs under d.mu: a stall must not freeze the collector
+	defer cancel()
+	cmd := hidden(exec.CommandContext(ctx, "git", append([]string{"-C", repo}, args...)...))
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
@@ -40,8 +46,8 @@ func realGitLog(repo string, from, to int64) ([]Commit, error) {
 		out, _ := gitOut(repo, "config", "user.email") // exit 1 = not set: every author's then
 		email, _ = gitEmails.LoadOrStore(repo, strings.TrimSpace(string(out)))
 	}
-	args := []string{"log", "--all", "--no-merges", "--since=@" + strconv.FormatInt(from/1000, 10),
-		"--until=@" + strconv.FormatInt(to/1000, 10), "--format=%at%x09%s"}
+	args := []string{"log", "--branches", "--tags", "--remotes", "--no-merges", // not --all: stashes and notes are commits too
+		"--since=@" + strconv.FormatInt(max(from/1000, 1_000_000_000), 10), "--format=%at%x09%s"} // --since @0 and tiny values are ignored by git, hence the floor; it is the committer date, never before the author's: a superset; no --until, which would drop a rebased commit
 	if e := email.(string); e != "" {
 		args = append(args, "--fixed-strings", "--author=<"+e+">")
 	}
