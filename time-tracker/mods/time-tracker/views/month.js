@@ -330,9 +330,9 @@ export class Month {
     const past = plan.days.filter((d) => d.day <= plan.today);
     const me = past.reduce((n, d) => n + sumOf(d.me), 0);
     const worked = past.filter((d) => sumOf(d.me) > 0).length;
-    const lines = [`агенты ${fmtMin(past.reduce((n, d) => n + agentsAny(d), 0))} · ${worked} дн. с работой · ср. ${fmtMin(worked ? Math.floor(me / worked) : 0)}`];
+    const lines = [["bot", "агенты", fmtMin(past.reduce((n, d) => n + agentsAny(d), 0))], ["calendar", "дней с работой", String(worked)], ["gauge", "в среднем в день", fmtMin(worked ? Math.floor(me / worked) : 0)]];
     const fc = !this.anchor && this.goalIds().find((id) => plan.goals[id].dir === "min" && plan.sums?.[id]?.plan > 0);
-    if (fc) lines.push(`прогноз ${this.name(fc)} ≈ ${fmtMin(plan.sums[fc].forecast)} из ${fmtMin(plan.sums[fc].plan)}`);
+    if (fc) lines.push(["trending-up", `прогноз ${this.name(fc)}`, `≈ ${fmtMin(plan.sums[fc].forecast)} из ${fmtMin(plan.sums[fc].plan)}`]);
     const goal = (g, s) => ({
       goal: fmtMin(s.plan_to_date),
       fill: s.plan_to_date > 0 ? Math.min(100, (s.fact / s.plan_to_date) * 100) : 0,

@@ -3,7 +3,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { formatDuration, fmtMin, goalBlock, roundRows } from "../format.js";
 import { projectColor } from "../lanes.js";
-import { TEXT } from "../ui.js";
+import { Icon, TEXT } from "../ui.js";
 import { Link } from "./menu.js";
 
 // lines: strings. The total is the rows' sum, each rounded half up to the minute as Неделя counts them.
@@ -35,7 +35,7 @@ export function Side(view, t, { caption, lines, session = false }) {
         .gap(2)
         .child(div().text_size(TEXT.small).text_color(t.dim).child(caption))
         .child(div().text_size(26).font_semibold().child(formatDuration(total)))
-        .children(lines.map((line) => div().text_size(TEXT.small).text_color(t.dim).child(line))),
+        .child(Stats(t, lines)),
     )
     .child(div().h(1).flex_none().bg(t.border))
     .child(
@@ -50,6 +50,18 @@ export function Side(view, t, { caption, lines, session = false }) {
 }
 
 // Неделя's and Месяц's right panel over the `plan` days up to today (view.plan, projects, name, open): the
+// The figures under the big time, a row each: lines are [icon, label, value].
+function Stats(t, lines) {
+  return v_flex().pt(8).gap(6).text_size(TEXT.small).children(
+    lines.map(([icon, label, value]) =>
+      h_flex().gap(8).items_center()
+        .child(div().flex_none().text_color(t.dim).child(Icon(icon, 13)))
+        .child(div().min_w(0).truncate().text_color(t.muted).child(label))
+        .child(div().flex_1())
+        .child(div().flex_none().whitespace_nowrap().child(value))),
+  );
+}
+
 // caption, total and lines, then a block per project with time in config order (ids the config doesn't
 // know, then Другое). A project with a planned goal is drawn against it, goal(goal, sums, id, sum) giving
 // the block's goal, fill and sub; the rest show a share of the longest. extra rows follow the projects.
@@ -75,7 +87,7 @@ export function PlanSide(view, t, { id, caption, total, lines, goal, extra = [] 
         .gap(2)
         .child(div().text_size(TEXT.small).text_color(t.dim).child(caption))
         .child(div().text_size(26).font_semibold().child(fmtMin(total)))
-        .children(lines.map((line) => div().text_size(TEXT.small).text_color(t.dim).child(line))),
+        .child(Stats(t, lines)),
     )
     .child(div().h(1).flex_none().bg(t.border))
     .child(

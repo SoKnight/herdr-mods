@@ -2,7 +2,7 @@
 import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { call } from "../client.js";
-import { formatDuration, agentsText, hhmm, plural, sessionNote } from "../format.js";
+import { formatDuration, hhmm, sessionNote } from "../format.js";
 import { sessionWindow } from "../lanes.js";
 import { Button, Icon, Message, TEXT } from "../ui.js";
 import { theme } from "herdr";
@@ -98,8 +98,11 @@ export class SessionView extends Day {
       caption: "Моё время в сессии",
       session: true,
       lines: [
-        `${agentsText(report.agents, report.waiting)} · перерывы ${formatDuration(s.breaks)}`,
-        `${plural(s.switches, "переключение", "переключения", "переключений")} · фокус до ${formatDuration(s.focus)}`,
+        ["bot", "агенты", formatDuration(report.agents)],
+        ...(report.waiting >= 60_000 ? [["bot", "агенты ждали", formatDuration(report.waiting)]] : []),
+        ["coffee", "перерывы", formatDuration(s.breaks)],
+        ["arrow-left-right", "переключений", String(s.switches)],
+        ["focus", "фокус до", formatDuration(s.focus)],
       ],
     });
   }

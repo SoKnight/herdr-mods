@@ -4,7 +4,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme, props, layout } from "herdr";
 import { call } from "../client.js";
-import { formatDuration, fmtMin, signed, plural, progressText, hhmm, catalog, weekDays, weekTitle, weekRelative, mainGoal, weekRows } from "../format.js";
+import { formatDuration, fmtMin, signed, progressText, hhmm, catalog, weekDays, weekTitle, weekRelative, mainGoal, weekRows } from "../format.js";
 import { bars, projectColor, shiftDay } from "../lanes.js";
 import { Icon, Message, TEXT } from "../ui.js";
 import { Legend } from "./strip.js";
@@ -221,10 +221,10 @@ export class Week {
     const { totals } = weekRows(plan, null);
     const tls = past.map((d) => this.timelines[d.day]).filter(Boolean);
     const worked = past.filter((d) => Object.values(d.me ?? {}).some((m) => m > 0)).map((d) => this.timelines[d.day]?.stats).filter(Boolean);
-    const lines = [`агенты ${fmtMin(totals.agents)} · в среднем ${fmtMin(Math.floor(totals.me / Math.max(1, past.length)))} в день`];
+    const lines = [["bot", "агенты", fmtMin(totals.agents)], ["gauge", "в среднем в день", fmtMin(Math.floor(totals.me / Math.max(1, past.length)))]];
     if (totals.me > 0 && worked.length) {
       const n = Math.round(worked.reduce((s, x) => s + x.switches, 0) / worked.length);
-      lines.push(`${plural(n, "переключение", "переключения", "переключений")} в день · фокус до ${formatDuration(Math.max(...worked.map((x) => x.focus)))}`);
+      lines.push(["arrow-left-right", "переключений в день", String(n)], ["focus", "фокус до", formatDuration(Math.max(...worked.map((x) => x.focus)))]);
     }
     const goal = (g, s, id, sum) => {
       const agents = sum("agents", id);

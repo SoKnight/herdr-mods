@@ -4,7 +4,7 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex, InputState, ScrollHandle } from "gpui-base";
 import { theme, props, layout } from "herdr";
 import { call } from "../client.js";
-import { formatDuration, agentsText, activityLabel, catalog, hhmm, dayTitle, plural, midnight, signed, closedText, monthTitle, ACTIVITIES } from "../format.js";
+import { formatDuration, activityLabel, catalog, hhmm, dayTitle, midnight, signed, closedText, monthTitle, ACTIVITIES } from "../format.js";
 import { rangeFromDrag, stepDay } from "../lanes.js";
 import { silence } from "../chip.js";
 import { Button, Icon, IconButton, Message, TEXT } from "../ui.js";
@@ -350,8 +350,10 @@ export class Day {
 
   sideView(t) {
     const { report, stats } = this.data;
-    const lines = [`${agentsText(report.agents, report.waiting)} · включён ${formatDuration(report.uptime)}`];
-    if (report.me > 0 && stats) lines.push(`${plural(stats.switches, "переключение", "переключения", "переключений")} · фокус до ${formatDuration(stats.focus)}`);
+    const lines = [["bot", "агенты", formatDuration(report.agents)]];
+    if (report.waiting >= 60_000) lines.push(["bot", "агенты ждали", formatDuration(report.waiting)]);
+    lines.push(["power", "включён", formatDuration(report.uptime)]);
+    if (report.me > 0 && stats) lines.push(["arrow-left-right", "переключений", String(stats.switches)], ["focus", "фокус до", formatDuration(stats.focus)]);
     return Side(this, t, { caption: "Моё время", lines });
   }
 
