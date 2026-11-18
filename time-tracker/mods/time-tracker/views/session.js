@@ -99,10 +99,10 @@ export class SessionView extends Day {
       session: true,
       lines: [
         ["bot", "агенты", formatDuration(report.agents)],
-        ...(report.waiting >= 60_000 ? [["bot", "агенты ждали", formatDuration(report.waiting)]] : []),
+        ...(report.waiting >= 60_000 ? [["hourglass", "агенты ждали", formatDuration(report.waiting)]] : []),
         ["coffee", "перерывы", formatDuration(s.breaks)],
-        ["arrow-left-right", "переключений", String(s.switches)],
-        ["focus", "фокус до", formatDuration(s.focus)],
+        ["shuffle", "переключений", String(s.switches)],
+        ["brain", "фокус до", formatDuration(s.focus)],
       ],
     });
   }

@@ -224,7 +224,7 @@ export class Week {
     const lines = [["bot", "агенты", fmtMin(totals.agents)], ["gauge", "в среднем в день", fmtMin(Math.floor(totals.me / Math.max(1, past.length)))]];
     if (totals.me > 0 && worked.length) {
       const n = Math.round(worked.reduce((s, x) => s + x.switches, 0) / worked.length);
-      lines.push(["arrow-left-right", "переключений в день", String(n)], ["focus", "фокус до", formatDuration(Math.max(...worked.map((x) => x.focus)))]);
+      lines.push(["shuffle", "переключений в день", String(n)], ["brain", "фокус до", formatDuration(Math.max(...worked.map((x) => x.focus)))]);
     }
     const goal = (g, s, id, sum) => {
       const agents = sum("agents", id);

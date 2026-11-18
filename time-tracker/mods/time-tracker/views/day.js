@@ -351,9 +351,9 @@ export class Day {
   sideView(t) {
     const { report, stats } = this.data;
     const lines = [["bot", "агенты", formatDuration(report.agents)]];
-    if (report.waiting >= 60_000) lines.push(["bot", "агенты ждали", formatDuration(report.waiting)]);
+    if (report.waiting >= 60_000) lines.push(["hourglass", "агенты ждали", formatDuration(report.waiting)]);
     lines.push(["power", "включён", formatDuration(report.uptime)]);
-    if (report.me > 0 && stats) lines.push(["arrow-left-right", "переключений", String(stats.switches)], ["focus", "фокус до", formatDuration(stats.focus)]);
+    if (report.me > 0 && stats) lines.push(["shuffle", "переключений", String(stats.switches)], ["brain", "фокус до", formatDuration(stats.focus)]);
     return Side(this, t, { caption: "Моё время", lines });
   }
 
