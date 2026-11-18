@@ -43,8 +43,13 @@ type Daemon struct {
 	setMod      time.Time
 	calMod      time.Time
 	commitCache map[[2]int64]commitsAt
-	quit        chan struct{}
-	quitOnce    sync.Once
+	closeCache  struct { // remindClose's answer for a local day and periods.json as read
+		day, month string
+		key        [2]int64
+		ok         bool
+	}
+	quit     chan struct{}
+	quitOnce sync.Once
 
 	// A bad projects.json or settings.json found at start: collection runs on the defaults and the
 	// read endpoints answer with the error until a reload reads the file.

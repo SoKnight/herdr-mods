@@ -20,3 +20,20 @@ export function chipState(status, lastSample, now) {
   if (status.state === "working" || status.state === "away") return { kind: "working", me, project: status.project, name: status.project_name };
   return { kind: "none", me };
 }
+
+export const SILENT_REMIND_MS = 600_000;
+const MONTHS_NOM = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
+
+// What to tell me now, as [{ key, title, body }]: c the chip state, remind the last good status.remind (null: defaults),
+// sent the keys already shown, fmt the duration formatter (this file imports nothing).
+export function reminders(c, remind, now, sent, fmt) {
+  const r = remind ?? { silent: true, close: "" };
+  const out = [];
+  if (r.silent && c.kind === "silent" && c.since > 0 && now - c.since >= SILENT_REMIND_MS)
+    out.push({ key: `silent:${c.since}`, title: "Time Tracker: сборщик молчит", body: `Нет данных ${fmt(now - c.since)} — время сейчас не считается.` });
+  if (r.close) {
+    const d = new Date(now), p = (n) => String(n).padStart(2, "0");
+    out.push({ key: `close:${r.close}:${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`, title: `Time Tracker: ${MONTHS_NOM[Number(r.close.slice(5)) - 1]} не закрыт`, body: "Проверьте и закройте месяц в Отчёте." });
+  }
+  return out.filter((n) => !sent.has(n.key));
+}

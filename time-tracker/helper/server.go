@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // apiError is an error answer: its status and JSON body.
@@ -224,6 +225,10 @@ func (d *Daemon) getStatus(r *http.Request) (int, any, error) {
 	if err != nil {
 		return 0, nil, err
 	}
+	closeMonth, err := d.remindClose(now)
+	if err != nil {
+		return 0, nil, err
+	}
 	var project, name, activity string
 	var lastActive, sessionStart int64
 	state := "none"
@@ -253,7 +258,50 @@ func (d *Daemon) getStatus(r *http.Request) (int, any, error) {
 	return http.StatusOK, map[string]any{"version": version, "today_me_ms": me, "today_agents_ms": rep.Agents,
 		"agents_working": len(d.agents.open), "waiting": d.longestWait(now), "today_waiting_ms": rep.Waiting,
 		"project": project, "project_name": name, "activity": activity, "state": state,
-		"session_start": sessionStart, "last_active": lastActive, "last_sample": d.lastSample()}, nil
+		"session_start": sessionStart, "last_active": lastActive, "last_sample": d.lastSample(),
+		"remind": map[string]any{"silent": d.S.SilentWarning, "close": closeMonth}}, nil
+}
+
+// remindClose is the previous month when Напоминания asks to close it: it is open and has my time; else "".
+// Kept for the local day and periods.json as read, since /v1/status is polled. Callers hold mu.
+func (d *Daemon) remindClose(now int64) (string, error) {
+	if !d.S.CloseReminder {
+		return "", nil
+	}
+	today := d.S.DayOf(now)
+	if _, err := d.Store.Periods(); err != nil { // reads periods.json, so the key is current
+		return "", err
+	}
+	c := &d.closeCache
+	if key := d.Store.periodsKey(); !c.ok || c.day != today || c.key != key {
+		t, err := time.Parse(time.DateOnly, today)
+		if err != nil {
+			return "", err
+		}
+		month := t.AddDate(0, 0, -t.Day()).Format("2006-01") // the last day of the month before
+		c.day, c.key, c.month, c.ok = today, key, "", true
+		rec, err := d.monthRecord(month)
+		if err != nil {
+			c.ok = false
+			return "", err
+		}
+		if rec == nil {
+			_, _, from, to, err := monthSpan(d.S, month)
+			if err != nil {
+				c.ok = false
+				return "", err
+			}
+			tl, _, err := d.timeline(from, to)
+			if err != nil {
+				c.ok = false
+				return "", err
+			}
+			if Summarize(tl, d.S, d.order()).Me > 0 {
+				c.month = month
+			}
+		}
+	}
+	return c.month, nil
 }
 
 // longestWait is the live wait that began first and is still within the cap, as {project, name, since}; nil for none.

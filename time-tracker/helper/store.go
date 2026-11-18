@@ -417,3 +417,10 @@ func (st *Store) AddPeriod(p Period) (Period, error) {
 	return addItem(st, "periods.json", p, perID)
 }
 func (st *Store) RemovePeriod(id int64) error { return removeItem(st, "periods.json", id, perID) }
+
+// periodsKey changes whenever periods.json does: its mtime and size as last read by AllPeriods.
+func (st *Store) periodsKey() [2]int64 {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return [2]int64{st.periodsTime.UnixNano(), st.periodsSize}
+}

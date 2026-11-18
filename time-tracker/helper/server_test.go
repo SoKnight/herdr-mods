@@ -683,3 +683,38 @@ func TestStaleDoneStatusIsNull(t *testing.T) {
 	assertEq(t, st.Waiting == nil, true)
 	assertEq(t, st.TodayWaiting, int64(0))
 }
+
+func TestStatusRemindClose(t *testing.T) {
+	d := testDaemon(t)
+	api := serve(t, d)
+	swap(t, &nowMs, func() int64 { return mskAt(2026, 11, 18, 12, 0) })
+	remind := func() (r struct {
+		Silent bool   `json:"silent"`
+		Close  string `json:"close"`
+	}) {
+		var st struct {
+			Remind *struct {
+				Silent bool   `json:"silent"`
+				Close  string `json:"close"`
+			} `json:"remind"`
+		}
+		assertEq(t, api.do("GET", "/v1/status", nil, &st), http.StatusOK)
+		assertEq(t, st.Remind != nil, true)
+		return *st.Remind
+	}
+	assertEq(t, remind().Close, "") // October has no time
+	assertEq(t, remind().Silent, true)
+	d.closeCache.ok = false // the day's answer is kept; a new day or a periods change drops it
+	seedWindow(t, d, mskAt(2026, 10, 20, 12, 0), "notepad.exe", "Easy notes", 60)
+	assertEq(t, remind().Close, "2026-10")
+	d.S.CloseReminder = false
+	assertEq(t, remind().Close, "")
+	d.S.CloseReminder = true
+	assertEq(t, remind().Close, "2026-10")
+	assertEq(t, api.do("POST", "/v1/months/2026-10/close", nil, nil), http.StatusOK)
+	assertEq(t, remind().Close, "")
+	assertEq(t, api.do("POST", "/v1/months/2026-10/reopen", nil, nil), http.StatusNoContent)
+	assertEq(t, remind().Close, "2026-10") // the cache follows periods.json
+	d.S.SilentWarning = false
+	assertEq(t, remind().Silent, false)
+}

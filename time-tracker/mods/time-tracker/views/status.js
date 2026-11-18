@@ -5,7 +5,7 @@ import { h_flex, v_flex, HoverCard } from "gpui-base";
 import { theme, run, focused, spaces, notify, layout, settings } from "herdr";
 import { call } from "../client.js";
 import { formatDuration, hhmm, catalog, goalBlock, forecastLine, roundRows } from "../format.js";
-import { chipState } from "../chip.js";
+import { chipState, reminders } from "../chip.js";
 import { projectColor } from "../lanes.js";
 import { beatFor, shouldSend } from "../signals.js";
 import { Icon, TEXT } from "../ui.js";
@@ -38,11 +38,14 @@ export class Status {
     this.dayBusy = false;
     this.last = null;
     this.lastSample = 0; // from the latest good status
+    this.remind = null; // `remind` of the latest good status
+    this.sent = new Set(); // reminder keys shown since Herdr started
     this.sending = false;
     this.polling = false;
     this.poll(cx);
     cx.timer.every(5000, (cx) => this.signal(cx));
     cx.timer.every(30000, (cx) => this.poll(cx));
+    cx.timer.every(5000, () => this.remindMe());
   }
 
   poll(cx) {
@@ -51,7 +54,10 @@ export class Status {
     cx.spawn(async (cx) => {
       try {
         this.status = await call(["status"]);
-        if (!this.status.down && !this.status.error) this.lastSample = this.status.last_sample ?? 0;
+        if (!this.status.down && !this.status.error) {
+          this.lastSample = this.status.last_sample ?? 0;
+          this.remind = this.status.remind ?? this.remind;
+        }
         if (!this.catalog && !this.status.down && !this.status.error) this.catalog = catalog(await call(["projects"])); // the project's colour
       } finally {
         this.polling = false;
@@ -78,6 +84,14 @@ export class Status {
       }
     });
     this.poll(cx);
+  }
+
+  remindMe() {
+    const c = chipState(this.status, this.lastSample, Date.now());
+    for (const n of reminders(c, this.remind, Date.now(), this.sent, formatDuration)) {
+      this.sent.add(n.key);
+      notify({ title: n.title, body: n.body, level: "warning", action: { name: "mod.open", args: { name: "time-tracker" } } });
+    }
   }
 
   signal(cx) {
