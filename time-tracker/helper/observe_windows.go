@@ -5,6 +5,8 @@ package main
 import (
 	"path/filepath"
 	"strings"
+	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -62,9 +64,36 @@ func logonTime() int64 {
 	return (info.Logon - 116444736000000000) / 10000 // 100 ns since 1601 → ms since 1970
 }
 
+const audioWithin = time.Second
+
+var (
+	audible   = audibleExes // the seam for tests
+	audioBusy atomic.Bool   // an audible call is in flight
+)
+
+// soundExes is audible's answer within audioWithin, else nil: a stuck audio service must not hold up
+// the sample, which records billed time. While a call is in flight no other starts; a late answer is
+// dropped. audible locks its own OS thread for COM, in the goroutine that makes the calls.
+func soundExes() []string {
+	if !audioBusy.CompareAndSwap(false, true) {
+		return nil
+	}
+	done := make(chan []string, 1)
+	go func() {
+		exes, _ := audible() // no audio device or a COM failure: no sound, the sample still counts
+		audioBusy.Store(false) // before the answer: the next sample may start its own call
+		done <- exes
+	}()
+	select {
+	case exes := <-done:
+		return exes
+	case <-time.After(audioWithin):
+		return nil
+	}
+}
+
 func sample(now int64) (Sample, error) {
-	s := Sample{At: now, Locked: locked(), CallExes: micUsers()}
-	s.SoundExes, _ = audibleExes() // no audio device or a COM failure: no sound, the sample still counts
+	s := Sample{At: now, Locked: locked(), CallExes: micUsers(), SoundExes: soundExes()}
 	var li struct{ Size, Time uint32 }
 	li.Size = uint32(unsafe.Sizeof(li))
 	if r, _, err := pGetLastInputInfo.Call(uintptr(unsafe.Pointer(&li))); r == 0 {
