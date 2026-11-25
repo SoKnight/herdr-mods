@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 )
@@ -36,10 +37,14 @@ type Daemon struct {
 	// mu guards everything above and the trackers. The poll loop, the agent stream and every HTTP
 	// handler hold it, and closed spans reach the store before it is released, so a timeline never
 	// sees a span neither open nor stored.
-	mu          sync.Mutex
-	tracker     Tracker
-	agents      AgentTracker
-	cfgMod      time.Time
+	mu             sync.Mutex
+	tracker        Tracker
+	agents         AgentTracker
+	hcAgents       map[string]AgentState
+	hcUp           bool
+	guestAgents    map[string]AgentState
+	hadGuestAgents bool
+	cfgMod         time.Time
 	setMod      time.Time
 	calMod      time.Time
 	commitCache map[[2]int64]commitsAt
@@ -289,6 +294,30 @@ func (d *Daemon) poll() {
 	now := nowMs()
 	s, err := takeSample(now)
 	d.mu.Lock()
+	guests := slices.Clone(d.S.Guests)
+	d.mu.Unlock()
+
+	var guestAgents map[string]AgentState
+	if err == nil && len(guests) > 0 {
+		guestAgents = map[string]AgentState{}
+		for _, g := range guests {
+			snap, gerr := fetchGuest(context.Background(), g.URL)
+			if gerr != nil {
+				continue
+			}
+			if guestMatchesWindow(g, s.Exe, s.Title) && snap.Exe != "" {
+				s.Exe = snap.Exe
+				s.Title = snap.Title
+				s.CallExes = append(s.CallExes, snap.CallExes...)
+				s.SoundExes = append(s.SoundExes, snap.SoundExes...)
+			}
+			for k, st := range snap.Agents {
+				guestAgents[g.Name+"/"+k] = st
+			}
+		}
+	}
+
+	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.reload()
 	if err != nil {
@@ -304,6 +333,13 @@ func (d *Daemon) poll() {
 		s.Server = minecraftServer(d.S.MinecraftLogs)
 	}
 	d.appendSpans(d.tracker.Feed(s))
+	if len(guests) > 0 || d.hadGuestAgents {
+		d.guestAgents = guestAgents
+		if d.hcUp || len(guestAgents) > 0 || d.hadGuestAgents {
+			d.feedAgentsLocked(now)
+		}
+		d.hadGuestAgents = len(guestAgents) > 0
+	}
 	d.appendSpans(d.agents.Expire(now))
 	if err := d.Store.SaveOpen(d.openSpans(now), d.tracker.lastSeen(now)); err != nil {
 		log.Printf("open.json: %v", err)
@@ -319,15 +355,34 @@ func (d *Daemon) saveOpen() error {
 	return d.Store.SaveOpen(d.openSpans(now), now)
 }
 
+func (d *Daemon) feedAgentsLocked(at int64) {
+	merged := make(map[string]AgentState, len(d.hcAgents)+len(d.guestAgents))
+	for k, v := range d.hcAgents {
+		merged[k] = v
+	}
+	for k, v := range d.guestAgents {
+		merged[k] = v
+	}
+	d.appendSpans(d.agents.Feed(merged, at))
+}
+
 func (d *Daemon) agentsSeen(states map[string]AgentState) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.appendSpans(d.agents.Feed(states, nowMs()))
+	d.hcAgents = states
+	d.hcUp = true
+	d.feedAgentsLocked(nowMs())
 }
 
 func (d *Daemon) agentsLost() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.hcAgents = nil
+	d.hcUp = false
+	if len(d.guestAgents) > 0 {
+		d.feedAgentsLocked(nowMs())
+		return
+	}
 	d.appendSpans(d.agents.Lost(nowMs()))
 }
 

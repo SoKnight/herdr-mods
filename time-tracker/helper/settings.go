@@ -30,9 +30,10 @@ type Settings struct {
 
 	VideoActivity bool     `json:"video_activity"`
 	Autostart     bool     `json:"autostart"`
-	SilentWarning bool     `json:"silent_warning"`
-	CloseReminder bool     `json:"close_reminder"`
-	HiddenTitles  []string `json:"hidden_titles"` // exe or title patterns (path.Match, case-insensitive) whose titles are not recorded
+	SilentWarning bool          `json:"silent_warning"`
+	CloseReminder bool          `json:"close_reminder"`
+	HiddenTitles  []string      `json:"hidden_titles"` // exe or title patterns (path.Match, case-insensitive) whose titles are not recorded
+	Guests        []GuestConfig `json:"guests,omitempty"`
 
 	Loc *time.Location `json:"-"`
 }
@@ -99,6 +100,11 @@ func (s Settings) check() error {
 	for _, p := range s.HiddenTitles {
 		if !validHidden(p) {
 			return fmt.Errorf("hidden_titles: bad pattern %q", p)
+		}
+	}
+	for _, g := range s.Guests {
+		if strings.TrimSpace(g.Name) == "" || strings.TrimSpace(g.URL) == "" {
+			return errors.New("guests: name and url are required")
 		}
 	}
 	return nil

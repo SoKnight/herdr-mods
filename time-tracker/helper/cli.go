@@ -86,6 +86,8 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "run":
 		return runCollector(s, stdout, stderr)
+	case "guest":
+		return runGuest(args[1:], stdout, stderr)
 	case "probe":
 		return probe(stdout, stderr)
 	case "restart":

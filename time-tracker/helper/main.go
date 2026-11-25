@@ -4,7 +4,7 @@ package main
 import "os"
 
 func main() {
-	if len(os.Args) < 2 || os.Args[1] != "run" {
+	if len(os.Args) < 2 || (os.Args[1] != "run" && os.Args[1] != "guest") {
 		attachConsole()
 	}
 	os.Exit(runCLI(os.Args[1:], os.Stdout, os.Stderr))

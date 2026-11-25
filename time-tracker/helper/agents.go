@@ -14,9 +14,10 @@ import (
 
 // AgentState is one live agent terminal as `hc events` last told it.
 type AgentState struct {
-	Cwd              string
-	Working, Waiting bool  // Waiting: blocked or done, i.e. waiting for me
-	Since            int64 // when the terminal got its state: status_ms in a snapshot, the receive time of a delta
+	Cwd     string `json:"cwd"`
+	Working bool   `json:"working"`
+	Waiting bool   `json:"waiting"` // Waiting: blocked or done, i.e. waiting for me
+	Since   int64  `json:"since"`   // when the terminal got its state: status_ms in a snapshot, the receive time of a delta
 }
 
 type hcStatus struct {
